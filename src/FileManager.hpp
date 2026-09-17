@@ -11,6 +11,7 @@ struct Entry
   std::string ownerText;
   std::string permText;
   bool isDirectory = false;
+  bool isExecutable = false;
 };
 
 class FileManager

@@ -155,6 +155,7 @@ bool FileManager::buildEntry(const std::string& fullPath, const std::string& nam
   }
   out.name = name;
   out.isDirectory = S_ISDIR(st.st_mode) != 0;
+  out.isExecutable = !out.isDirectory && (st.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH)) != 0;
   out.ownerText = ownerName(st.st_uid);
   out.permText = permissionsToString(static_cast<unsigned int>(st.st_mode));
   if (out.isDirectory)

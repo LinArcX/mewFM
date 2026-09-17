@@ -10,6 +10,7 @@
 #include "DejaVuSansFont.hpp"
 #include "BlenderIcons.hpp"
 
+#include <cctype>
 #include <csignal>
 #include <cstdlib>
 #include <filesystem>
@@ -25,21 +26,15 @@ namespace
   constexpr float kSidebarWidth = 220.0f;
   constexpr float kRowHeight    = 24.0f;
   constexpr float kHeaderHeight = 26.0f;
-  constexpr float kColNameW     = 260.0f;
-  constexpr float kColSizeW     =  90.0f;
-  constexpr float kColTypeW     = 110.0f;
-  constexpr float kColOwnerW    = 100.0f;
-  constexpr float kColPermW     = 110.0f;
   constexpr float kPadX         =   8.0f;
   constexpr float kBtnSize      =  28.0f;
   constexpr float kBtnGap       =   4.0f;
   constexpr float kBtnY         = (kTopBarHeight - kBtnSize) * 0.5f;
   constexpr double kDoubleClickTime = 0.4;
-
-  constexpr int kIconFile   = BND_ICON_FILE;
-  constexpr int kIconFolder = BND_ICON_FILE_FOLDER;
-  constexpr float kIconSize = 16.0f;
-  constexpr float kIconGap  = 4.0f;
+  constexpr float kIconSize     = 16.0f;
+  constexpr float kIconGap      = 4.0f;
+  constexpr float kMinColWidth  = 40.0f;
+  constexpr int   kNumCols      = 5;
 
   struct Place
   {
@@ -56,11 +51,16 @@ namespace
     std::string lastPath;
     double lastClickTime = 0.0;
     int lastClickIndex = -1;
+    float colWidths[kNumCols] = {260.0f, 90.0f, 110.0f, 100.0f, 110.0f};
+    int dragColumn = -1;
+    float dragStartMouseX = 0.0f;
+    float dragStartWidth = 0.0f;
   };
 
   float g_mouseX = 0.0f;
   float g_mouseY = 0.0f;
   bool  g_mouseClicked = false;
+  bool  g_mouseDown = false;
   float g_scrollY = 0.0f;
   bool  g_navUp = false;
   bool  g_navDown = false;
@@ -138,6 +138,16 @@ static void openWithDefaultApp(const std::string& path)
   }
 }
 
+static void runExecutable(const std::string& path)
+{
+  pid_t pid = fork();
+  if (pid == 0)
+  {
+    execl(path.c_str(), path.c_str(), static_cast<char*>(nullptr));
+    _exit(127);
+  }
+}
+
 static void errorCallback(int error, const char* description)
 {
   std::cerr << "GLFW Error " << error << ": " << description << std::endl;
@@ -172,9 +182,18 @@ static void mouseButtonCallback(GLFWwindow* window, int button, int action, int 
 {
   (void)window;
   (void)mods;
-  if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS)
+  if (button != GLFW_MOUSE_BUTTON_LEFT)
+  {
+    return;
+  }
+  if (action == GLFW_PRESS)
   {
     g_mouseClicked = true;
+    g_mouseDown = true;
+  }
+  else if (action == GLFW_RELEASE)
+  {
+    g_mouseDown = false;
   }
 }
 
@@ -203,6 +222,57 @@ static std::string joinPath(const std::string& base, const std::string& name)
   return base + "/" + name;
 }
 
+static int iconForEntry(const Entry& e)
+{
+  if (e.isDirectory)
+  {
+    return BND_ICON_FILE_FOLDER;
+  }
+  std::string ext;
+  size_t dot = e.name.find_last_of('.');
+  if (dot != std::string::npos && dot + 1 < e.name.size())
+  {
+    ext = e.name.substr(dot + 1);
+    for (char& c : ext)
+    {
+      c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    }
+  }
+  if (ext == "png" || ext == "jpg" || ext == "jpeg" || ext == "gif" ||
+      ext == "bmp" || ext == "webp" || ext == "svg" || ext == "tiff" ||
+      ext == "ico")
+  {
+    return BND_ICON_FILE_IMAGE;
+  }
+  if (ext == "mp4" || ext == "mkv" || ext == "avi" || ext == "mov" ||
+      ext == "webm" || ext == "flv" || ext == "wmv" || ext == "m4v")
+  {
+    return BND_ICON_FILE_MOVIE;
+  }
+  if (ext == "mp3" || ext == "wav" || ext == "flac" || ext == "ogg" ||
+      ext == "m4a" || ext == "opus" || ext == "aac")
+  {
+    return BND_ICON_FILE_SOUND;
+  }
+  if (ext == "txt" || ext == "md" || ext == "log" || ext == "pdf" ||
+      ext == "doc" || ext == "docx" || ext == "odt" || ext == "rtf")
+  {
+    return BND_ICON_FILE_TEXT;
+  }
+  if (ext == "ttf" || ext == "otf" || ext == "woff" || ext == "woff2")
+  {
+    return BND_ICON_FILE_FONT;
+  }
+  if (ext == "sh" || ext == "py" || ext == "cpp" || ext == "cc" ||
+      ext == "c" || ext == "h" || ext == "hpp" || ext == "js" ||
+      ext == "ts" || ext == "rb" || ext == "rs" || ext == "go" ||
+      ext == "java" || ext == "lua" || ext == "pl")
+  {
+    return BND_ICON_FILE_SCRIPT;
+  }
+  return BND_ICON_FILE_BLANK;
+}
+
 static void openEntry(AppState& app, int index)
 {
   const auto& entries = app.fm.entries();
@@ -217,6 +287,10 @@ static void openEntry(AppState& app, int index)
     app.fm.setPath(full);
     app.selectedIndex = -1;
     app.scrollOffset = 0.0f;
+  }
+  else if (e.isExecutable)
+  {
+    runExecutable(full);
   }
   else
   {
@@ -367,39 +441,109 @@ static void drawSidebar(NVGcontext* vg,
   }
 }
 
-static void drawMainHeader(NVGcontext* vg, float x, float y, float w)
+static float columnX(const AppState& app, float listX, int col)
+{
+  float x = listX + kPadX;
+  for (int i = 0; i < col; i++)
+  {
+    x += app.colWidths[i];
+  }
+  return x;
+}
+
+static void drawMainHeader(NVGcontext* vg, AppState& app, float x, float y, float w)
 {
   bndBackground(vg, x, y, w, kHeaderHeight);
+
+  const float sepTol = 4.0f;
+
+  if (app.dragColumn >= 0)
+  {
+    if (!g_mouseDown)
+    {
+      app.dragColumn = -1;
+    }
+    else
+    {
+      float delta = g_mouseX - app.dragStartMouseX;
+      float nw = app.dragStartWidth + delta;
+      if (nw < kMinColWidth)
+      {
+        nw = kMinColWidth;
+      }
+      app.colWidths[app.dragColumn] = nw;
+    }
+  }
+
+  float seps[4];
+  {
+    float cx = x + kPadX;
+    for (int i = 0; i < 4; i++)
+    {
+      cx += app.colWidths[i];
+      seps[i] = cx;
+    }
+  }
+
+  int hoverSep = -1;
+  if (g_mouseY >= y && g_mouseY < y + kHeaderHeight)
+  {
+    for (int i = 0; i < 4; i++)
+    {
+      if (g_mouseX >= seps[i] - sepTol && g_mouseX <= seps[i] + sepTol)
+      {
+        hoverSep = i;
+        break;
+      }
+    }
+  }
+  if (hoverSep >= 0 && g_mouseClicked && app.dragColumn < 0)
+  {
+    app.dragColumn = hoverSep;
+    app.dragStartMouseX = g_mouseX;
+    app.dragStartWidth = app.colWidths[hoverSep];
+  }
+
   nvgFontFace(vg, "sans");
   nvgFontSize(vg, 13.0f);
   nvgFillColor(vg, nvgRGBf(0.7f, 0.7f, 0.7f));
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
   float cy = y + kHeaderHeight * 0.5f;
-  float cx = x + kPadX;
-  nvgText(vg, cx + kIconSize + kIconGap, cy, "Name", nullptr);
-  cx += kColNameW;
-  nvgText(vg, cx, cy, "Size", nullptr);        cx += kColSizeW;
-  nvgText(vg, cx, cy, "Type", nullptr);        cx += kColTypeW;
-  nvgText(vg, cx, cy, "Owner", nullptr);       cx += kColOwnerW;
-  nvgText(vg, cx, cy, "Permissions", nullptr);
+
+  nvgText(vg, columnX(app, x, 0) + kIconSize + kIconGap, cy, "Name", nullptr);
+  nvgText(vg, columnX(app, x, 1), cy, "Size", nullptr);
+  nvgText(vg, columnX(app, x, 2), cy, "Type", nullptr);
+  nvgText(vg, columnX(app, x, 3), cy, "Owner", nullptr);
+  nvgText(vg, columnX(app, x, 4), cy, "Permissions", nullptr);
+
+  for (int i = 0; i < 4; i++)
+  {
+    bool active = (hoverSep == i || app.dragColumn == i);
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, seps[i], y + 4.0f);
+    nvgLineTo(vg, seps[i], y + kHeaderHeight - 4.0f);
+    nvgStrokeColor(vg, active ? nvgRGBf(0.7f, 0.7f, 0.7f)
+                              : nvgRGBf(0.35f, 0.35f, 0.35f));
+    nvgStrokeWidth(vg, 1.0f);
+    nvgStroke(vg);
+  }
 }
 
 static void drawRows(NVGcontext* vg,
-                     const FileManager& fm,
-                     float x, float y, float w, float h,
-                     float scrollOffset,
-                     int selectedIndex)
+                     const AppState& app,
+                     float x, float y, float w, float h)
 {
+  const auto& entries = app.fm.entries();
+
   nvgFontFace(vg, "sans");
   nvgFontSize(vg, 13.0f);
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-  const auto& entries = fm.entries();
 
   nvgSave(vg);
   nvgScissor(vg, x, y, w, h);
   for (size_t i = 0; i < entries.size(); i++)
   {
-    float rowY = y + static_cast<float>(i) * kRowHeight - scrollOffset;
+    float rowY = y + static_cast<float>(i) * kRowHeight - app.scrollOffset;
     if (rowY + kRowHeight < y)
     {
       continue;
@@ -408,7 +552,7 @@ static void drawRows(NVGcontext* vg,
     {
       break;
     }
-    bool selected = (static_cast<int>(i) == selectedIndex);
+    bool selected = (static_cast<int>(i) == app.selectedIndex);
     bool hover = inRect(g_mouseX, g_mouseY, x, rowY, w, kRowHeight);
     if (selected)
     {
@@ -424,26 +568,18 @@ static void drawRows(NVGcontext* vg,
       nvgFillColor(vg, nvgRGBf(0.25f, 0.25f, 0.25f));
       nvgFill(vg);
     }
-
     const Entry& e = entries[i];
     float cy = rowY + kRowHeight * 0.5f;
-    float cx = x + kPadX;
-
-    int iconId = e.isDirectory ? kIconFolder : kIconFile;
-    float iconX = cx;
+    float iconX = columnX(app, x, 0);
     float iconY = cy - kIconSize * 0.5f;
-    bndIcon(vg, iconX, iconY, iconId);
-
-    float nameX = iconX + kIconSize + kIconGap;
+    bndIcon(vg, iconX, iconY, iconForEntry(e));
 
     nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
-    nvgText(vg, nameX, cy, e.name.c_str(), nullptr);
-
-    float colX = x + kPadX + kColNameW;
-    nvgText(vg, colX, cy, e.sizeText.c_str(), nullptr);  colX += kColSizeW;
-    nvgText(vg, colX, cy, e.typeText.c_str(), nullptr);  colX += kColTypeW;
-    nvgText(vg, colX, cy, e.ownerText.c_str(), nullptr); colX += kColOwnerW;
-    nvgText(vg, colX, cy, e.permText.c_str(), nullptr);
+    nvgText(vg, iconX + kIconSize + kIconGap, cy, e.name.c_str(), nullptr);
+    nvgText(vg, columnX(app, x, 1), cy, e.sizeText.c_str(), nullptr);
+    nvgText(vg, columnX(app, x, 2), cy, e.typeText.c_str(), nullptr);
+    nvgText(vg, columnX(app, x, 3), cy, e.ownerText.c_str(), nullptr);
+    nvgText(vg, columnX(app, x, 4), cy, e.permText.c_str(), nullptr);
   }
   nvgRestore(vg);
 }
@@ -613,6 +749,8 @@ int main()
 
   while (!glfwWindowShouldClose(window))
   {
+    glfwPollEvents();
+
     int winW = 0;
     int winH = 0;
     int fbW = 0;
@@ -645,14 +783,12 @@ int main()
     resetOnPathChange(app);
     drawSidebar(vg, app.fm, app.places, h);
     resetOnPathChange(app);
-    drawMainHeader(vg, mainX, mainY, mainW);
-    drawRows(vg, app.fm, mainX, listTop, mainW, listH,
-             app.scrollOffset, app.selectedIndex);
+    drawMainHeader(vg, app, mainX, mainY, mainW);
+    drawRows(vg, app, mainX, listTop, mainW, listH);
 
     nvgEndFrame(vg);
 
     glfwSwapBuffers(window);
-    glfwPollEvents();
     g_mouseClicked = false;
   }
 
