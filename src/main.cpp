@@ -10,6 +10,7 @@
 #include "DejaVuSansFont.hpp"
 #include "BlenderIcons.hpp"
 
+#include <fstream>
 #include <cctype>
 #include <csignal>
 #include <cstdlib>
@@ -65,6 +66,7 @@ namespace
   bool  g_navUp = false;
   bool  g_navDown = false;
   bool  g_navEnter = false;
+  bool  g_navBack = false;
 }
 
 static BNDwidgetTheme makeWidgetTheme()
@@ -79,6 +81,71 @@ static BNDwidgetTheme makeWidgetTheme()
   w.shadeTop = 100;
   w.shadeDown = 0;
   return w;
+}
+
+static std::string configFilePath()
+{
+  const char* xdg = std::getenv("XDG_CONFIG_HOME");
+  std::string base;
+  if (xdg != nullptr && xdg[0] != '\0')
+  {
+    base = xdg;
+  }
+  else
+  {
+    const char* home = std::getenv("HOME");
+    base = (home != nullptr) ? std::string(home) + "/.config" : ".";
+  }
+  return base + "/rah/config";
+}
+
+static void loadConfig(AppState& app)
+{
+  std::ifstream in(configFilePath());
+  if (!in)
+  {
+    return;
+  }
+  std::string line;
+  while (std::getline(in, line))
+  {
+    size_t eq = line.find('=');
+    if (eq == std::string::npos)
+    {
+      continue;
+    }
+    std::string key = line.substr(0, eq);
+    std::string val = line.substr(eq + 1);
+    if (key.size() >= 4 && key.compare(0, 3, "col") == 0)
+    {
+      int idx = std::atoi(key.c_str() + 3);
+      if (idx >= 0 && idx < kNumCols)
+      {
+        float w = static_cast<float>(std::atof(val.c_str()));
+        if (w >= kMinColWidth)
+        {
+          app.colWidths[idx] = w;
+        }
+      }
+    }
+  }
+}
+
+static void saveConfig(const AppState& app)
+{
+  std::string path = configFilePath();
+  std::error_code ec;
+  std::filesystem::create_directories(
+    std::filesystem::path(path).parent_path(), ec);
+  std::ofstream out(path);
+  if (!out)
+  {
+    return;
+  }
+  for (int i = 0; i < kNumCols; i++)
+  {
+    out << "col" << i << "=" << app.colWidths[i] << "\n";
+  }
 }
 
 static void applyTheme()
@@ -169,6 +236,7 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
   if (key == GLFW_KEY_UP)    g_navUp = true;
   if (key == GLFW_KEY_DOWN)  g_navDown = true;
   if (key == GLFW_KEY_ENTER) g_navEnter = true;
+  if (key == GLFW_KEY_BACKSPACE) g_navBack = true;
 }
 
 static void cursorPosCallback(GLFWwindow* window, double x, double y)
@@ -269,6 +337,17 @@ static int iconForEntry(const Entry& e)
       ext == "java" || ext == "lua" || ext == "pl")
   {
     return BND_ICON_FILE_SCRIPT;
+  }
+  if (ext == "zip" || ext == "tar" || ext == "gz" || ext == "bz2" ||
+      ext == "xz" || ext == "rar" || ext == "7z" || ext == "jar" ||
+      ext == "apk" || ext == "deb" || ext == "rpm" || ext == "iso")
+  {
+    return BND_ICON_FILE_BACKUP;
+  }
+  if (ext == "o" || ext == "so" || ext == "a" || ext == "out" ||
+      ext == "exe" || ext == "dll" || ext == "dylib" || ext == "bin")
+  {
+    return BND_ICON_DISK_DRIVE;
   }
   return BND_ICON_FILE_BLANK;
 }
@@ -462,6 +541,7 @@ static void drawMainHeader(NVGcontext* vg, AppState& app, float x, float y, floa
     if (!g_mouseDown)
     {
       app.dragColumn = -1;
+      saveConfig(app);
     }
     else
     {
@@ -591,6 +671,7 @@ static void resetOnPathChange(AppState& app)
     return;
   }
   app.lastPath = app.fm.currentPath();
+  loadConfig(app);
   app.selectedIndex = -1;
   app.scrollOffset = 0.0f;
 }
@@ -651,6 +732,11 @@ static void handleKeyboardNav(AppState& app, float listH)
   if (g_navEnter && app.selectedIndex >= 0)
   {
     openEntry(app, app.selectedIndex);
+  }
+  if (g_navBack)
+  {
+    app.fm.goUp();
+    g_navBack = false;
   }
   g_navUp = false;
   g_navDown = false;
