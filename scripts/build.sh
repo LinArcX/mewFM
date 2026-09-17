@@ -49,18 +49,27 @@ if [ "$CLEAN" = "1" ]; then
       rm -rf "$t"
     fi
   done
+  if [ -d build/generated ]; then
+    echo "  ${C_DIM}rm -rf build/generated${C_RESET}"
+    rm -rf build/generated
+  fi
   echo "${C_GREEN}>>> clean done${C_RESET}"
   exit 0
 fi
 
 # ---------- build ----------
 OUT="build/$MODE"
-mkdir -p "$OUT"
+GEN="build/generated"
+mkdir -p "$OUT" "$GEN"
 
-CXXFLAGS="-std=c++17 -O2 -Isrc -Ithird_party/nanovg -Ithird_party/oui-blendish -DGL_GLEXT_PROTOTYPES"
+CXXFLAGS="-std=c++17 -O2 -Isrc -I$GEN -Ithird_party/nanovg -Ithird_party/oui-blendish -DGL_GLEXT_PROTOTYPES"
 CFLAGS="-O2 -Ithird_party/nanovg -Ithird_party/oui-blendish -DGL_GLEXT_PROTOTYPES"
 
 echo "${C_BOLD}${C_CYAN}>>> mode:${C_RESET} ${C_BOLD}$MODE${C_RESET}"
+
+echo "${C_CYAN}>>> embedding assets (xxd)${C_RESET}"
+xxd -i -n fontData third_party/oui-blendish/DejaVuSans.ttf      > "$GEN/DejaVuSansFont.hpp"
+xxd -i -n iconData third_party/oui-blendish/blender_icons16.png > "$GEN/BlenderIcons.hpp"
 
 echo "${C_CYAN}>>> compiling implementation TU (C)${C_RESET}"
 gcc $CFLAGS -fgnu89-inline -c third_party/impl.c -o "$OUT/impl.o"
@@ -74,9 +83,5 @@ echo "${C_CYAN}>>> linking${C_RESET}"
 g++ "$OUT/impl.o" "$OUT/nanovg.o" "$OUT/main.o" "$OUT/FileManager.o" \
   $(pkg-config --cflags --libs glfw3 gl) \
   -lm -o "$OUT/rah"
-
-echo "${C_CYAN}>>> copying runtime assets${C_RESET}"
-cp third_party/oui-blendish/DejaVuSans.ttf      "$OUT/"
-cp third_party/oui-blendish/blender_icons16.png "$OUT/"
 
 echo "${C_GREEN}>>> done:${C_RESET} ${C_BOLD}$OUT/rah${C_RESET}"

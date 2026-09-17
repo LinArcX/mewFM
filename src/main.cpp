@@ -11,25 +11,8 @@
 
 #include <iostream>
 #include <string>
-#include <unistd.h>
-
-static std::string exeDir()
-{
-  char buf[4096];
-  ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
-  if (n <= 0)
-  {
-    return ".";
-  }
-  buf[n] = '\0';
-  std::string path(buf);
-  size_t slash = path.find_last_of('/');
-  if (slash == std::string::npos)
-  {
-    return ".";
-  }
-  return path.substr(0, slash);
-}
+#include "DejaVuSansFont.hpp"
+#include "BlenderIcons.hpp"
 
 static BNDwidgetTheme makeDefaultWidgetTheme()
 {
@@ -110,18 +93,14 @@ int main()
     return 1;
   }
 
-  const std::string base = exeDir();
-  const std::string fontPath = base + "/DejaVuSans.ttf";
-  int font = nvgCreateFont(vg, "sans", fontPath.c_str());
-
+  int font = nvgCreateFontMem(vg, "sans", fontData, fontData_len, 0);
   if (font == -1)
   {
     std::cerr << "Could not load font." << std::endl;
   }
   bndSetFont(font);
 
-  const std::string iconPath = base + "/blender_icons16.png";
-  int iconImage = nvgCreateImage(vg, iconPath.c_str(), 0);
+  int iconImage = nvgCreateImageMem(vg, 0, iconData, iconData_len);
   if (iconImage == -1)
   {
     std::cerr << "Could not load icon sheet." << std::endl;
