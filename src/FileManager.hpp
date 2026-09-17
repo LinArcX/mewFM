@@ -31,6 +31,7 @@ public:
 
   void setShowHidden(bool show);
   bool showHidden() const;
+  void resetTo(const std::string& path);
 
 private:
   bool loadPath(const std::string& path);

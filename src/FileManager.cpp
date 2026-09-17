@@ -15,6 +15,13 @@ FileManager::FileManager()
   loadPath(fs::current_path().string());
 }
 
+void FileManager::resetTo(const std::string& path)
+{
+  m_backStack.clear();
+  m_forwardStack.clear();
+  loadPath(path);
+}
+
 bool FileManager::loadPath(const std::string& path)
 {
   std::error_code ec;

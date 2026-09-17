@@ -109,6 +109,8 @@ static void loadConfig(AppState& app)
   {
     return;
   }
+  std::string savedPath;
+  bool savedHidden = false;
   std::string line;
   while (std::getline(in, line))
   {
@@ -131,6 +133,25 @@ static void loadConfig(AppState& app)
         }
       }
     }
+    else if (key == "path")
+    {
+      savedPath = val;
+    }
+    else if (key == "hidden")
+    {
+      savedHidden = (val == "1");
+    }
+  }
+
+  if (savedHidden)
+  {
+    app.fm.setShowHidden(true);
+  }
+
+  std::error_code ec;
+  if (!savedPath.empty() && std::filesystem::is_directory(savedPath, ec))
+  {
+    app.fm.resetTo(savedPath);
   }
 }
 
@@ -149,8 +170,9 @@ static void saveConfig(const AppState& app)
   {
     out << "col" << i << "=" << app.colWidths[i] << "\n";
   }
+  out << "path=" << app.fm.currentPath() << "\n";
+  out << "hidden=" << (app.fm.showHidden() ? "1" : "0") << "\n";
 }
-
 static void applyTheme()
 {
   BNDwidgetTheme w = makeWidgetTheme();
@@ -847,9 +869,9 @@ static void resetOnPathChange(AppState& app)
     return;
   }
   app.lastPath = app.fm.currentPath();
-  loadConfig(app);
   app.selectedIndex = -1;
   app.scrollOffset = 0.0f;
+  saveConfig(app);
 }
 
 static void handleListClick(AppState& app, float listX, float listTop, float listW, float listH)
@@ -1017,6 +1039,8 @@ int main()
   app.places = buildPlaces();
   app.lastPath = app.fm.currentPath();
 
+  loadConfig(app);
+
   while (!glfwWindowShouldClose(window))
   {
     glfwPollEvents();
@@ -1064,6 +1088,7 @@ int main()
     g_mouseClicked = false;
   }
 
+  saveConfig(app);
   nvgDeleteGL2(vg);
   if (resizeCursor != nullptr)
   {
