@@ -1,0 +1,12 @@
+build/*
+.cache/*
+gmon.out
+package.json
+node_modules/
+breakpoints.json
+package-lock.json
+compile_commands.json
+.opencode/opencode.json
+third_party/breakpoints.json
+third_party/nanovg/breakpoints.json
+third_party/oui-blendish/breakpoints.json
