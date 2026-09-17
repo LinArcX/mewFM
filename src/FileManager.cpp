@@ -51,15 +51,6 @@ bool FileManager::loadPath(const std::string& path)
     }
   }
 
-  //for (const auto& dirEntry : it)
-  //{
-  //  Entry entry;
-  //  const fs::path& p = dirEntry.path();
-  //  if (buildEntry(p.string(), p.filename().string(), entry))
-  //  {
-  //    m_entries.push_back(entry);
-  //  }
-  //}
   sortEntries();
   return true;
 }

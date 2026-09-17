@@ -521,41 +521,6 @@ static void drawTopBar(NVGcontext* vg, FileManager& fm, float w)
     fm.goUp();
   }
 
-  //float x = kPadX;
-  //const int icons[3] = {BND_ICON_TRIA_LEFT, BND_ICON_TRIA_RIGHT, BND_ICON_TRIA_UP};
-  //const bool enabled[3] = {fm.canGoBack(), fm.canGoForward(), true};
-  //int action = -1;
-  //for (int i = 0; i < 3; i++)
-  //{
-  //  bool hover = enabled[i] && inRect(g_mouseX, g_mouseY, x, kBtnY, kBtnSize, kBtnSize);
-  //  BNDwidgetState st = BND_DEFAULT;
-  //  if (enabled[i] && hover)
-  //  {
-  //    st = BND_HOVER;
-  //  }
-  //  bndToolButton(vg, x, kBtnY, kBtnSize, kBtnSize, BND_CENTER, st, icons[i], "");
-
-  //  if (hover && g_mouseClicked)
-  //  {
-  //    action = i;
-  //  }
-  //  x += kBtnSize + kBtnGap;
-  //}
-  //x += 8.0f;
-
-  //if (action == 0)
-  //{
-  //  fm.goBack();
-  //}
-  //else if (action == 1)
-  //{
-  //  fm.goForward();
-  //}
-  //else if (action == 2)
-  //{
-  //  fm.goUp();
-  //}
-
   std::string path = fm.currentPath();
   std::vector<std::pair<std::string, std::string>> crumbs;
   crumbs.push_back(std::make_pair(std::string("/"), std::string("/")));
@@ -630,37 +595,6 @@ static void drawTopBar(NVGcontext* vg, FileManager& fm, float w)
     }
   }
 
-  //std::string navTo;
-  //for (size_t k = 0; k < crumbs.size(); k++)
-  //{
-  //  float bounds[4];
-  //  nvgTextBounds(vg, 0.0f, 0.0f, crumbs[k].first.c_str(), nullptr, bounds);
-  //  float tw = bounds[2] - bounds[0];
-  //  float segW = tw + 12.0f;
-  //  bool hover = inRect(g_mouseX, g_mouseY, x, 0.0f, segW, kTopBarHeight);
-  //  if (hover)
-  //  {
-  //    nvgBeginPath(vg);
-  //    nvgRoundedRect(vg, x, kBtnY, segW, kBtnSize, 3.0f);
-  //    nvgFillColor(vg, nvgRGBf(0.3f, 0.3f, 0.3f));
-  //    nvgFill(vg);
-  //  }
-  //  nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
-  //  nvgText(vg, x + 6.0f, cy, crumbs[k].first.c_str(), nullptr);
-  //  if (hover && g_mouseClicked)
-  //  {
-  //    navTo = crumbs[k].second;
-  //  }
-  //  x += segW;
-  //  if (k + 1 < crumbs.size())
-  //  {
-  //    nvgFillColor(vg, nvgRGBf(0.5f, 0.5f, 0.5f));
-  //    nvgText(vg, x, cy, "/", nullptr);
-  //    float sb[4];
-  //    nvgTextBounds(vg, 0.0f, 0.0f, "/", nullptr, sb);
-  //    x += (sb[2] - sb[0]) + 4.0f;
-  //  }
-  //}
   if (!navTo.empty())
   {
     fm.setPath(navTo);
@@ -720,32 +654,12 @@ static void drawSidebar(NVGcontext* vg,
     float triCy = y + headerH * 0.5f;
     drawTriangle(vg, triCx, triCy, triSize, !sec.collapsed);
 
-    //const float triSize = 18.0f;
-    //float triCx = itemX + 6.0f + triSize * 0.5f;
-    //float triCy = y + headerH * 0.5f;
-    //int triIcon = sec.collapsed ? BND_ICON_DISCLOSURE_TRI_RIGHT
-    //                            : BND_ICON_DISCLOSURE_TRI_DOWN;
-    //drawScaledIcon(vg, triCx, triCy, triIcon, triSize);
-
     nvgFontFace(vg, "sans");
     nvgFontSize(vg, g_fontSize - 1.0f);
     nvgFillColor(vg, nvgRGBf(0.7f, 0.7f, 0.7f));
     nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
     nvgText(vg, itemX + 6.0f + triSize + kIconGap, y + headerH * 0.5f,
             sec.title.c_str(), nullptr);
-
-    //float iconX = itemX + 6.0f;
-    //float iconY = y + (headerH - kIconSize) * 0.5f;
-    //int triIcon = sec.collapsed ? BND_ICON_DISCLOSURE_TRI_RIGHT
-    //                            : BND_ICON_DISCLOSURE_TRI_DOWN;
-    //bndIcon(vg, iconX, iconY, triIcon);
-
-    //nvgFontFace(vg, "sans");
-    //nvgFontSize(vg, g_fontSize - 1.0f);
-    //nvgFillColor(vg, nvgRGBf(0.7f, 0.7f, 0.7f));
-    //nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-    //nvgText(vg, iconX + kIconSize + kIconGap, y + headerH * 0.5f,
-    //        sec.title.c_str(), nullptr);
 
     if (headerHover && g_mouseClicked)
     {
@@ -961,12 +875,6 @@ static void drawRows(NVGcontext* vg,
     float iconY = cy - kIconSize * 0.5f;
     bndIcon(vg, iconX, iconY, iconForEntry(e));
 
-    //nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
-    //nvgText(vg, iconX + kIconSize + kIconGap, cy, e.name.c_str(), nullptr);
-    //nvgText(vg, columnX(app, x, 1), cy, e.sizeText.c_str(), nullptr);
-    //nvgText(vg, columnX(app, x, 2), cy, e.typeText.c_str(), nullptr);
-    //nvgText(vg, columnX(app, x, 3), cy, e.ownerText.c_str(), nullptr);
-    //nvgText(vg, columnX(app, x, 4), cy, e.permText.c_str(), nullptr);
     const float cellPad = 4.0f;
     std::string nameText = truncateToWidth(vg, e.name,
                           app.colWidths[0] - kIconSize - kIconGap - cellPad);

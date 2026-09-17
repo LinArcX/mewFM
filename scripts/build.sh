@@ -86,26 +86,6 @@ g++ "$OUT/impl.o" "$OUT/nanovg.o" "$OUT/main.o" "$OUT/FileManager.o" \
 
 echo "${C_GREEN}>>> done:${C_RESET} ${C_BOLD}$OUT/rah${C_RESET}"
 
-echo "${C_CYAN}>>> installing to /usr/bin/rah${C_RESET}"
-if install -m 755 "$OUT/rah" /usr/bin/rah 2>/dev/null; then
-  echo "${C_GREEN}>>> installed:${C_RESET} ${C_BOLD}/usr/bin/rah${C_RESET}"
-else
-  echo "  ${C_DIM}requires sudo${C_RESET}"
-  sudo install -m 755 "$OUT/rah" /usr/bin/rah
-  echo "${C_GREEN}>>> installed:${C_RESET} ${C_BOLD}/usr/bin/rah${C_RESET}"
-fi
-
-echo "${C_CYAN}>>> installing to /usr/bin/rah${C_RESET}"
-if install -m 755 "$OUT/rah" /usr/bin/rah 2>/dev/null; then
-  echo "${C_GREEN}>>> installed:${C_RESET} ${C_BOLD}/usr/bin/rah${C_RESET}"
-else
-  echo "  ${C_DIM}requires sudo${C_RESET}"
-  sudo install -m 755 "$OUT/rah" /usr/bin/rah
-  echo "${C_GREEN}>>> installed:${C_RESET} ${C_BOLD}/usr/bin/rah${C_RESET}"
-fi
-
-echo "${C_CYAN}>>> installing icon and desktop entry${C_RESET}"
-
 install_asset() {
   local src="$1"
   local dst="$2"
@@ -120,6 +100,15 @@ install_asset() {
     echo "  ${C_GREEN}installed:${C_RESET} ${C_DIM}$dst${C_RESET}"
   fi
 }
+
+echo "${C_CYAN}>>> installing rah to /usr/bin${C_RESET}"
+if install -m 755 "$OUT/rah" /usr/bin/rah 2>/dev/null; then
+  echo "${C_GREEN}>>> installed:${C_RESET} ${C_BOLD}/usr/bin/rah${C_RESET}"
+else
+  echo "  ${C_DIM}requires sudo${C_RESET}"
+  sudo install -m 755 "$OUT/rah" /usr/bin/rah
+  echo "${C_GREEN}>>> installed:${C_RESET} ${C_BOLD}/usr/bin/rah${C_RESET}"
+fi
 
 install_asset assets/icon.svg    /usr/share/icons/hicolor/scalable/apps/rah.svg
 install_asset assets/rah.desktop /usr/share/applications/rah.desktop
