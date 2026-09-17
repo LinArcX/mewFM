@@ -41,6 +41,7 @@ namespace
   {
     std::string label;
     std::string path;
+    int icon;
   };
 
   struct AppState
@@ -173,14 +174,23 @@ static std::vector<Place> buildPlaces()
   std::vector<Place> all;
   const char* home = std::getenv("HOME");
   std::string h = (home != nullptr) ? std::string(home) : std::string("/");
-  all.push_back({"Home",        h});
-  all.push_back({"Desktop",     h + "/Desktop"});
-  all.push_back({"Documents",   h + "/Documents"});
-  all.push_back({"Downloads",   h + "/Downloads"});
-  all.push_back({"Pictures",    h + "/Pictures"});
-  all.push_back({"Music",       h + "/Music"});
-  all.push_back({"Videos",      h + "/Videos"});
-  all.push_back({"File System", "/"});
+  all.push_back({"Home",        h,                  BND_ICON_FILE_FOLDER});
+  all.push_back({"Desktop",     h + "/Desktop",     BND_ICON_FILE_FOLDER});
+  all.push_back({"Documents",   h + "/Documents",   BND_ICON_FILE_FOLDER});
+  all.push_back({"Downloads",   h + "/Downloads",   BND_ICON_FILE_FOLDER});
+  all.push_back({"Pictures",    h + "/Pictures",    BND_ICON_FILE_IMAGE});
+  all.push_back({"Music",       h + "/Music",       BND_ICON_FILE_SOUND});
+  all.push_back({"Videos",      h + "/Videos",      BND_ICON_FILE_MOVIE});
+  all.push_back({"File System", "/",                BND_ICON_DISK_DRIVE});
+
+  //all.push_back({"Home",        h});
+  //all.push_back({"Desktop",     h + "/Desktop"});
+  //all.push_back({"Documents",   h + "/Documents"});
+  //all.push_back({"Downloads",   h + "/Downloads"});
+  //all.push_back({"Pictures",    h + "/Pictures"});
+  //all.push_back({"Music",       h + "/Music"});
+  //all.push_back({"Videos",      h + "/Videos"});
+  //all.push_back({"File System", "/"});
 
   std::vector<Place> filtered;
   std::error_code ec;
@@ -380,16 +390,35 @@ static void openEntry(AppState& app, int index)
 static void drawTopBar(NVGcontext* vg, FileManager& fm, float w)
 {
   bndBackground(vg, 0.0f, 0.0f, w, kTopBarHeight);
-
   float x = kPadX;
-  const char* labels[3] = {"<", ">", "^"};
+
+  bool homeHover = inRect(g_mouseX, g_mouseY, x, kBtnY, kBtnSize, kBtnSize);
+  bndToolButton(vg, x, kBtnY, kBtnSize, kBtnSize, BND_CENTER,
+                homeHover ? BND_HOVER : BND_DEFAULT,
+                BND_ICON_DISK_DRIVE, "");
+  if (homeHover && g_mouseClicked)
+  {
+    const char* home = std::getenv("HOME");
+    if (home != nullptr)
+    {
+      fm.setPath(home);
+    }
+  }
+  x += kBtnSize + kBtnGap;
+  x += 8.0f;
+
+  const int icons[3] = {BND_ICON_TRIA_LEFT, BND_ICON_TRIA_RIGHT, BND_ICON_TRIA_UP};
   const bool enabled[3] = {fm.canGoBack(), fm.canGoForward(), true};
   int action = -1;
   for (int i = 0; i < 3; i++)
   {
     bool hover = enabled[i] && inRect(g_mouseX, g_mouseY, x, kBtnY, kBtnSize, kBtnSize);
-    BNDwidgetState st = hover ? BND_HOVER : BND_DEFAULT;
-    bndOptionButton(vg, x, kBtnY, kBtnSize, kBtnSize, st, labels[i]);
+    BNDwidgetState st = BND_DEFAULT;
+    if (enabled[i] && hover)
+    {
+      st = BND_HOVER;
+    }
+    bndToolButton(vg, x, kBtnY, kBtnSize, kBtnSize, BND_CENTER, st, icons[i], "");
     if (hover && g_mouseClicked)
     {
       action = i;
@@ -410,6 +439,41 @@ static void drawTopBar(NVGcontext* vg, FileManager& fm, float w)
   {
     fm.goUp();
   }
+
+  //float x = kPadX;
+  //const int icons[3] = {BND_ICON_TRIA_LEFT, BND_ICON_TRIA_RIGHT, BND_ICON_TRIA_UP};
+  //const bool enabled[3] = {fm.canGoBack(), fm.canGoForward(), true};
+  //int action = -1;
+  //for (int i = 0; i < 3; i++)
+  //{
+  //  bool hover = enabled[i] && inRect(g_mouseX, g_mouseY, x, kBtnY, kBtnSize, kBtnSize);
+  //  BNDwidgetState st = BND_DEFAULT;
+  //  if (enabled[i] && hover)
+  //  {
+  //    st = BND_HOVER;
+  //  }
+  //  bndToolButton(vg, x, kBtnY, kBtnSize, kBtnSize, BND_CENTER, st, icons[i], "");
+
+  //  if (hover && g_mouseClicked)
+  //  {
+  //    action = i;
+  //  }
+  //  x += kBtnSize + kBtnGap;
+  //}
+  //x += 8.0f;
+
+  //if (action == 0)
+  //{
+  //  fm.goBack();
+  //}
+  //else if (action == 1)
+  //{
+  //  fm.goForward();
+  //}
+  //else if (action == 2)
+  //{
+  //  fm.goUp();
+  //}
 
   std::string path = fm.currentPath();
   std::vector<std::pair<std::string, std::string>> crumbs;
@@ -437,13 +501,21 @@ static void drawTopBar(NVGcontext* vg, FileManager& fm, float w)
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
   float cy = kTopBarHeight * 0.5f;
 
-  std::string navTo;
+    std::string navTo;
   for (size_t k = 0; k < crumbs.size(); k++)
   {
-    float bounds[4];
-    nvgTextBounds(vg, 0.0f, 0.0f, crumbs[k].first.c_str(), nullptr, bounds);
-    float tw = bounds[2] - bounds[0];
-    float segW = tw + 12.0f;
+    const bool isRoot = (k == 0);
+    float segW;
+    if (isRoot)
+    {
+      segW = kBtnSize;
+    }
+    else
+    {
+      float bounds[4];
+      nvgTextBounds(vg, 0.0f, 0.0f, crumbs[k].first.c_str(), nullptr, bounds);
+      segW = (bounds[2] - bounds[0]) + 12.0f;
+    }
     bool hover = inRect(g_mouseX, g_mouseY, x, 0.0f, segW, kTopBarHeight);
     if (hover)
     {
@@ -452,8 +524,16 @@ static void drawTopBar(NVGcontext* vg, FileManager& fm, float w)
       nvgFillColor(vg, nvgRGBf(0.3f, 0.3f, 0.3f));
       nvgFill(vg);
     }
-    nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
-    nvgText(vg, x + 6.0f, cy, crumbs[k].first.c_str(), nullptr);
+    if (isRoot)
+    {
+      bndIcon(vg, x + (segW - kIconSize) * 0.5f, cy - kIconSize * 0.5f,
+              BND_ICON_DISK_DRIVE);
+    }
+    else
+    {
+      nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
+      nvgText(vg, x + 6.0f, cy, crumbs[k].first.c_str(), nullptr);
+    }
     if (hover && g_mouseClicked)
     {
       navTo = crumbs[k].second;
@@ -468,6 +548,38 @@ static void drawTopBar(NVGcontext* vg, FileManager& fm, float w)
       x += (sb[2] - sb[0]) + 4.0f;
     }
   }
+
+  //std::string navTo;
+  //for (size_t k = 0; k < crumbs.size(); k++)
+  //{
+  //  float bounds[4];
+  //  nvgTextBounds(vg, 0.0f, 0.0f, crumbs[k].first.c_str(), nullptr, bounds);
+  //  float tw = bounds[2] - bounds[0];
+  //  float segW = tw + 12.0f;
+  //  bool hover = inRect(g_mouseX, g_mouseY, x, 0.0f, segW, kTopBarHeight);
+  //  if (hover)
+  //  {
+  //    nvgBeginPath(vg);
+  //    nvgRoundedRect(vg, x, kBtnY, segW, kBtnSize, 3.0f);
+  //    nvgFillColor(vg, nvgRGBf(0.3f, 0.3f, 0.3f));
+  //    nvgFill(vg);
+  //  }
+  //  nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
+  //  nvgText(vg, x + 6.0f, cy, crumbs[k].first.c_str(), nullptr);
+  //  if (hover && g_mouseClicked)
+  //  {
+  //    navTo = crumbs[k].second;
+  //  }
+  //  x += segW;
+  //  if (k + 1 < crumbs.size())
+  //  {
+  //    nvgFillColor(vg, nvgRGBf(0.5f, 0.5f, 0.5f));
+  //    nvgText(vg, x, cy, "/", nullptr);
+  //    float sb[4];
+  //    nvgTextBounds(vg, 0.0f, 0.0f, "/", nullptr, sb);
+  //    x += (sb[2] - sb[0]) + 4.0f;
+  //  }
+  //}
   if (!navTo.empty())
   {
     fm.setPath(navTo);
@@ -507,7 +619,8 @@ static void drawSidebar(NVGcontext* vg,
     {
       st = BND_HOVER;
     }
-    bndOptionButton(vg, itemX, y, itemW, itemH, st, p.label.c_str());
+    bndToolButton(vg, itemX, y, itemW, itemH, BND_LEFT, st, p.icon, p.label.c_str());
+
     if (hover && g_mouseClicked)
     {
       navTo = p.path;
