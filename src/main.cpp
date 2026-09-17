@@ -45,10 +45,17 @@ namespace
     int icon;
   };
 
+  struct Section
+  {
+    std::string title;
+    bool collapsed = false;
+    std::vector<Place> items;
+  };
+
   struct AppState
   {
     FileManager fm;
-    std::vector<Place> places;
+    std::vector<Section> sections;
     float scrollOffset = 0.0f;
     int selectedIndex = -1;
     std::string lastPath;
@@ -203,40 +210,45 @@ static void applyTheme()
   bndSetTheme(t);
 }
 
-static std::vector<Place> buildPlaces()
+static std::vector<Section> buildSections()
 {
-  std::vector<Place> all;
   const char* home = std::getenv("HOME");
   std::string h = (home != nullptr) ? std::string(home) : std::string("/");
-  all.push_back({"Home",        h,                  BND_ICON_FILE_FOLDER});
-  all.push_back({"Desktop",     h + "/Desktop",     BND_ICON_FILE_FOLDER});
-  all.push_back({"Documents",   h + "/Documents",   BND_ICON_FILE_FOLDER});
-  all.push_back({"Downloads",   h + "/Downloads",   BND_ICON_FILE_FOLDER});
-  all.push_back({"Pictures",    h + "/Pictures",    BND_ICON_FILE_IMAGE});
-  all.push_back({"Music",       h + "/Music",       BND_ICON_FILE_SOUND});
-  all.push_back({"Videos",      h + "/Videos",      BND_ICON_FILE_MOVIE});
-  all.push_back({"File System", "/",                BND_ICON_DISK_DRIVE});
 
-  //all.push_back({"Home",        h});
-  //all.push_back({"Desktop",     h + "/Desktop"});
-  //all.push_back({"Documents",   h + "/Documents"});
-  //all.push_back({"Downloads",   h + "/Downloads"});
-  //all.push_back({"Pictures",    h + "/Pictures"});
-  //all.push_back({"Music",       h + "/Music"});
-  //all.push_back({"Videos",      h + "/Videos"});
-  //all.push_back({"File System", "/"});
+  Section places;
+  places.title = "Places";
+  places.items.push_back({"Home",      h,                BND_ICON_FILE_FOLDER});
+  places.items.push_back({"Desktop",   h + "/Desktop",   BND_ICON_FILE_FOLDER});
+  places.items.push_back({"Documents", h + "/Documents", BND_ICON_FILE_FOLDER});
+  places.items.push_back({"Downloads", h + "/Downloads", BND_ICON_FILE_FOLDER});
+  places.items.push_back({"Pictures",  h + "/Pictures",  BND_ICON_FILE_IMAGE});
+  places.items.push_back({"Music",     h + "/Music",     BND_ICON_FILE_SOUND});
+  places.items.push_back({"Videos",    h + "/Videos",    BND_ICON_FILE_MOVIE});
 
-  std::vector<Place> filtered;
+  Section devices;
+  devices.title = "Devices";
+  devices.items.push_back({"File System", "/", BND_ICON_DISK_DRIVE});
+
+  std::vector<Section> all;
   std::error_code ec;
-  for (const auto& p : all)
+  for (auto& sec : {places, devices})
   {
-    ec.clear();
-    if (std::filesystem::is_directory(p.path, ec))
+    Section filtered;
+    filtered.title = sec.title;
+    for (const auto& p : sec.items)
     {
-      filtered.push_back(p);
+      ec.clear();
+      if (std::filesystem::is_directory(p.path, ec))
+      {
+        filtered.items.push_back(p);
+      }
+    }
+    if (!filtered.items.empty())
+    {
+      all.push_back(filtered);
     }
   }
-  return filtered;
+  return all;
 }
 
 static void openWithDefaultApp(const std::string& path)
@@ -636,45 +648,73 @@ static void drawTopBar(NVGcontext* vg, FileManager& fm, float w)
 
 static void drawSidebar(NVGcontext* vg,
                         FileManager& fm,
-                        const std::vector<Place>& places,
+                        std::vector<Section>& sections,
                         float h)
 {
   bndBackground(vg, 0.0f, kTopBarHeight, kSidebarWidth, h - kTopBarHeight);
 
-  nvgFontFace(vg, "sans");
-  nvgFontSize(vg, g_fontSize);
-  nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
-  nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-  nvgText(vg, kPadX, kTopBarHeight + 20.0f, "Places", nullptr);
-
+  const float headerH = 24.0f;
   const float itemH   = 26.0f;
   const float itemGap = 2.0f;
   const float itemX   = 8.0f;
   const float itemW   = kSidebarWidth - 16.0f;
-  float y = kTopBarHeight + 40.0f;
 
+  float y = kTopBarHeight + 6.0f;
   std::string navTo;
-  for (const auto& p : places)
-  {
-    bool hover   = inRect(g_mouseX, g_mouseY, itemX, y, itemW, itemH);
-    bool current = (fm.currentPath() == p.path);
-    BNDwidgetState st = BND_DEFAULT;
-    if (current)
-    {
-      st = BND_ACTIVE;
-    }
-    else if (hover)
-    {
-      st = BND_HOVER;
-    }
-    bndToolButton(vg, itemX, y, itemW, itemH, BND_LEFT, st, p.icon, p.label.c_str());
 
-    if (hover && g_mouseClicked)
+  for (auto& sec : sections)
+  {
+    bool headerHover = inRect(g_mouseX, g_mouseY, itemX, y, itemW, headerH);
+    if (headerHover)
     {
-      navTo = p.path;
+      nvgBeginPath(vg);
+      nvgRoundedRect(vg, itemX, y, itemW, headerH, 3.0f);
+      nvgFillColor(vg, nvgRGBf(0.25f, 0.25f, 0.25f));
+      nvgFill(vg);
     }
-    y += itemH + itemGap;
+
+    float iconX = itemX + 6.0f;
+    float iconY = y + (headerH - kIconSize) * 0.5f;
+    int triIcon = sec.collapsed ? BND_ICON_DISCLOSURE_TRI_RIGHT
+                                : BND_ICON_DISCLOSURE_TRI_DOWN;
+    bndIcon(vg, iconX, iconY, triIcon);
+
+    nvgFontFace(vg, "sans");
+    nvgFontSize(vg, g_fontSize - 1.0f);
+    nvgFillColor(vg, nvgRGBf(0.7f, 0.7f, 0.7f));
+    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+    nvgText(vg, iconX + kIconSize + kIconGap, y + headerH * 0.5f,
+            sec.title.c_str(), nullptr);
+
+    if (headerHover && g_mouseClicked)
+    {
+      sec.collapsed = !sec.collapsed;
+    }
+    y += headerH + 2.0f;
+
+    if (sec.collapsed)
+    {
+      y += 4.0f;
+      continue;
+    }
+
+    for (const auto& p : sec.items)
+    {
+      bool hover   = inRect(g_mouseX, g_mouseY, itemX, y, itemW, itemH);
+      bool current = (fm.currentPath() == p.path);
+      BNDwidgetState st = BND_DEFAULT;
+      if (current) st = BND_ACTIVE;
+      else if (hover) st = BND_HOVER;
+      bndToolButton(vg, itemX, y, itemW, itemH, BND_LEFT, st, p.icon, p.label.c_str());
+      if (hover && g_mouseClicked)
+      {
+        navTo = p.path;
+      }
+      y += itemH + itemGap;
+    }
+    y += 6.0f;
   }
+
   if (!navTo.empty())
   {
     fm.setPath(navTo);
@@ -1078,7 +1118,7 @@ int main(int argc, char** argv)
   applyTheme();
 
   AppState app;
-  app.places = buildPlaces();
+  app.sections = buildSections();
   app.lastPath = app.fm.currentPath();
 
   loadConfig(app);
@@ -1138,7 +1178,7 @@ int main(int argc, char** argv)
 
     drawTopBar(vg, app.fm, w);
     resetOnPathChange(app);
-    drawSidebar(vg, app.fm, app.places, h);
+    drawSidebar(vg, app.fm, app.sections, h);
     resetOnPathChange(app);
     drawMainHeader(vg, app, mainX, mainY, mainW);
     drawRows(vg, app, mainX, listTop, mainW, listH);
