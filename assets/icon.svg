@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+  <rect width="256" height="256" fill="#1a1a2e" rx="48"/>
+
+  <!-- r : coral block + stem -->
+  <rect x="48" y="72" width="36" height="112" rx="6" fill="#4ea8de"/>
+  <rect x="48" y="72" width="72" height="36" rx="6" fill="#f4978e"/>
+
+  <!-- a : yellow block with cutout -->
+  <rect x="136" y="108" width="36" height="76" rx="6" fill="#f9c74f"/>
+  <rect x="136" y="108" width="72" height="36" rx="6" fill="#f9c74f"/>
+  <rect x="172" y="144" width="36" height="40" rx="6" fill="#1a1a2e"/>
+
+  <!-- h : blue stem + arch -->
+  <rect x="212" y="72" width="36" height="112" rx="6" fill="#4ea8de"/>
+  <rect x="212" y="72" width="36" height="36" rx="6" fill="#4ea8de"/>
+  <rect x="212" y="108" width="36" height="40" rx="6" fill="#4ea8de"/>
+</svg>
