@@ -47,6 +47,7 @@ namespace
 
   struct Section
   {
+    std::string key;
     std::string title;
     bool collapsed = false;
     std::vector<Place> items;
@@ -78,6 +79,7 @@ namespace
   bool  g_navEnter = false;
   bool  g_navBack = false;
   bool  g_toggleHidden = false;
+  bool g_sidebarDirty = false;
 }
 
 static BNDwidgetTheme makeWidgetTheme()
@@ -129,7 +131,8 @@ static void loadConfig(AppState& app)
     }
     std::string key = line.substr(0, eq);
     std::string val = line.substr(eq + 1);
-    if (key.size() >= 4 && key.compare(0, 3, "col") == 0)
+    if (key.size() >= 4 && key.compare(0, 3, "col") == 0 &&
+        key[3] >= '0' && key[3] <= '9')
     {
       int idx = std::atoi(key.c_str() + 3);
       if (idx >= 0 && idx < kNumCols)
@@ -155,6 +158,17 @@ static void loadConfig(AppState& app)
       if (s >= 8.0f && s <= 48.0f)
       {
         g_fontSize = s;
+      }
+    }
+    else if (key.compare(0, 10, "collapsed_") == 0)
+    {
+      std::string secKey = key.substr(10);
+      for (auto& s : app.sections)
+      {
+        if (s.key == secKey)
+        {
+          s.collapsed = (val == "1");
+        }
       }
     }
   }
@@ -189,6 +203,10 @@ static void saveConfig(const AppState& app)
   }
   out << "path=" << app.fm.currentPath() << "\n";
   out << "hidden=" << (app.fm.showHidden() ? "1" : "0") << "\n";
+  for (const auto& s : app.sections)
+  {
+    out << "collapsed_" << s.key << "=" << (s.collapsed ? "1" : "0") << "\n";
+  }
 }
 static void applyTheme()
 {
@@ -216,6 +234,7 @@ static std::vector<Section> buildSections()
   std::string h = (home != nullptr) ? std::string(home) : std::string("/");
 
   Section places;
+  places.key = "places";
   places.title = "Places";
   places.items.push_back({"Home",      h,                BND_ICON_FILE_FOLDER});
   places.items.push_back({"Desktop",   h + "/Desktop",   BND_ICON_FILE_FOLDER});
@@ -226,6 +245,7 @@ static std::vector<Section> buildSections()
   places.items.push_back({"Videos",    h + "/Videos",    BND_ICON_FILE_MOVIE});
 
   Section devices;
+  devices.key = "devices";
   devices.title = "Devices";
   devices.items.push_back({"File System", "/", BND_ICON_DISK_DRIVE});
 
@@ -234,6 +254,7 @@ static std::vector<Section> buildSections()
   for (auto& sec : {places, devices})
   {
     Section filtered;
+    filtered.key = sec.key;
     filtered.title = sec.title;
     for (const auto& p : sec.items)
     {
@@ -646,6 +667,27 @@ static void drawTopBar(NVGcontext* vg, FileManager& fm, float w)
   }
 }
 
+static void drawTriangle(NVGcontext* vg, float cx, float cy, float size, bool pointingDown)
+{
+  float s = size * 0.5f;
+  nvgBeginPath(vg);
+  if (pointingDown)
+  {
+    nvgMoveTo(vg, cx - s, cy - s * 0.6f);
+    nvgLineTo(vg, cx + s, cy - s * 0.6f);
+    nvgLineTo(vg, cx,     cy + s * 0.6f);
+  }
+  else
+  {
+    nvgMoveTo(vg, cx - s * 0.6f, cy - s);
+    nvgLineTo(vg, cx - s * 0.6f, cy + s);
+    nvgLineTo(vg, cx + s * 0.6f, cy);
+  }
+  nvgClosePath(vg);
+  nvgFillColor(vg, nvgRGBf(0.75f, 0.75f, 0.75f));
+  nvgFill(vg);
+}
+
 static void drawSidebar(NVGcontext* vg,
                         FileManager& fm,
                         std::vector<Section>& sections,
@@ -673,22 +715,42 @@ static void drawSidebar(NVGcontext* vg,
       nvgFill(vg);
     }
 
-    float iconX = itemX + 6.0f;
-    float iconY = y + (headerH - kIconSize) * 0.5f;
-    int triIcon = sec.collapsed ? BND_ICON_DISCLOSURE_TRI_RIGHT
-                                : BND_ICON_DISCLOSURE_TRI_DOWN;
-    bndIcon(vg, iconX, iconY, triIcon);
+    const float triSize = 10.0f;
+    float triCx = itemX + 6.0f + triSize * 0.5f;
+    float triCy = y + headerH * 0.5f;
+    drawTriangle(vg, triCx, triCy, triSize, !sec.collapsed);
+
+    //const float triSize = 18.0f;
+    //float triCx = itemX + 6.0f + triSize * 0.5f;
+    //float triCy = y + headerH * 0.5f;
+    //int triIcon = sec.collapsed ? BND_ICON_DISCLOSURE_TRI_RIGHT
+    //                            : BND_ICON_DISCLOSURE_TRI_DOWN;
+    //drawScaledIcon(vg, triCx, triCy, triIcon, triSize);
 
     nvgFontFace(vg, "sans");
     nvgFontSize(vg, g_fontSize - 1.0f);
     nvgFillColor(vg, nvgRGBf(0.7f, 0.7f, 0.7f));
     nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-    nvgText(vg, iconX + kIconSize + kIconGap, y + headerH * 0.5f,
+    nvgText(vg, itemX + 6.0f + triSize + kIconGap, y + headerH * 0.5f,
             sec.title.c_str(), nullptr);
+
+    //float iconX = itemX + 6.0f;
+    //float iconY = y + (headerH - kIconSize) * 0.5f;
+    //int triIcon = sec.collapsed ? BND_ICON_DISCLOSURE_TRI_RIGHT
+    //                            : BND_ICON_DISCLOSURE_TRI_DOWN;
+    //bndIcon(vg, iconX, iconY, triIcon);
+
+    //nvgFontFace(vg, "sans");
+    //nvgFontSize(vg, g_fontSize - 1.0f);
+    //nvgFillColor(vg, nvgRGBf(0.7f, 0.7f, 0.7f));
+    //nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+    //nvgText(vg, iconX + kIconSize + kIconGap, y + headerH * 0.5f,
+    //        sec.title.c_str(), nullptr);
 
     if (headerHover && g_mouseClicked)
     {
       sec.collapsed = !sec.collapsed;
+      g_sidebarDirty = true;
     }
     y += headerH + 2.0f;
 
@@ -1120,7 +1182,6 @@ int main(int argc, char** argv)
   AppState app;
   app.sections = buildSections();
   app.lastPath = app.fm.currentPath();
-
   loadConfig(app);
 
   if (argc >= 2)
@@ -1179,6 +1240,11 @@ int main(int argc, char** argv)
     drawTopBar(vg, app.fm, w);
     resetOnPathChange(app);
     drawSidebar(vg, app.fm, app.sections, h);
+    if (g_sidebarDirty)
+    {
+      saveConfig(app);
+      g_sidebarDirty = false;
+    }
     resetOnPathChange(app);
     drawMainHeader(vg, app, mainX, mainY, mainW);
     drawRows(vg, app, mainX, listTop, mainW, listH);
