@@ -10,10 +10,12 @@
 #include "DejaVuSansFont.hpp"
 #include "BlenderIcons.hpp"
 
-#include <iostream>
-#include <string>
+#include <csignal>
 #include <cstdlib>
 #include <filesystem>
+#include <iostream>
+#include <string>
+#include <unistd.h>
 #include <utility>
 #include <vector>
 
@@ -32,11 +34,37 @@ namespace
   constexpr float kBtnSize      =  28.0f;
   constexpr float kBtnGap       =   4.0f;
   constexpr float kBtnY         = (kTopBarHeight - kBtnSize) * 0.5f;
+  constexpr double kDoubleClickTime = 0.4;
+
+  constexpr int kIconFile   = BND_ICON_FILE;
+  constexpr int kIconFolder = BND_ICON_FILE_FOLDER;
+  constexpr float kIconSize = 16.0f;
+  constexpr float kIconGap  = 4.0f;
+
+  struct Place
+  {
+    std::string label;
+    std::string path;
+  };
+
+  struct AppState
+  {
+    FileManager fm;
+    std::vector<Place> places;
+    float scrollOffset = 0.0f;
+    int selectedIndex = -1;
+    std::string lastPath;
+    double lastClickTime = 0.0;
+    int lastClickIndex = -1;
+  };
 
   float g_mouseX = 0.0f;
   float g_mouseY = 0.0f;
   bool  g_mouseClicked = false;
   float g_scrollY = 0.0f;
+  bool  g_navUp = false;
+  bool  g_navDown = false;
+  bool  g_navEnter = false;
 }
 
 static BNDwidgetTheme makeWidgetTheme()
@@ -53,13 +81,24 @@ static BNDwidgetTheme makeWidgetTheme()
   return w;
 }
 
-namespace
+static void applyTheme()
 {
-  struct Place
-  {
-    std::string label;
-    std::string path;
-  };
+  BNDwidgetTheme w = makeWidgetTheme();
+  BNDtheme t{};
+  t.backgroundColor = nvgRGBf(0.2f, 0.2f, 0.2f);
+  t.regularTheme = w;
+  t.toolTheme = w;
+  t.radioTheme = w;
+  t.textFieldTheme = w;
+  t.optionTheme = w;
+  t.choiceTheme = w;
+  t.numberFieldTheme = w;
+  t.sliderTheme = w;
+  t.scrollBarTheme = w;
+  t.tooltipTheme = w;
+  t.menuTheme = w;
+  t.menuItemTheme = w;
+  bndSetTheme(t);
 }
 
 static std::vector<Place> buildPlaces()
@@ -89,24 +128,14 @@ static std::vector<Place> buildPlaces()
   return filtered;
 }
 
-static void applyTheme()
+static void openWithDefaultApp(const std::string& path)
 {
-  BNDwidgetTheme w = makeWidgetTheme();
-  BNDtheme t{};
-  t.backgroundColor = nvgRGBf(0.2f, 0.2f, 0.2f);
-  t.regularTheme = w;
-  t.toolTheme = w;
-  t.radioTheme = w;
-  t.textFieldTheme = w;
-  t.optionTheme = w;
-  t.choiceTheme = w;
-  t.numberFieldTheme = w;
-  t.sliderTheme = w;
-  t.scrollBarTheme = w;
-  t.tooltipTheme = w;
-  t.menuTheme = w;
-  t.menuItemTheme = w;
-  bndSetTheme(t);
+  pid_t pid = fork();
+  if (pid == 0)
+  {
+    execlp("xdg-open", "xdg-open", path.c_str(), static_cast<char*>(nullptr));
+    _exit(127);
+  }
 }
 
 static void errorCallback(int error, const char* description)
@@ -121,7 +150,15 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
   if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
   {
     glfwSetWindowShouldClose(window, GLFW_TRUE);
+    return;
   }
+  if (action != GLFW_PRESS && action != GLFW_REPEAT)
+  {
+    return;
+  }
+  if (key == GLFW_KEY_UP)    g_navUp = true;
+  if (key == GLFW_KEY_DOWN)  g_navDown = true;
+  if (key == GLFW_KEY_ENTER) g_navEnter = true;
 }
 
 static void cursorPosCallback(GLFWwindow* window, double x, double y)
@@ -164,6 +201,27 @@ static std::string joinPath(const std::string& base, const std::string& name)
     return base + name;
   }
   return base + "/" + name;
+}
+
+static void openEntry(AppState& app, int index)
+{
+  const auto& entries = app.fm.entries();
+  if (index < 0 || index >= static_cast<int>(entries.size()))
+  {
+    return;
+  }
+  const Entry e = entries[index];
+  std::string full = joinPath(app.fm.currentPath(), e.name);
+  if (e.isDirectory)
+  {
+    app.fm.setPath(full);
+    app.selectedIndex = -1;
+    app.scrollOffset = 0.0f;
+  }
+  else
+  {
+    openWithDefaultApp(full);
+  }
 }
 
 static void drawTopBar(NVGcontext* vg, FileManager& fm, float w)
@@ -318,7 +376,8 @@ static void drawMainHeader(NVGcontext* vg, float x, float y, float w)
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
   float cy = y + kHeaderHeight * 0.5f;
   float cx = x + kPadX;
-  nvgText(vg, cx, cy, "Name", nullptr);        cx += kColNameW;
+  nvgText(vg, cx + kIconSize + kIconGap, cy, "Name", nullptr);
+  cx += kColNameW;
   nvgText(vg, cx, cy, "Size", nullptr);        cx += kColSizeW;
   nvgText(vg, cx, cy, "Type", nullptr);        cx += kColTypeW;
   nvgText(vg, cx, cy, "Owner", nullptr);       cx += kColOwnerW;
@@ -328,7 +387,8 @@ static void drawMainHeader(NVGcontext* vg, float x, float y, float w)
 static void drawRows(NVGcontext* vg,
                      const FileManager& fm,
                      float x, float y, float w, float h,
-                     float scrollOffset)
+                     float scrollOffset,
+                     int selectedIndex)
 {
   nvgFontFace(vg, "sans");
   nvgFontSize(vg, 13.0f);
@@ -348,28 +408,156 @@ static void drawRows(NVGcontext* vg,
     {
       break;
     }
-    const Entry& e = entries[i];
-    if (inRect(g_mouseX, g_mouseY, x, rowY, w, kRowHeight))
+    bool selected = (static_cast<int>(i) == selectedIndex);
+    bool hover = inRect(g_mouseX, g_mouseY, x, rowY, w, kRowHeight);
+    if (selected)
+    {
+      nvgBeginPath(vg);
+      nvgRect(vg, x, rowY, w, kRowHeight);
+      nvgFillColor(vg, nvgRGBf(0.2f, 0.35f, 0.55f));
+      nvgFill(vg);
+    }
+    else if (hover)
     {
       nvgBeginPath(vg);
       nvgRect(vg, x, rowY, w, kRowHeight);
       nvgFillColor(vg, nvgRGBf(0.25f, 0.25f, 0.25f));
       nvgFill(vg);
     }
-    nvgFillColor(vg, nvgRGBf(0.88f, 0.88f, 0.88f));
+
+    const Entry& e = entries[i];
     float cy = rowY + kRowHeight * 0.5f;
     float cx = x + kPadX;
-    nvgText(vg, cx, cy, e.name.c_str(), nullptr);      cx += kColNameW;
-    nvgText(vg, cx, cy, e.sizeText.c_str(), nullptr);  cx += kColSizeW;
-    nvgText(vg, cx, cy, e.typeText.c_str(), nullptr);  cx += kColTypeW;
-    nvgText(vg, cx, cy, e.ownerText.c_str(), nullptr); cx += kColOwnerW;
-    nvgText(vg, cx, cy, e.permText.c_str(), nullptr);
+
+    int iconId = e.isDirectory ? kIconFolder : kIconFile;
+    float iconX = cx;
+    float iconY = cy - kIconSize * 0.5f;
+    bndIcon(vg, iconX, iconY, iconId);
+
+    float nameX = iconX + kIconSize + kIconGap;
+
+    nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
+    nvgText(vg, nameX, cy, e.name.c_str(), nullptr);
+
+    float colX = x + kPadX + kColNameW;
+    nvgText(vg, colX, cy, e.sizeText.c_str(), nullptr);  colX += kColSizeW;
+    nvgText(vg, colX, cy, e.typeText.c_str(), nullptr);  colX += kColTypeW;
+    nvgText(vg, colX, cy, e.ownerText.c_str(), nullptr); colX += kColOwnerW;
+    nvgText(vg, colX, cy, e.permText.c_str(), nullptr);
   }
   nvgRestore(vg);
 }
 
+static void resetOnPathChange(AppState& app)
+{
+  if (app.fm.currentPath() == app.lastPath)
+  {
+    return;
+  }
+  app.lastPath = app.fm.currentPath();
+  app.selectedIndex = -1;
+  app.scrollOffset = 0.0f;
+}
+
+static void handleListClick(AppState& app, float listX, float listTop, float listW, float listH)
+{
+  if (!g_mouseClicked || !inRect(g_mouseX, g_mouseY, listX, listTop, listW, listH))
+  {
+    return;
+  }
+  int idx = static_cast<int>((g_mouseY - listTop + app.scrollOffset) / kRowHeight);
+  int count = static_cast<int>(app.fm.entries().size());
+  if (idx < 0 || idx >= count)
+  {
+    return;
+  }
+  double now = glfwGetTime();
+  bool isDouble = (idx == app.lastClickIndex) && (now - app.lastClickTime < kDoubleClickTime);
+  app.lastClickTime = now;
+  app.lastClickIndex = idx;
+
+  if (isDouble)
+  {
+    openEntry(app, idx);
+    app.lastClickIndex = -1;
+  }
+  else
+  {
+    app.selectedIndex = idx;
+  }
+}
+
+static void handleKeyboardNav(AppState& app, float listH)
+{
+  int count = static_cast<int>(app.fm.entries().size());
+  if (g_navUp && count > 0)
+  {
+    if (app.selectedIndex < 0)
+    {
+      app.selectedIndex = 0;
+    }
+    else if (app.selectedIndex > 0)
+    {
+      app.selectedIndex--;
+    }
+  }
+  if (g_navDown && count > 0)
+  {
+    if (app.selectedIndex < 0)
+    {
+      app.selectedIndex = 0;
+    }
+    else if (app.selectedIndex < count - 1)
+    {
+      app.selectedIndex++;
+    }
+  }
+  if (g_navEnter && app.selectedIndex >= 0)
+  {
+    openEntry(app, app.selectedIndex);
+  }
+  g_navUp = false;
+  g_navDown = false;
+  g_navEnter = false;
+
+  if (app.selectedIndex >= 0)
+  {
+    float rowTop = static_cast<float>(app.selectedIndex) * kRowHeight;
+    if (rowTop < app.scrollOffset)
+    {
+      app.scrollOffset = rowTop;
+    }
+    else if (rowTop + kRowHeight > app.scrollOffset + listH)
+    {
+      app.scrollOffset = rowTop + kRowHeight - listH;
+    }
+  }
+}
+
+static void applyScroll(AppState& app, float listH)
+{
+  float contentH = static_cast<float>(app.fm.entries().size()) * kRowHeight;
+  float maxScroll = contentH - listH;
+  if (maxScroll < 0.0f)
+  {
+    maxScroll = 0.0f;
+  }
+  app.scrollOffset -= g_scrollY * 40.0f;
+  if (app.scrollOffset < 0.0f)
+  {
+    app.scrollOffset = 0.0f;
+  }
+  if (app.scrollOffset > maxScroll)
+  {
+    app.scrollOffset = maxScroll;
+  }
+  g_scrollY = 0.0f;
+}
+
 int main()
 {
+  std::signal(SIGCHLD, SIG_IGN);
+
   glfwSetErrorCallback(errorCallback);
   if (!glfwInit())
   {
@@ -419,9 +607,9 @@ int main()
 
   applyTheme();
 
-  FileManager fileManager;
-  std::vector<Place> places = buildPlaces();
-  float scrollOffset = 0.0f;
+  AppState app;
+  app.places = buildPlaces();
+  app.lastPath = app.fm.currentPath();
 
   while (!glfwWindowShouldClose(window))
   {
@@ -441,50 +629,25 @@ int main()
 
     float w = static_cast<float>(winW);
     float h = static_cast<float>(winH);
-
-    drawTopBar(vg, fileManager, w);
-
     float mainX = kSidebarWidth;
     float mainY = kTopBarHeight;
     float mainW = w - kSidebarWidth;
     float listTop = mainY + kHeaderHeight;
     float listH = h - listTop;
 
-    float contentH = static_cast<float>(fileManager.entries().size()) * kRowHeight;
-    float maxScroll = contentH - listH;
-    if (maxScroll < 0.0f)
-    {
-      maxScroll = 0.0f;
-    }
-    scrollOffset -= g_scrollY * 40.0f;
-    if (scrollOffset < 0.0f)
-    {
-      scrollOffset = 0.0f;
-    }
-    if (scrollOffset > maxScroll)
-    {
-      scrollOffset = maxScroll;
-    }
-    g_scrollY = 0.0f;
+    resetOnPathChange(app);
+    applyScroll(app, listH);
+    handleListClick(app, mainX, listTop, mainW, listH);
+    resetOnPathChange(app);
+    handleKeyboardNav(app, listH);
 
-    if (g_mouseClicked && inRect(g_mouseX, g_mouseY, mainX, listTop, mainW, listH))
-    {
-      int idx = static_cast<int>((g_mouseY - listTop + scrollOffset) / kRowHeight);
-      const auto& entries = fileManager.entries();
-      if (idx >= 0 && idx < static_cast<int>(entries.size()))
-      {
-        const Entry& e = entries[idx];
-        if (e.isDirectory)
-        {
-          fileManager.setPath(joinPath(fileManager.currentPath(), e.name));
-          scrollOffset = 0.0f;
-        }
-      }
-    }
-
-    drawSidebar(vg, fileManager, places, h);
+    drawTopBar(vg, app.fm, w);
+    resetOnPathChange(app);
+    drawSidebar(vg, app.fm, app.places, h);
+    resetOnPathChange(app);
     drawMainHeader(vg, mainX, mainY, mainW);
-    drawRows(vg, fileManager, mainX, listTop, mainW, listH, scrollOffset);
+    drawRows(vg, app.fm, mainX, listTop, mainW, listH,
+             app.scrollOffset, app.selectedIndex);
 
     nvgEndFrame(vg);
 
