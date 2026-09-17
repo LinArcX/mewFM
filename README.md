@@ -1,0 +1,126 @@
+# rah
+
+A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and oui-blendish.
+
+## Features
+
+- File listing with Name, Size, Type, Owner, and Permissions columns
+- Top navigation bar: Home, Back, Forward, Up, and clickable breadcrumb
+- Collapsible sidebar with Places and Devices sections
+- Resizable columns (drag separator in the header row)
+- Extension-aware icons (images, video, audio, documents, fonts, source code)
+- Single-click to select, double-click to open
+  - Directories navigate into themselves
+  - Executables run directly
+  - Other files open with `xdg-open`
+- Keyboard navigation: Up/Down arrows, Enter, Backspace (go up), Ctrl+H (toggle hidden files), Escape (quit)
+- Scroll wheel support
+- Session persistence via `~/.config/rah/config`:
+  - Column widths
+  - Last visited path
+  - Hidden-file visibility
+  - Collapsed state of sidebar sections
+  - Font size
+- Command-line argument: `rah <path>` opens that directory (or the parent, if a file is given)
+- Font and icons embedded into the binary — no runtime asset files needed
+
+## Requirements
+
+Void Linux:
+
+```sh
+sudo xbps-install -Su base-devel glfw-devel MesaLib-devel pkg-config
+Other distributions: install the equivalent of GLFW 3, OpenGL development headers, and pkg-config.
+
+Runtime dependencies: OpenGL 2.0 (works on Intel HD 3000 and older), GLFW's X11 backend.
+
+## Build
+
+```sh
+./scripts/build.sh              # debug build (default)
+./scripts/build.sh --debug
+./scripts/build.sh --release
+./scripts/build.sh --clean                  # remove build/debug and build/release
+./scripts/build.sh --clean --debug          # remove only build/debug
+./scripts/build.sh --clean --release        # remove only build/release
+```
+
+The binary is written to `build/debug/rah` or `build/release/rah`.
+
+On a successful build, the script also installs:
+
+- `build/<mode>/rah` → `/usr/bin/rah`
+
+- `assets/icon.svg` → `/usr/share/icons/hicolor/scalable/apps/rah.svg`
+
+- `assets/rah.desktop` → `/usr/share/applications/rah.desktop`
+
+`sudo` is used only if the plain install fails.
+
+## Run
+```sh
+rah                     # opens the last visited path, or $PWD on first run
+rah ~/Documents         # opens ~/Documents
+rah /path/to/file.txt   # opens the parent directory
+```
+
+## Configuration
+Located at `~/.config/rah/config` (or `$XDG_CONFIG_HOME/rah/config`). Lines:
+
+```text
+col0=260
+col1=90
+col2=110
+col3=100
+col4=110
+path=/home/user
+hidden=0
+fontSize=14
+collapsed_places=0
+collapsed_devices=0
+```
+
+Key	Meaning
+col0 .. col4	Column widths in pixels for Name, Size, Type, Owner, Permissions
+path	Last visited directory
+hidden	1 to show hidden files, 0 to hide
+fontSize	Base font size (8–48). Row height follows automatically
+collapsed_<key>	Collapse state for sidebar sections (places, devices)
+
+Values for `path`, `hidden`, and `collapsed_*` are written automatically. Column widths are written on drag release. fontSize is user-authored — `rah` does not overwrite it.
+
+## Project Layout
+```text
+.
+├── assets/
+│   ├── fonts/Hermit/HurmitNerdFont-Regular.otf   # embedded font
+│   ├── icon.svg
+│   └── rah.desktop
+├── scripts/
+│   └── build.sh
+├── src/
+│   ├── FileManager.cpp
+│   ├── FileManager.hpp
+│   └── main.cpp
+└── third_party/
+    ├── nanovg/                                   # rendering
+    └── oui-blendish/                             # widget library
+```
+
+`build/generated/` (created by the build script) holds the xxd-converted font and icon-sheet headers. It's regenerated on every build and removed by `--clean`.
+
+## Implementation Notes
+- No exceptions. Errors are handled via return values and system error codes.
+
+- No templates, no operator overloading, no RTTI.
+
+- No macros except the mandatory NANOVG_GL2 and UI_INLINE shims required by the third-party libraries.
+
+- NanoVG GL2 backend is used for maximum portability on older hardware.
+
+- Assets are embedded via xxd -i into C headers so the binary is self-contained.
+
+- File system access uses std::filesystem for iteration and POSIX stat / getpwuid for owner and permission metadata.
+
+## License
+Not yet chosen.
