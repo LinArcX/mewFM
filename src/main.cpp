@@ -981,7 +981,29 @@ static void applyScroll(AppState& app, float listH)
   g_scrollY = 0.0f;
 }
 
-int main()
+static std::string expandTilde(const std::string& p)
+{
+  if (p.empty() || p[0] != '~')
+  {
+    return p;
+  }
+  const char* home = std::getenv("HOME");
+  if (home == nullptr)
+  {
+    return p;
+  }
+  if (p.size() == 1)
+  {
+    return std::string(home);
+  }
+  if (p[1] == '/')
+  {
+    return std::string(home) + p.substr(1);
+  }
+  return p;
+}
+
+int main(int argc, char** argv)
 {
   std::signal(SIGCHLD, SIG_IGN);
 
@@ -1040,6 +1062,27 @@ int main()
   app.lastPath = app.fm.currentPath();
 
   loadConfig(app);
+
+  if (argc >= 2)
+  {
+    std::string requested = expandTilde(argv[1]);
+    std::error_code ec;
+    if (std::filesystem::is_directory(requested, ec))
+    {
+      app.fm.resetTo(std::filesystem::canonical(requested, ec).string());
+      app.lastPath = app.fm.currentPath();
+    }
+    else if (std::filesystem::is_regular_file(requested, ec))
+    {
+      std::filesystem::path fp = std::filesystem::canonical(requested, ec);
+      app.fm.resetTo(fp.parent_path().string());
+      app.lastPath = app.fm.currentPath();
+    }
+    else
+    {
+      std::cerr << "rah: invalid path: " << argv[1] << std::endl;
+    }
+  }
 
   while (!glfwWindowShouldClose(window))
   {

@@ -85,3 +85,12 @@ g++ "$OUT/impl.o" "$OUT/nanovg.o" "$OUT/main.o" "$OUT/FileManager.o" \
   -lm -o "$OUT/rah"
 
 echo "${C_GREEN}>>> done:${C_RESET} ${C_BOLD}$OUT/rah${C_RESET}"
+
+echo "${C_CYAN}>>> installing to /usr/bin/rah${C_RESET}"
+if install -m 755 "$OUT/rah" /usr/bin/rah 2>/dev/null; then
+  echo "${C_GREEN}>>> installed:${C_RESET} ${C_BOLD}/usr/bin/rah${C_RESET}"
+else
+  echo "  ${C_DIM}requires sudo${C_RESET}"
+  sudo install -m 755 "$OUT/rah" /usr/bin/rah
+  echo "${C_GREEN}>>> installed:${C_RESET} ${C_BOLD}/usr/bin/rah${C_RESET}"
+fi
