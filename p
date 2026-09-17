@@ -103,7 +103,7 @@ menu () {
   
   case $selected in
     "build(debug)")
-      ./scripts/build.sh --install --debug
+      ./scripts/build.sh --debug
       if [ $? -eq 1 ]; then
         # error
         mpg123 -f 3000 /home/linarcx/VoidConf/assets/error2.mp3 > /dev/null 2>&1 
@@ -146,7 +146,7 @@ menu () {
       ;;
     "clean(debug)")
       echo ">>> cleaning build/debug directory"
-      ./scripts/build.sh --clean
+      ./scripts/build.sh --clean --debug
       if [ $? -eq 1 ]; then
         # error
         mpg123 -f 3000 /home/linarcx/VoidConf/assets/error2.mp3 > /dev/null 2>&1 
@@ -156,7 +156,7 @@ menu () {
       fi
       ;;
     "build(release)")
-      ./scripts/build.sh --install
+      ./scripts/build.sh --release 
       if [ $? -eq 1 ]; then
         # error
         mpg123 -f 3000 /home/linarcx/VoidConf/assets/error2.mp3 > /dev/null 2>&1 
@@ -172,7 +172,7 @@ menu () {
       cd ../..
       ;;
     "clean(release)")
-      ./scripts/build.sh --clean
+      ./scripts/build.sh --clean --release
       if [ $? -eq 1 ]; then
         # error
         mpg123 -f 3000 /home/linarcx/VoidConf/assets/error2.mp3 > /dev/null 2>&1 

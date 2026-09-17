@@ -11,6 +11,59 @@
 
 #include <iostream>
 #include <string>
+#include <unistd.h>
+
+static std::string exeDir()
+{
+  char buf[4096];
+  ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+  if (n <= 0)
+  {
+    return ".";
+  }
+  buf[n] = '\0';
+  std::string path(buf);
+  size_t slash = path.find_last_of('/');
+  if (slash == std::string::npos)
+  {
+    return ".";
+  }
+  return path.substr(0, slash);
+}
+
+static BNDwidgetTheme makeDefaultWidgetTheme()
+{
+  BNDwidgetTheme w{};
+  w.outlineColor = nvgRGBf(0.098f, 0.098f, 0.098f);
+  w.itemColor = nvgRGBf(0.098f, 0.098f, 0.098f);
+  w.innerColor = nvgRGBf(0.3f, 0.3f, 0.3f);
+  w.innerSelectedColor = nvgRGBf(0.4f, 0.4f, 0.4f);
+  w.textColor = nvgRGBf(0.9f, 0.9f, 0.9f);
+  w.textSelectedColor = nvgRGBf(1.0f, 1.0f, 1.0f);
+  w.shadeTop = 100;
+  w.shadeDown = 0;
+  return w;
+}
+
+static void applyTheme()
+{
+  BNDwidgetTheme w = makeDefaultWidgetTheme();
+  BNDtheme t{};
+  t.backgroundColor = nvgRGBf(0.2f, 0.2f, 0.2f);
+  t.regularTheme = w;
+  t.toolTheme = w;
+  t.radioTheme = w;
+  t.textFieldTheme = w;
+  t.optionTheme = w;
+  t.choiceTheme = w;
+  t.numberFieldTheme = w;
+  t.sliderTheme = w;
+  t.scrollBarTheme = w;
+  t.tooltipTheme = w;
+  t.menuTheme = w;
+  t.menuItemTheme = w;
+  bndSetTheme(t);
+}
 
 static void errorCallback(int error, const char* description)
 {
@@ -57,19 +110,24 @@ int main()
     return 1;
   }
 
-  int font = nvgCreateFont(vg, "sans", "DejaVuSans.ttf");
+  const std::string base = exeDir();
+  const std::string fontPath = base + "/DejaVuSans.ttf";
+  int font = nvgCreateFont(vg, "sans", fontPath.c_str());
+
   if (font == -1)
   {
     std::cerr << "Could not load font." << std::endl;
   }
   bndSetFont(font);
 
-  int iconImage = nvgCreateImage(vg, "blender_icons16.png", 0);
+  const std::string iconPath = base + "/blender_icons16.png";
+  int iconImage = nvgCreateImage(vg, iconPath.c_str(), 0);
   if (iconImage == -1)
   {
     std::cerr << "Could not load icon sheet." << std::endl;
   }
   bndSetIconImage(iconImage);
+  applyTheme();
 
   FileManager fileManager;
 

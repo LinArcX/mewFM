@@ -1,23 +1,82 @@
 #!/bin/bash
 set -e
 
-ROOT="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+
+# ---------- colors ----------
+if [ -t 1 ]; then
+  C_RESET=$'\033[0m'
+  C_DIM=$'\033[2m'
+  C_BOLD=$'\033[1m'
+  C_CYAN=$'\033[36m'
+  C_YELLOW=$'\033[33m'
+  C_GREEN=$'\033[32m'
+  C_RED=$'\033[31m'
+else
+  C_RESET=""; C_DIM=""; C_BOLD=""
+  C_CYAN=""; C_YELLOW=""; C_GREEN=""; C_RED=""
+fi
+
+# ---------- arguments ----------
+MODE="debug"
+MODE_SET=0
+CLEAN=0
+for arg in "$@"; do
+  case "$arg" in
+    --debug)   MODE="debug";   MODE_SET=1 ;;
+    --release) MODE="release"; MODE_SET=1 ;;
+    --clean)   CLEAN=1 ;;
+    -h|--help)
+      echo "Usage: scripts/build.sh [--debug|--release|--clean]"
+      exit 0
+      ;;
+    *) echo "${C_RED}build.sh: unknown option: $arg${C_RESET}" >&2; exit 1 ;;
+  esac
+done
+
+# ---------- clean ----------
+if [ "$CLEAN" = "1" ]; then
+  echo "${C_BOLD}${C_CYAN}>>> clean mode${C_RESET}"
+  if [ "$MODE_SET" = "1" ]; then
+    TARGETS=("build/$MODE")
+  else
+    TARGETS=("build/debug" "build/release")
+  fi
+  for t in "${TARGETS[@]}"; do
+    if [ -d "$t" ]; then
+      echo "  ${C_DIM}rm -rf $t${C_RESET}"
+      rm -rf "$t"
+    fi
+  done
+  echo "${C_GREEN}>>> clean done${C_RESET}"
+  exit 0
+fi
+
+# ---------- build ----------
+OUT="build/$MODE"
+mkdir -p "$OUT"
 
 CXXFLAGS="-std=c++17 -O2 -Isrc -Ithird_party/nanovg -Ithird_party/oui-blendish -DGL_GLEXT_PROTOTYPES"
 CFLAGS="-O2 -Ithird_party/nanovg -Ithird_party/oui-blendish -DGL_GLEXT_PROTOTYPES"
 
-echo ">>> compiling implementation TU (C)"
-gcc $CFLAGS -fgnu89-inline -c ../third_party/impl.c -o ../build/impl.o
-gcc $CFLAGS -c ../third_party/nanovg/nanovg.c -o ../build/nanovg.o
+echo "${C_BOLD}${C_CYAN}>>> mode:${C_RESET} ${C_BOLD}$MODE${C_RESET}"
 
-echo ">>> compiling sources (C++)"
-g++ $CXXFLAGS -c ../src/main.cpp -o ../build/main.o
-g++ $CXXFLAGS -c ../src/FileManager.cpp -o ../build/FileManager.o
+echo "${C_CYAN}>>> compiling implementation TU (C)${C_RESET}"
+gcc $CFLAGS -fgnu89-inline -c third_party/impl.c -o "$OUT/impl.o"
+gcc $CFLAGS -c third_party/nanovg/nanovg.c -o "$OUT/nanovg.o"
 
-echo ">>> linking"
-g++ ../build/impl.o ../build/nanovg.o ../build/main.o ../build/FileManager.o \
+echo "${C_CYAN}>>> compiling sources (C++)${C_RESET}"
+g++ $CXXFLAGS -c src/main.cpp -o "$OUT/main.o"
+g++ $CXXFLAGS -c src/FileManager.cpp -o "$OUT/FileManager.o"
+
+echo "${C_CYAN}>>> linking${C_RESET}"
+g++ "$OUT/impl.o" "$OUT/nanovg.o" "$OUT/main.o" "$OUT/FileManager.o" \
   $(pkg-config --cflags --libs glfw3 gl) \
-  -lm -o ../build/rah
+  -lm -o "$OUT/rah"
 
-echo ">>> done: build/rah"
+echo "${C_CYAN}>>> copying runtime assets${C_RESET}"
+cp third_party/oui-blendish/DejaVuSans.ttf      "$OUT/"
+cp third_party/oui-blendish/blender_icons16.png "$OUT/"
+
+echo "${C_GREEN}>>> done:${C_RESET} ${C_BOLD}$OUT/rah${C_RESET}"
