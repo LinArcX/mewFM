@@ -68,7 +68,7 @@ CFLAGS="-O2 -Ithird_party/nanovg -Ithird_party/oui-blendish -DGL_GLEXT_PROTOTYPE
 echo "${C_BOLD}${C_CYAN}>>> mode:${C_RESET} ${C_BOLD}$MODE${C_RESET}"
 
 echo "${C_CYAN}>>> embedding assets (xxd)${C_RESET}"
-xxd -i -n fontData third_party/oui-blendish/DejaVuSans.ttf      > "$GEN/DejaVuSansFont.hpp"
+xxd -i -n fontData assets/fonts/Hermit/HurmitNerdFont-Regular.otf > "$GEN/HurmitFont.hpp"
 xxd -i -n iconData third_party/oui-blendish/blender_icons16.png > "$GEN/BlenderIcons.hpp"
 
 echo "${C_CYAN}>>> compiling implementation TU (C)${C_RESET}"

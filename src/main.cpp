@@ -7,7 +7,7 @@
 #include "../third_party/nanovg/nanovg_gl.h"
 #include "../third_party/oui-blendish/blendish.h"
 #include "FileManager.hpp"
-#include "DejaVuSansFont.hpp"
+#include "HurmitFont.hpp"
 #include "BlenderIcons.hpp"
 
 #include <fstream>
@@ -25,8 +25,9 @@ namespace
 {
   constexpr float kTopBarHeight = 40.0f;
   constexpr float kSidebarWidth = 220.0f;
-  constexpr float kRowHeight    = 24.0f;
   constexpr float kHeaderHeight = 26.0f;
+  float g_fontSize  = 16.0f;
+  float g_rowHeight = 24.0f;
   constexpr float kPadX         =   8.0f;
   constexpr float kBtnSize      =  28.0f;
   constexpr float kBtnGap       =   4.0f;
@@ -141,6 +142,14 @@ static void loadConfig(AppState& app)
     {
       savedHidden = (val == "1");
     }
+    else if (key == "fontSize")
+    {
+      float s = static_cast<float>(std::atof(val.c_str()));
+      if (s >= 8.0f && s <= 48.0f)
+      {
+        g_fontSize = s;
+      }
+    }
   }
 
   if (savedHidden)
@@ -153,6 +162,7 @@ static void loadConfig(AppState& app)
   {
     app.fm.resetTo(savedPath);
   }
+  g_rowHeight = g_fontSize + 10.0f;
 }
 
 static void saveConfig(const AppState& app)
@@ -415,6 +425,16 @@ static void openEntry(AppState& app, int index)
   }
 }
 
+static void drawSeparator(NVGcontext* vg, float x1, float y1, float x2, float y2)
+{
+  nvgBeginPath(vg);
+  nvgMoveTo(vg, x1, y1);
+  nvgLineTo(vg, x2, y2);
+  nvgStrokeColor(vg, nvgRGBf(0.08f, 0.08f, 0.08f));
+  nvgStrokeWidth(vg, 1.0f);
+  nvgStroke(vg);
+}
+
 static void drawTopBar(NVGcontext* vg, FileManager& fm, float w)
 {
   bndBackground(vg, 0.0f, 0.0f, w, kTopBarHeight);
@@ -525,7 +545,7 @@ static void drawTopBar(NVGcontext* vg, FileManager& fm, float w)
   }
 
   nvgFontFace(vg, "sans");
-  nvgFontSize(vg, 14.0f);
+  nvgFontSize(vg, g_fontSize);
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
   float cy = kTopBarHeight * 0.5f;
 
@@ -622,7 +642,7 @@ static void drawSidebar(NVGcontext* vg,
   bndBackground(vg, 0.0f, kTopBarHeight, kSidebarWidth, h - kTopBarHeight);
 
   nvgFontFace(vg, "sans");
-  nvgFontSize(vg, 14.0f);
+  nvgFontSize(vg, g_fontSize);
   nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
   nvgText(vg, kPadX, kTopBarHeight + 20.0f, "Places", nullptr);
@@ -727,16 +747,16 @@ static void drawMainHeader(NVGcontext* vg, AppState& app, float x, float y, floa
   }
 
   nvgFontFace(vg, "sans");
-  nvgFontSize(vg, 13.0f);
+  nvgFontSize(vg, g_fontSize - 1.0f);
   nvgFillColor(vg, nvgRGBf(0.7f, 0.7f, 0.7f));
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
   float cy = y + kHeaderHeight * 0.5f;
 
-  nvgText(vg, columnX(app, x, 0) + kIconSize + kIconGap, cy, "Name", nullptr);
-  nvgText(vg, columnX(app, x, 1), cy, "Size", nullptr);
-  nvgText(vg, columnX(app, x, 2), cy, "Type", nullptr);
-  nvgText(vg, columnX(app, x, 3), cy, "Owner", nullptr);
-  nvgText(vg, columnX(app, x, 4), cy, "Permissions", nullptr);
+  nvgText(vg, columnX(app, x, 0) + kIconSize + kIconGap, cy, " Name", nullptr);
+  nvgText(vg, columnX(app, x, 1), cy, " Size", nullptr);
+  nvgText(vg, columnX(app, x, 2), cy, " Type", nullptr);
+  nvgText(vg, columnX(app, x, 3), cy, " Owner", nullptr);
+  nvgText(vg, columnX(app, x, 4), cy, " Permissions", nullptr);
 
   for (int i = 0; i < 4; i++)
   {
@@ -801,15 +821,15 @@ static void drawRows(NVGcontext* vg,
   const auto& entries = app.fm.entries();
 
   nvgFontFace(vg, "sans");
-  nvgFontSize(vg, 13.0f);
+  nvgFontSize(vg, g_fontSize - 1.0f);
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
 
   nvgSave(vg);
   nvgScissor(vg, x, y, w, h);
   for (size_t i = 0; i < entries.size(); i++)
   {
-    float rowY = y + static_cast<float>(i) * kRowHeight - app.scrollOffset;
-    if (rowY + kRowHeight < y)
+    float rowY = y + static_cast<float>(i) * g_rowHeight - app.scrollOffset;
+    if (rowY + g_rowHeight < y)
     {
       continue;
     }
@@ -818,23 +838,23 @@ static void drawRows(NVGcontext* vg,
       break;
     }
     bool selected = (static_cast<int>(i) == app.selectedIndex);
-    bool hover = inRect(g_mouseX, g_mouseY, x, rowY, w, kRowHeight);
+    bool hover = inRect(g_mouseX, g_mouseY, x, rowY, w, g_rowHeight);
     if (selected)
     {
       nvgBeginPath(vg);
-      nvgRect(vg, x, rowY, w, kRowHeight);
+      nvgRect(vg, x, rowY, w, g_rowHeight);
       nvgFillColor(vg, nvgRGBf(0.2f, 0.35f, 0.55f));
       nvgFill(vg);
     }
     else if (hover)
     {
       nvgBeginPath(vg);
-      nvgRect(vg, x, rowY, w, kRowHeight);
+      nvgRect(vg, x, rowY, w, g_rowHeight);
       nvgFillColor(vg, nvgRGBf(0.25f, 0.25f, 0.25f));
       nvgFill(vg);
     }
     const Entry& e = entries[i];
-    float cy = rowY + kRowHeight * 0.5f;
+    float cy = rowY + g_rowHeight * 0.5f;
     float iconX = columnX(app, x, 0);
     float iconY = cy - kIconSize * 0.5f;
     bndIcon(vg, iconX, iconY, iconForEntry(e));
@@ -880,7 +900,7 @@ static void handleListClick(AppState& app, float listX, float listTop, float lis
   {
     return;
   }
-  int idx = static_cast<int>((g_mouseY - listTop + app.scrollOffset) / kRowHeight);
+  int idx = static_cast<int>((g_mouseY - listTop + app.scrollOffset) / g_rowHeight);
   int count = static_cast<int>(app.fm.entries().size());
   if (idx < 0 || idx >= count)
   {
@@ -949,21 +969,21 @@ static void handleKeyboardNav(AppState& app, float listH)
 
   if (app.selectedIndex >= 0)
   {
-    float rowTop = static_cast<float>(app.selectedIndex) * kRowHeight;
+    float rowTop = static_cast<float>(app.selectedIndex) * g_rowHeight;
     if (rowTop < app.scrollOffset)
     {
       app.scrollOffset = rowTop;
     }
-    else if (rowTop + kRowHeight > app.scrollOffset + listH)
+    else if (rowTop + g_rowHeight > app.scrollOffset + listH)
     {
-      app.scrollOffset = rowTop + kRowHeight - listH;
+      app.scrollOffset = rowTop + g_rowHeight - listH;
     }
   }
 }
 
 static void applyScroll(AppState& app, float listH)
 {
-  float contentH = static_cast<float>(app.fm.entries().size()) * kRowHeight;
+  float contentH = static_cast<float>(app.fm.entries().size()) * g_rowHeight;
   float maxScroll = contentH - listH;
   if (maxScroll < 0.0f)
   {
@@ -1125,6 +1145,9 @@ int main(int argc, char** argv)
 
     bool resizeHover = (app.hoveredSep >= 0) || (app.dragColumn >= 0);
     glfwSetCursor(window, resizeHover ? resizeCursor : nullptr);
+    drawSeparator(vg, 0.0f, kTopBarHeight, w, kTopBarHeight);
+    drawSeparator(vg, kSidebarWidth, kTopBarHeight, kSidebarWidth, h);
+    drawSeparator(vg, mainX, mainY + kHeaderHeight, w, mainY + kHeaderHeight);
     nvgEndFrame(vg);
 
     glfwSwapBuffers(window);
