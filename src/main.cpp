@@ -12,6 +12,8 @@
 
 #include <iostream>
 #include <string>
+#include <cstdlib>
+#include <filesystem>
 #include <utility>
 #include <vector>
 
@@ -49,6 +51,42 @@ static BNDwidgetTheme makeWidgetTheme()
   w.shadeTop = 100;
   w.shadeDown = 0;
   return w;
+}
+
+namespace
+{
+  struct Place
+  {
+    std::string label;
+    std::string path;
+  };
+}
+
+static std::vector<Place> buildPlaces()
+{
+  std::vector<Place> all;
+  const char* home = std::getenv("HOME");
+  std::string h = (home != nullptr) ? std::string(home) : std::string("/");
+  all.push_back({"Home",        h});
+  all.push_back({"Desktop",     h + "/Desktop"});
+  all.push_back({"Documents",   h + "/Documents"});
+  all.push_back({"Downloads",   h + "/Downloads"});
+  all.push_back({"Pictures",    h + "/Pictures"});
+  all.push_back({"Music",       h + "/Music"});
+  all.push_back({"Videos",      h + "/Videos"});
+  all.push_back({"File System", "/"});
+
+  std::vector<Place> filtered;
+  std::error_code ec;
+  for (const auto& p : all)
+  {
+    ec.clear();
+    if (std::filesystem::is_directory(p.path, ec))
+    {
+      filtered.push_back(p);
+    }
+  }
+  return filtered;
 }
 
 static void applyTheme()
@@ -225,14 +263,50 @@ static void drawTopBar(NVGcontext* vg, FileManager& fm, float w)
   }
 }
 
-static void drawSidebar(NVGcontext* vg, float h)
+static void drawSidebar(NVGcontext* vg,
+                        FileManager& fm,
+                        const std::vector<Place>& places,
+                        float h)
 {
   bndBackground(vg, 0.0f, kTopBarHeight, kSidebarWidth, h - kTopBarHeight);
+
   nvgFontFace(vg, "sans");
   nvgFontSize(vg, 14.0f);
   nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
   nvgText(vg, kPadX, kTopBarHeight + 20.0f, "Places", nullptr);
+
+  const float itemH   = 26.0f;
+  const float itemGap = 2.0f;
+  const float itemX   = 8.0f;
+  const float itemW   = kSidebarWidth - 16.0f;
+  float y = kTopBarHeight + 40.0f;
+
+  std::string navTo;
+  for (const auto& p : places)
+  {
+    bool hover   = inRect(g_mouseX, g_mouseY, itemX, y, itemW, itemH);
+    bool current = (fm.currentPath() == p.path);
+    BNDwidgetState st = BND_DEFAULT;
+    if (current)
+    {
+      st = BND_ACTIVE;
+    }
+    else if (hover)
+    {
+      st = BND_HOVER;
+    }
+    bndOptionButton(vg, itemX, y, itemW, itemH, st, p.label.c_str());
+    if (hover && g_mouseClicked)
+    {
+      navTo = p.path;
+    }
+    y += itemH + itemGap;
+  }
+  if (!navTo.empty())
+  {
+    fm.setPath(navTo);
+  }
 }
 
 static void drawMainHeader(NVGcontext* vg, float x, float y, float w)
@@ -346,6 +420,7 @@ int main()
   applyTheme();
 
   FileManager fileManager;
+  std::vector<Place> places = buildPlaces();
   float scrollOffset = 0.0f;
 
   while (!glfwWindowShouldClose(window))
@@ -407,7 +482,7 @@ int main()
       }
     }
 
-    drawSidebar(vg, h);
+    drawSidebar(vg, fileManager, places, h);
     drawMainHeader(vg, mainX, mainY, mainW);
     drawRows(vg, fileManager, mainX, listTop, mainW, listH, scrollOffset);
 
