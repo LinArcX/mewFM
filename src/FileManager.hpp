@@ -29,6 +29,9 @@ public:
   const std::string& currentPath() const;
   const std::vector<Entry>& entries() const;
 
+  void setShowHidden(bool show);
+  bool showHidden() const;
+
 private:
   bool loadPath(const std::string& path);
   static std::string parentOf(const std::string& path);
@@ -45,4 +48,7 @@ private:
   std::vector<Entry> m_entries;
   std::vector<std::string> m_backStack;
   std::vector<std::string> m_forwardStack;
+
+  bool m_showHidden = false;
+
 };

@@ -55,6 +55,7 @@ namespace
     int lastClickIndex = -1;
     float colWidths[kNumCols] = {260.0f, 90.0f, 110.0f, 100.0f, 110.0f};
     int dragColumn = -1;
+    int hoveredSep = -1;
     float dragStartMouseX = 0.0f;
     float dragStartWidth = 0.0f;
   };
@@ -68,6 +69,7 @@ namespace
   bool  g_navDown = false;
   bool  g_navEnter = false;
   bool  g_navBack = false;
+  bool  g_toggleHidden = false;
 }
 
 static BNDwidgetTheme makeWidgetTheme()
@@ -233,7 +235,6 @@ static void errorCallback(int error, const char* description)
 static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
   (void)scancode;
-  (void)mods;
   if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
   {
     glfwSetWindowShouldClose(window, GLFW_TRUE);
@@ -243,6 +244,11 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
   {
     return;
   }
+  if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_H)
+  {
+    g_toggleHidden = true;
+  }
+ 
   if (key == GLFW_KEY_UP)    g_navUp = true;
   if (key == GLFW_KEY_DOWN)  g_navDown = true;
   if (key == GLFW_KEY_ENTER) g_navEnter = true;
@@ -690,6 +696,7 @@ static void drawMainHeader(NVGcontext* vg, AppState& app, float x, float y, floa
       }
     }
   }
+  app.hoveredSep = hoverSep;
   if (hoverSep >= 0 && g_mouseClicked && app.dragColumn < 0)
   {
     app.dragColumn = hoverSep;
@@ -720,6 +727,49 @@ static void drawMainHeader(NVGcontext* vg, AppState& app, float x, float y, floa
     nvgStrokeWidth(vg, 1.0f);
     nvgStroke(vg);
   }
+}
+
+static std::string truncateToWidth(NVGcontext* vg, const std::string& text, float maxWidth)
+{
+  if (maxWidth <= 0.0f)
+  {
+    return std::string();
+  }
+  float bounds[4];
+  nvgTextBounds(vg, 0.0f, 0.0f, text.c_str(), nullptr, bounds);
+  if (bounds[2] - bounds[0] <= maxWidth)
+  {
+    return text;
+  }
+  const std::string ellipsis = "...";
+  nvgTextBounds(vg, 0.0f, 0.0f, ellipsis.c_str(), nullptr, bounds);
+  float ellipsisW = bounds[2] - bounds[0];
+  float available = maxWidth - ellipsisW;
+  if (available <= 0.0f)
+  {
+    return ellipsis;
+  }
+  size_t lo = 0;
+  size_t hi = text.size();
+  while (lo < hi)
+  {
+    size_t mid = (lo + hi + 1) / 2;
+    std::string sub = text.substr(0, mid);
+    nvgTextBounds(vg, 0.0f, 0.0f, sub.c_str(), nullptr, bounds);
+    if (bounds[2] - bounds[0] <= available)
+    {
+      lo = mid;
+    }
+    else
+    {
+      hi = mid - 1;
+    }
+  }
+  if (lo == 0)
+  {
+    return ellipsis;
+  }
+  return text.substr(0, lo) + ellipsis;
 }
 
 static void drawRows(NVGcontext* vg,
@@ -767,11 +817,24 @@ static void drawRows(NVGcontext* vg,
     float iconY = cy - kIconSize * 0.5f;
     bndIcon(vg, iconX, iconY, iconForEntry(e));
 
+    //nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
+    //nvgText(vg, iconX + kIconSize + kIconGap, cy, e.name.c_str(), nullptr);
+    //nvgText(vg, columnX(app, x, 1), cy, e.sizeText.c_str(), nullptr);
+    //nvgText(vg, columnX(app, x, 2), cy, e.typeText.c_str(), nullptr);
+    //nvgText(vg, columnX(app, x, 3), cy, e.ownerText.c_str(), nullptr);
+    //nvgText(vg, columnX(app, x, 4), cy, e.permText.c_str(), nullptr);
+    const float cellPad = 4.0f;
+    std::string nameText = truncateToWidth(vg, e.name,
+                          app.colWidths[0] - kIconSize - kIconGap - cellPad);
+    std::string sizeText = truncateToWidth(vg, e.sizeText,  app.colWidths[1] - cellPad);
+    std::string typeText = truncateToWidth(vg, e.typeText,  app.colWidths[2] - cellPad);
+    std::string ownerText = truncateToWidth(vg, e.ownerText, app.colWidths[3] - cellPad);
+
     nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
-    nvgText(vg, iconX + kIconSize + kIconGap, cy, e.name.c_str(), nullptr);
-    nvgText(vg, columnX(app, x, 1), cy, e.sizeText.c_str(), nullptr);
-    nvgText(vg, columnX(app, x, 2), cy, e.typeText.c_str(), nullptr);
-    nvgText(vg, columnX(app, x, 3), cy, e.ownerText.c_str(), nullptr);
+    nvgText(vg, iconX + kIconSize + kIconGap, cy, nameText.c_str(), nullptr);
+    nvgText(vg, columnX(app, x, 1), cy, sizeText.c_str(), nullptr);
+    nvgText(vg, columnX(app, x, 2), cy, typeText.c_str(), nullptr);
+    nvgText(vg, columnX(app, x, 3), cy, ownerText.c_str(), nullptr);
     nvgText(vg, columnX(app, x, 4), cy, e.permText.c_str(), nullptr);
   }
   nvgRestore(vg);
@@ -851,6 +914,13 @@ static void handleKeyboardNav(AppState& app, float listH)
     app.fm.goUp();
     g_navBack = false;
   }
+  if (g_toggleHidden)
+  {
+    app.fm.setShowHidden(!app.fm.showHidden());
+    app.selectedIndex = -1;
+    app.scrollOffset = 0.0f;
+    g_toggleHidden = false;
+  }
   g_navUp = false;
   g_navDown = false;
   g_navEnter = false;
@@ -913,6 +983,7 @@ int main()
   }
 
   glfwMakeContextCurrent(window);
+  GLFWcursor* resizeCursor = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR);
   glfwSwapInterval(1);
   glfwSetKeyCallback(window, keyCallback);
   glfwSetCursorPosCallback(window, cursorPosCallback);
@@ -985,6 +1056,8 @@ int main()
     drawMainHeader(vg, app, mainX, mainY, mainW);
     drawRows(vg, app, mainX, listTop, mainW, listH);
 
+    bool resizeHover = (app.hoveredSep >= 0) || (app.dragColumn >= 0);
+    glfwSetCursor(window, resizeHover ? resizeCursor : nullptr);
     nvgEndFrame(vg);
 
     glfwSwapBuffers(window);
@@ -992,6 +1065,10 @@ int main()
   }
 
   nvgDeleteGL2(vg);
+  if (resizeCursor != nullptr)
+  {
+    glfwDestroyCursor(resizeCursor);
+  }
   glfwDestroyWindow(window);
   glfwTerminate();
   return 0;

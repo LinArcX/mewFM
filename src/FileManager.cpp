@@ -31,17 +31,46 @@ bool FileManager::loadPath(const std::string& path)
   }
   for (const auto& dirEntry : it)
   {
-    Entry entry;
     const fs::path& p = dirEntry.path();
-    if (buildEntry(p.string(), p.filename().string(), entry))
+    std::string name = p.filename().string();
+    if (!m_showHidden && !name.empty() && name[0] == '.')
+    {
+      continue;
+    }
+    Entry entry;
+    if (buildEntry(p.string(), name, entry))
     {
       m_entries.push_back(entry);
     }
   }
+
+  //for (const auto& dirEntry : it)
+  //{
+  //  Entry entry;
+  //  const fs::path& p = dirEntry.path();
+  //  if (buildEntry(p.string(), p.filename().string(), entry))
+  //  {
+  //    m_entries.push_back(entry);
+  //  }
+  //}
   sortEntries();
   return true;
 }
 
+void FileManager::setShowHidden(bool show)
+{
+  if (m_showHidden == show)
+  {
+    return;
+  }
+  m_showHidden = show;
+  loadPath(m_currentPath);
+}
+
+bool FileManager::showHidden() const
+{
+  return m_showHidden;
+}
 
 bool FileManager::setPath(const std::string& path)
 {
