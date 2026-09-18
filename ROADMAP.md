@@ -18,7 +18,7 @@
 ☑ Separator lines between panels
 
 ## Phase 1 — Core file operations
-□ Adding sort mechanism to columns in mainView.
+☑ Adding sort mechanism to columns in mainView.
 ☑ Internal clipboard state (copy / cut)
 ☑ Paste into current directory
 ☑ Delete (with confirmation dialog)
@@ -43,10 +43,10 @@
 □ Submenu for "Open With"
 
 ## Phase 4 — Sorting
-□ Click column header to sort
-□ Asc / desc toggle
-□ Indicator arrow in the header
-□ Persist sort column + direction in config
+☑ Click column header to sort
+☑ Asc / desc toggle
+☑ Indicator arrow in the header
+☑ Persist sort column + direction in config
 
 ## Phase 5 — Convenience
 □ Search / filter box in top bar

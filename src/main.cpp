@@ -148,6 +148,8 @@ static void loadConfig(AppState& app)
   }
   std::string savedPath;
   bool savedHidden = false;
+  int savedSortField = -1;
+  int savedSortDir = -1;
   std::string line;
   while (std::getline(in, line))
   {
@@ -179,6 +181,14 @@ static void loadConfig(AppState& app)
     {
       savedHidden = (val == "1");
     }
+    else if (key == "sortField")
+    {
+      savedSortField = std::atoi(val.c_str());
+    }
+    else if (key == "sortDir")
+    {
+      savedSortDir = std::atoi(val.c_str());
+    }
     else if (key == "fontSize")
     {
       float s = static_cast<float>(std::atof(val.c_str()));
@@ -198,6 +208,11 @@ static void loadConfig(AppState& app)
         }
       }
     }
+  }
+
+  if (savedSortField >= 0 && savedSortField <= 4 && savedSortDir >= 0)
+  {
+    app.fm.setSort(static_cast<SortField>(savedSortField), savedSortDir == 0);
   }
 
   if (savedHidden)
@@ -230,6 +245,8 @@ static void saveConfig(const AppState& app)
   }
   out << "path=" << app.fm.currentPath() << "\n";
   out << "hidden=" << (app.fm.showHidden() ? "1" : "0") << "\n";
+  out << "sortField=" << static_cast<int>(app.fm.sortField()) << "\n";
+  out << "sortDir=" << (app.fm.sortAscending() ? "0" : "1") << "\n";
   for (const auto& s : app.sections)
   {
     out << "collapsed_" << s.key << "=" << (s.collapsed ? "1" : "0") << "\n";
@@ -1079,6 +1096,51 @@ static float columnX(const AppState& app, float listX, int col)
   return x;
 }
 
+static SortField columnSortField(int col)
+{
+  switch (col)
+  {
+    case 0: return SortField::Name;
+    case 1: return SortField::Size;
+    case 2: return SortField::Type;
+    case 3: return SortField::Owner;
+    default: return SortField::Permissions;
+  }
+}
+
+static const char* columnLabel(int col)
+{
+  switch (col)
+  {
+    case 0: return " Name";
+    case 1: return " Size";
+    case 2: return " Type";
+    case 3: return " Owner";
+    default: return " Permissions";
+  }
+}
+
+static void drawSortArrow(NVGcontext* vg, float cx, float cy, bool ascending)
+{
+  float s = 4.0f;
+  nvgBeginPath(vg);
+  if (ascending)
+  {
+    nvgMoveTo(vg, cx - s, cy + s * 0.6f);
+    nvgLineTo(vg, cx + s, cy + s * 0.6f);
+    nvgLineTo(vg, cx,     cy - s * 0.6f);
+  }
+  else
+  {
+    nvgMoveTo(vg, cx - s, cy - s * 0.6f);
+    nvgLineTo(vg, cx + s, cy - s * 0.6f);
+    nvgLineTo(vg, cx,     cy + s * 0.6f);
+  }
+  nvgClosePath(vg);
+  nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
+  nvgFill(vg);
+}
+
 static void drawMainHeader(NVGcontext* vg, AppState& app, float x, float y, float w)
 {
   bndBackground(vg, x, y, w, kHeaderHeight);
@@ -1134,17 +1196,52 @@ static void drawMainHeader(NVGcontext* vg, AppState& app, float x, float y, floa
     app.dragStartWidth = app.colWidths[hoverSep];
   }
 
+  if (g_mouseClicked && app.dragColumn < 0 && hoverSep < 0 &&
+      g_mouseY >= y && g_mouseY < y + kHeaderHeight)
+  {
+    float colX = x + kPadX;
+    for (int i = 0; i < kNumCols; i++)
+    {
+      float left = colX;
+      colX += app.colWidths[i];
+      if (g_mouseX >= left && g_mouseX < colX)
+      {
+        SortField clickedField = columnSortField(i);
+        if (app.fm.sortField() == clickedField)
+        {
+          app.fm.setSort(clickedField, !app.fm.sortAscending());
+        }
+        else
+        {
+          app.fm.setSort(clickedField, true);
+        }
+        saveConfig(app);
+        break;
+      }
+    }
+  }
+
   nvgFontFace(vg, "sans");
   nvgFontSize(vg, g_fontSize - 1.0f);
   nvgFillColor(vg, nvgRGBf(0.7f, 0.7f, 0.7f));
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
   float cy = y + kHeaderHeight * 0.5f;
 
-  nvgText(vg, columnX(app, x, 0) + kIconSize + kIconGap, cy, " Name", nullptr);
-  nvgText(vg, columnX(app, x, 1), cy, " Size", nullptr);
-  nvgText(vg, columnX(app, x, 2), cy, " Type", nullptr);
-  nvgText(vg, columnX(app, x, 3), cy, " Owner", nullptr);
-  nvgText(vg, columnX(app, x, 4), cy, " Permissions", nullptr);
+  for (int i = 0; i < kNumCols; i++)
+  {
+    float textX = columnX(app, x, i);
+    if (i == 0)
+    {
+      textX += kIconSize + kIconGap;
+    }
+    nvgText(vg, textX, cy, columnLabel(i), nullptr);
+    if (app.fm.sortField() == columnSortField(i))
+    {
+      float bounds[4];
+      nvgTextBounds(vg, 0.0f, 0.0f, columnLabel(i), nullptr, bounds);
+      drawSortArrow(vg, textX + (bounds[2] - bounds[0]) + 8.0f, cy, app.fm.sortAscending());
+    }
+  }
 
   for (int i = 0; i < 4; i++)
   {

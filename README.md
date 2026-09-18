@@ -8,6 +8,7 @@ A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and ou
 - Top navigation bar: Home, Back, Forward, Up, and clickable breadcrumb
 - Collapsible sidebar with Places and Devices sections
 - Resizable columns (drag separator in the header row)
+- Sortable columns: click Name, Size, Type, Owner, or Permissions to sort; click again to toggle ascending/descending
 - Extension-aware icons (images, video, audio, documents, fonts, source code)
 - Single-click to select, double-click to open
   - Directories navigate into themselves
@@ -21,6 +22,7 @@ A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and ou
   - Last visited path
   - Hidden-file visibility
   - Collapsed state of sidebar sections
+  - Sort field and direction
   - Font size
 - Command-line argument: `rah <path>` opens that directory (or the parent, if a file is given)
 - Font and icons embedded into the binary — no runtime asset files needed
@@ -77,6 +79,8 @@ col4=110
 path=/home/user
 hidden=0
 fontSize=14
+sortField=0
+sortDir=0
 collapsed_places=0
 collapsed_devices=0
 ```

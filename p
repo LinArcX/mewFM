@@ -38,7 +38,7 @@
 menu () {
   commands=(
     # debug
-    "build(debug)" "run(debug)" "apply patch" "remove patch" "gf2" "gf2 attach" "rr record" "gf2 --rr-replay" "clean(debug)"
+    "build(debug)" "run(debug)" "create patch" "apply patch" "remove patch" "gf2" "gf2 attach" "rr record" "gf2 --rr-replay" "clean(debug)"
 
     # release
     "build(release)" "run(release)" "clean(release)"
@@ -118,8 +118,14 @@ menu () {
       ./rah 
       cd ../..
       ;;
+    "create patch")
+      read -r -p "Enter name of yoru patch: (it will be save in patches/) " filename
+      file="patches/${filename}.json"
+      # touch "$file"
+      nvim "$file"
+      ;;
     "apply patch")
-      file=$(find patches -type f -printf '%p\n' | fzf)
+      file=$(find patches -type f -printf '%T@ %p\n' | sort -nr | cut -d' ' -f2- | fzf)
 
       if [ -n "$file" ]; then
           if python3 scripts/extractFiles.py "$file"; then

@@ -10,6 +10,7 @@ struct Entry
   std::string typeText;
   std::string ownerText;
   std::string permText;
+  unsigned long long sizeBytes = 0;
   bool isDirectory = false;
   bool isExecutable = false;
 };
@@ -19,6 +20,15 @@ enum class ClipboardMode
   None,
   Copy,
   Cut,
+};
+
+enum class SortField
+{
+  Name,
+  Size,
+  Type,
+  Owner,
+  Permissions,
 };
 
 class FileManager
@@ -46,6 +56,9 @@ public:
   [[nodiscard]] bool cutEntry(const std::string& name);
   [[nodiscard]] bool paste();
   ClipboardMode clipboardMode() const;
+  void setSort(SortField field, bool ascending);
+  SortField sortField() const;
+  bool sortAscending() const;
 
 private:
   bool loadPath(const std::string& path);
@@ -67,6 +80,9 @@ private:
   ClipboardMode m_clipboardMode = ClipboardMode::None;
   std::string m_clipboardName;
   std::string m_clipboardSource;
+
+  SortField m_sortField = SortField::Name;
+  bool m_sortAscending = true;
 
   bool m_showHidden = false;
 

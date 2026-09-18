@@ -423,7 +423,8 @@ bool FileManager::buildEntry(const std::string& fullPath, const std::string& nam
   }
   else
   {
-    out.sizeText = formatSize(static_cast<unsigned long long>(st.st_size));
+    out.sizeBytes = static_cast<unsigned long long>(st.st_size);
+    out.sizeText = formatSize(out.sizeBytes);
     out.typeText = typeTextForName(name);
   }
   return true;
@@ -431,15 +432,57 @@ bool FileManager::buildEntry(const std::string& fullPath, const std::string& nam
 
 void FileManager::sortEntries()
 {
+  const SortField field = m_sortField;
+  const bool ascending = m_sortAscending;
   std::sort(m_entries.begin(), m_entries.end(),
-    [](const Entry& a, const Entry& b)
+    [field, ascending](const Entry& a, const Entry& b)
     {
       if (a.isDirectory != b.isDirectory)
       {
         return a.isDirectory;
       }
-      return a.name < b.name;
+      const Entry& x = ascending ? a : b;
+      const Entry& y = ascending ? b : a;
+      bool less = false;
+      switch (field)
+      {
+        case SortField::Name:        less = x.name < y.name; break;
+        case SortField::Size:        less = x.sizeBytes < y.sizeBytes; break;
+        case SortField::Type:        less = x.typeText < y.typeText; break;
+        case SortField::Owner:       less = x.ownerText < y.ownerText; break;
+        case SortField::Permissions: less = x.permText < y.permText; break;
+      }
+      if (less)
+      {
+        return true;
+      }
+      if (field == SortField::Name)
+      {
+        return false;
+      }
+      return x.name < y.name;
     });
+}
+
+void FileManager::setSort(SortField field, bool ascending)
+{
+  if (m_sortField == field && m_sortAscending == ascending)
+  {
+    return;
+  }
+  m_sortField = field;
+  m_sortAscending = ascending;
+  sortEntries();
+}
+
+SortField FileManager::sortField() const
+{
+  return m_sortField;
+}
+
+bool FileManager::sortAscending() const
+{
+  return m_sortAscending;
 }
 
 std::string FileManager::formatSize(unsigned long long bytes) const
