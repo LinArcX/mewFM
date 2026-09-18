@@ -94,6 +94,7 @@ namespace
     Refresh,
     Properties,
     AddBookmark,
+    RemoveBookmark,
   };
 
   struct MenuItem
@@ -112,6 +113,7 @@ namespace
     {"Delete", MenuAction::Delete, true},
     {"Properties", MenuAction::Properties, true},
     {"Add to Bookmarks", MenuAction::AddBookmark, true},
+    {"Remove from Bookmarks", MenuAction::RemoveBookmark, true},
   };
 
   const MenuItem kEmptyMenu[] =
@@ -2463,6 +2465,29 @@ static void applyScroll(AppState& app, float listH)
   g_scrollY = 0.0f;
 }
 
+static bool isBookmarked(const AppState& app, const std::string& fullPath)
+{
+  if (fullPath.empty())
+  {
+    return false;
+  }
+  for (const auto& s : app.sections)
+  {
+    if (s.key != "bookmarks")
+    {
+      continue;
+    }
+    for (const auto& item : s.items)
+    {
+      if (item.path == fullPath)
+      {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 static bool menuItemEnabled(const AppState& app, const MenuItem& item, int rowIdx)
 {
   if (!item.enabled)
@@ -2476,7 +2501,22 @@ static bool menuItemEnabled(const AppState& app, const MenuItem& item, int rowId
     {
       return false;
     }
-    return entries[rowIdx].isDirectory;
+    if (!entries[rowIdx].isDirectory)
+    {
+      return false;
+    }
+    std::string full = joinPath(app.fm.currentPath(), entries[rowIdx].name);
+    return !isBookmarked(app, full);
+  }
+  if (item.action == MenuAction::RemoveBookmark)
+  {
+    const auto& entries = app.fm.entries();
+    if (rowIdx < 0 || rowIdx >= static_cast<int>(entries.size()))
+    {
+      return false;
+    }
+    std::string full = joinPath(app.fm.currentPath(), entries[rowIdx].name);
+    return isBookmarked(app, full);
   }
   return true;
 }
@@ -2489,7 +2529,7 @@ static MenuAction handleMenuClick(const AppState& app, float w, float h)
     return MenuAction::None;
   }
   const MenuItem* items = (app.menuKind == MenuKind::Row) ? kRowMenu : kEmptyMenu;
-  const int count = (app.menuKind == MenuKind::Row) ? 7 : 3;
+  const int count = (app.menuKind == MenuKind::Row) ? 8 : 3;
   float menuH = kMenuPadY * 2.0f + kMenuItemHeight * static_cast<float>(count);
 
   float mx = app.menuX;
@@ -2585,6 +2625,29 @@ static void addBookmark(AppState& app, const std::string& fullPath)
 }
 
 
+static void removeBookmark(AppState& app, const std::string& fullPath)
+{
+  if (fullPath.empty())
+  {
+    return;
+  }
+  for (auto& s : app.sections)
+  {
+    if (s.key != "bookmarks")
+    {
+      continue;
+    }
+    for (size_t i = 0; i < s.items.size(); i++)
+    {
+      if (s.items[i].path == fullPath)
+      {
+        s.items.erase(s.items.begin() + static_cast<long>(i));
+        return;
+      }
+    }
+  }
+}
+
 static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
 {
   switch (action)
@@ -2627,6 +2690,18 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
         }
       }
       break;
+    case MenuAction::RemoveBookmark:
+      if (rowIdx >= 0)
+      {
+        const auto& entries = app.fm.entries();
+        if (rowIdx < static_cast<int>(entries.size()))
+        {
+          std::string full = joinPath(app.fm.currentPath(), entries[rowIdx].name);
+          removeBookmark(app, full);
+          saveConfig(app);
+        }
+      }
+      break;
     default:
       break;
   }
@@ -2643,7 +2718,7 @@ static void drawContextMenu(
     return;
   }
   const MenuItem* items = (app.menuKind == MenuKind::Row) ? kRowMenu : kEmptyMenu;
-  const int count = (app.menuKind == MenuKind::Row) ? 7 : 3;
+  const int count = (app.menuKind == MenuKind::Row) ? 8 : 3;
   float menuH = kMenuPadY * 2.0f + kMenuItemHeight * static_cast<float>(count);
 
   float mx = app.menuX;
