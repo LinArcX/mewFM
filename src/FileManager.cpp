@@ -2,6 +2,9 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
+#include <ctime>
+#include <fstream>
 #include <filesystem>
 #include <pwd.h>
 #include <string>
@@ -9,6 +12,36 @@
 #include <system_error>
 
 namespace fs = std::filesystem;
+
+static std::string trashRootDir()
+{
+  const char* xdg = std::getenv("XDG_DATA_HOME");
+  if (xdg != nullptr && xdg[0] != '\0')
+  {
+    return std::string(xdg) + "/Trash";
+  }
+  const char* home = std::getenv("HOME");
+  if (home == nullptr)
+  {
+    return std::string();
+  }
+  return std::string(home) + "/.local/share/Trash";
+}
+
+
+static std::string currentIsoDateTime()
+{
+  std::time_t now = std::time(nullptr);
+  struct tm tmBuf;
+  if (localtime_r(&now, &tmBuf) == nullptr)
+  {
+    return std::string();
+  }
+  char buf[32];
+  std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", &tmBuf);
+  return std::string(buf);
+}
+
 
 static std::string uniqueNameIn(const std::string& dir, const std::string& name)
 {
@@ -224,6 +257,71 @@ bool FileManager::copyEntries(const std::vector<std::string>& names)
   m_clipboardSource = m_currentPath;
   m_clipboardMode = ClipboardMode::Copy;
   return true;
+}
+
+bool FileManager::trashEntry(const std::string& name)
+{
+  if (name.empty() || name == "." || name == "..")
+  {
+    return false;
+  }
+  if (name.find('/') != std::string::npos)
+  {
+    return false;
+  }
+  std::error_code ec;
+  fs::path src = fs::path(m_currentPath) / name;
+  if (!fs::exists(src, ec))
+  {
+    return false;
+  }
+  std::string root = trashRootDir();
+  if (root.empty())
+  {
+    return false;
+  }
+  fs::path filesDir = fs::path(root) / "files";
+  fs::path infoDir = fs::path(root) / "info";
+  fs::create_directories(filesDir, ec);
+  if (ec)
+  {
+    return false;
+  }
+  fs::create_directories(infoDir, ec);
+  if (ec)
+  {
+    return false;
+  }
+  std::string uniqueName = uniqueNameIn(filesDir.string(), name);
+  if (uniqueName.empty())
+  {
+    return false;
+  }
+  fs::path dst = filesDir / uniqueName;
+  fs::rename(src, dst, ec);
+  if (ec)
+  {
+    ec.clear();
+    fs::copy(src, dst, fs::copy_options::recursive, ec);
+    if (ec)
+    {
+      return false;
+    }
+    fs::remove_all(src, ec);
+    if (ec)
+    {
+      return false;
+    }
+  }
+  fs::path infoDst = infoDir / (uniqueName + ".trashinfo");
+  std::ofstream out(infoDst.string());
+  if (out)
+  {
+    out << "[Trash Info]\n";
+    out << "Path=" << fs::absolute(src, ec).string() << "\n";
+    out << "DeletionDate=" << currentIsoDateTime() << "\n";
+  }
+  return loadPath(m_currentPath);
 }
 
 bool FileManager::cutEntries(const std::vector<std::string>& names)

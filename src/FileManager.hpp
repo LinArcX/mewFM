@@ -54,6 +54,7 @@ public:
   [[nodiscard]] bool createDirectory(const std::string& name);
   [[nodiscard]] bool renameEntry(const std::string& oldName, const std::string& newName);
   [[nodiscard]] bool deleteEntry(const std::string& name);
+  [[nodiscard]] bool trashEntry(const std::string& name);
   [[nodiscard]] bool copyEntries(const std::vector<std::string>& names);
   [[nodiscard]] bool cutEntries(const std::vector<std::string>& names);
   [[nodiscard]] bool paste();

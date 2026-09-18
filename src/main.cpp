@@ -128,6 +128,7 @@ namespace
     PendingInput pendingInput = PendingInput::None;
     std::string renameOldName;
     PendingConfirm pendingConfirm = PendingConfirm::None;
+  bool pendingDeleteIsTrash = true;
     std::vector<std::string> pendingDeleteNames;
     MenuKind menuKind = MenuKind::None;
     float menuX = 0.0f;
@@ -160,6 +161,7 @@ namespace
   bool  g_newFolder = false;
   bool  g_rename = false;
   bool  g_delete = false;
+  bool  g_forceDelete = false;
   bool  g_copy = false;
   bool  g_cut = false;
   bool  g_paste = false;
@@ -564,7 +566,17 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
   if (key == GLFW_KEY_ENTER) g_navEnter = true;
   if (key == GLFW_KEY_BACKSPACE) g_navBack = true;
   if (key == GLFW_KEY_F2) g_rename = true;
-  if (key == GLFW_KEY_DELETE) g_delete = true;
+  if (key == GLFW_KEY_DELETE)
+  {
+    if ((mods & GLFW_MOD_SHIFT) != 0)
+    {
+      g_forceDelete = true;
+    }
+    else
+    {
+      g_delete = true;
+    }
+  }
   if (key == GLFW_KEY_F5) g_refresh = true;
 
   if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_L) g_gotoPath = true;
@@ -1655,7 +1667,7 @@ static void handleKeyboardNav(AppState& app, float listH)
     }
     g_rename = false;
   }
-  if (g_delete)
+  if (g_delete || g_forceDelete)
   {
     const auto& entries = app.fm.entries();
     std::vector<std::string> names;
@@ -1676,20 +1688,24 @@ static void handleKeyboardNav(AppState& app, float listH)
     }
     if (!names.empty())
     {
+      bool isTrash = !g_forceDelete;
+      app.pendingDeleteIsTrash = isTrash;
+      const char* verb = isTrash ? "Move to trash" : "Permanently delete";
       std::string msg;
       if (names.size() == 1)
       {
-        msg = "Delete \"" + names[0] + "\"?";
+        msg = std::string(verb) + ": \"" + names[0] + "\"?";
       }
       else
       {
-        msg = "Delete " + std::to_string(names.size()) + " items?";
+        msg = std::string(verb) + " " + std::to_string(names.size()) + " items?";
       }
       app.pendingDeleteNames = names;
-      app.modal.openConfirm("Delete", msg);
+      app.modal.openConfirm(isTrash ? "Trash" : "Delete", msg);
       app.pendingConfirm = PendingConfirm::DeleteEntry;
     }
     g_delete = false;
+    g_forceDelete = false;
   }
 
   if (g_copy)
@@ -1881,16 +1897,22 @@ static void handleModalResult(AppState& app)
   if (pending == PendingConfirm::DeleteEntry)
   {
     bool anyFailed = false;
+    const bool isTrash = app.pendingDeleteIsTrash;
     for (size_t i = 0; i < app.pendingDeleteNames.size(); i++)
     {
-      if (!app.fm.deleteEntry(app.pendingDeleteNames[i]))
+      const bool ok = isTrash
+        ? app.fm.trashEntry(app.pendingDeleteNames[i])
+        : app.fm.deleteEntry(app.pendingDeleteNames[i]);
+      if (!ok)
       {
         anyFailed = true;
       }
     }
     if (anyFailed)
     {
-      app.modal.openInfo("Error", "Could not delete some items.");
+      app.modal.openInfo("Error", isTrash
+        ? "Could not move some items to trash."
+        : "Could not delete some items.");
     }
     app.pendingDeleteNames.clear();
     clearSelection(app);

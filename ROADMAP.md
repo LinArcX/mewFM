@@ -55,7 +55,7 @@
 ☑ Refresh (F5)
 
 ## Phase 6 — System integration
-□ Trash support (~/.local/share/Trash)
+☑ Trash support (~/.local/share/Trash)
 □ Restore from Trash
 □ Empty Trash
 □ "Open With" chooser dialog

@@ -128,6 +128,7 @@ menu () {
       cd build/debug
       ./rah 
       cd ../..
+      scc src/
       ;;
     "gf2")
       gf2 -nx -ex "source breakpoints.gdb" build/debug/rah
@@ -181,6 +182,7 @@ menu () {
       cd build/release
       ./rah
       cd ../..
+      scc src/
       ;;
     "clean(release)")
       ./scripts/build.sh --clean --release

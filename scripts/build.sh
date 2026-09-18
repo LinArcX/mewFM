@@ -64,7 +64,7 @@ OUT="build/$MODE"
 GEN="build/generated"
 mkdir -p "$OUT" "$GEN"
 
-CXXFLAGS="-std=c++17 -O2 -Isrc -I$GEN -Ithird_party/nanovg -Ithird_party/oui-blendish -DGL_GLEXT_PROTOTYPES"
+CXXFLAGS="-std=c++17 -O2 -Wunused -Wunreachable-code -Isrc -I$GEN -Ithird_party/nanovg -Ithird_party/oui-blendish -DGL_GLEXT_PROTOTYPES"
 CFLAGS="-O2 -Ithird_party/nanovg -Ithird_party/oui-blendish -DGL_GLEXT_PROTOTYPES"
 
 echo "${C_BOLD}${C_CYAN}>>> mode:${C_RESET} ${C_BOLD}$MODE${C_RESET}"
@@ -131,9 +131,12 @@ while true; do
       else
         echo "Yes"
       fi
+      scc src/
       break ;;
     2|n|N|no|NO|No)
-      echo "GoodBye!";  break ;;
+      echo "GoodBye!"
+      scc src/
+      break ;;
     *) echo "Please answer 1 (Yes) or 2 (No)." ;;
   esac
 done
