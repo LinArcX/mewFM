@@ -7,6 +7,8 @@
 #include "../third_party/nanovg/nanovg_gl.h"
 #include "../third_party/oui-blendish/blendish.h"
 #include "FileManager.hpp"
+#include "Modal.hpp"
+#include "TextInput.hpp"
 #include "HurmitFont.hpp"
 #include "BlenderIcons.hpp"
 
@@ -53,10 +55,19 @@ namespace
     std::vector<Place> items;
   };
 
+  enum class PendingInput
+  {
+    None,
+    NewFolder,
+  };
+
   struct AppState
   {
     FileManager fm;
     std::vector<Section> sections;
+    Modal modal;
+    TextInput textInput;
+    PendingInput pendingInput = PendingInput::None;
     float scrollOffset = 0.0f;
     int selectedIndex = -1;
     std::string lastPath;
@@ -79,6 +90,7 @@ namespace
   bool  g_navEnter = false;
   bool  g_navBack = false;
   bool  g_toggleHidden = false;
+  bool  g_newFolder = false;
   bool g_sidebarDirty = false;
 }
 
@@ -297,12 +309,83 @@ static void errorCallback(int error, const char* description)
   std::cerr << "GLFW Error " << error << ": " << description << std::endl;
 }
 
+static void textInputBackspace(TextInput& t)
+{
+  if (t.cursor == 0 || t.value.empty())
+  {
+    return;
+  }
+  t.value.erase(t.cursor - 1, 1);
+  t.cursor--;
+}
+
+static void textInputDelete(TextInput& t)
+{
+  if (t.cursor >= t.value.size())
+  {
+    return;
+  }
+  t.value.erase(t.cursor, 1);
+}
+
+static void textInputInsert(TextInput& t, unsigned int codepoint)
+{
+  if (codepoint < 32 || codepoint > 126)
+  {
+    return;
+  }
+  if (t.value.size() >= 255)
+  {
+    return;
+  }
+  t.value.insert(t.cursor, 1, static_cast<char>(codepoint));
+  t.cursor++;
+}
+
 static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
   (void)scancode;
+  AppState* app = static_cast<AppState*>(glfwGetWindowUserPointer(window));
+  bool modalActive = (app != nullptr) && app->modal.active;
+  bool inputActive = (app != nullptr) && app->textInput.active;
   if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
   {
+    if (inputActive)
+    {
+      app->textInput.close();
+      return;
+    }
+    if (modalActive)
+    {
+      app->modal.close();
+      return;
+    }
     glfwSetWindowShouldClose(window, GLFW_TRUE);
+    return;
+  }
+  if (inputActive)
+  {
+    if (action != GLFW_PRESS && action != GLFW_REPEAT)
+    {
+      return;
+    }
+    if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER)
+    {
+      app->textInput.result = TextInputResult::Ok;
+      app->textInput.active = false;
+    }
+    else if (key == GLFW_KEY_BACKSPACE) textInputBackspace(app->textInput);
+    else if (key == GLFW_KEY_DELETE)    textInputDelete(app->textInput);
+    else if (key == GLFW_KEY_LEFT  && app->textInput.cursor > 0)
+      app->textInput.cursor--;
+    else if (key == GLFW_KEY_RIGHT && app->textInput.cursor < app->textInput.value.size())
+      app->textInput.cursor++;
+    else if (key == GLFW_KEY_HOME) app->textInput.cursor = 0;
+    else if (key == GLFW_KEY_END)  app->textInput.cursor = app->textInput.value.size();
+    return;
+  }
+  if (modalActive)
+  {
     return;
   }
   if (action != GLFW_PRESS && action != GLFW_REPEAT)
@@ -313,11 +396,26 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
   {
     g_toggleHidden = true;
   }
+
+  if ((mods & GLFW_MOD_CONTROL) && (mods & GLFW_MOD_SHIFT) && key == GLFW_KEY_N)
+  {
+    g_newFolder = true;
+  }
  
   if (key == GLFW_KEY_UP)    g_navUp = true;
   if (key == GLFW_KEY_DOWN)  g_navDown = true;
   if (key == GLFW_KEY_ENTER) g_navEnter = true;
   if (key == GLFW_KEY_BACKSPACE) g_navBack = true;
+}
+
+static void charCallback(GLFWwindow* window, unsigned int codepoint)
+{
+  AppState* app = static_cast<AppState*>(glfwGetWindowUserPointer(window));
+  if (app == nullptr || !app->textInput.active)
+  {
+    return;
+  }
+  textInputInsert(app->textInput, codepoint);
 }
 
 static void cursorPosCallback(GLFWwindow* window, double x, double y)
@@ -466,6 +564,203 @@ static void drawSeparator(NVGcontext* vg, float x1, float y1, float x2, float y2
   nvgStrokeColor(vg, nvgRGBf(0.08f, 0.08f, 0.08f));
   nvgStrokeWidth(vg, 1.0f);
   nvgStroke(vg);
+}
+
+static constexpr float kModalWidth  = 380.0f;
+static constexpr float kModalHeight = 150.0f;
+static constexpr float kModalBtnW   =  90.0f;
+static constexpr float kModalBtnH   =  28.0f;
+static constexpr float kModalBtnGap =  10.0f;
+
+static void drawModalButton(
+  NVGcontext* vg,
+  float x,
+  float y,
+  float w,
+  float h,
+  const char* label,
+  bool hover)
+{
+  nvgBeginPath(vg);
+  nvgRoundedRect(vg, x, y, w, h, 4.0f);
+  nvgFillColor(vg, hover ? nvgRGBf(0.35f, 0.35f, 0.35f)
+                         : nvgRGBf(0.27f, 0.27f, 0.27f));
+  nvgFill(vg);
+  nvgStrokeColor(vg, nvgRGBf(0.12f, 0.12f, 0.12f));
+  nvgStrokeWidth(vg, 1.0f);
+  nvgStroke(vg);
+
+  nvgFontFace(vg, "sans");
+  nvgFontSize(vg, g_fontSize);
+  nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.95f));
+  nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+  nvgText(vg, x + w * 0.5f, y + h * 0.5f, label, nullptr);
+}
+
+static void drawModal(
+  NVGcontext* vg,
+  Modal& modal,
+  float w,
+  float h)
+{
+  if (!modal.active || modal.type == ModalType::None)
+  {
+    return;
+  }
+
+  nvgBeginPath(vg);
+  nvgRect(vg, 0.0f, 0.0f, w, h);
+  nvgFillColor(vg, nvgRGBAf(0.0f, 0.0f, 0.0f, 0.55f));
+  nvgFill(vg);
+
+  float px = (w - kModalWidth) * 0.5f;
+  float py = (h - kModalHeight) * 0.5f;
+
+  nvgBeginPath(vg);
+  nvgRoundedRect(vg, px, py, kModalWidth, kModalHeight, 6.0f);
+  nvgFillColor(vg, nvgRGBf(0.22f, 0.22f, 0.22f));
+  nvgFill(vg);
+  nvgStrokeColor(vg, nvgRGBf(0.1f, 0.1f, 0.1f));
+  nvgStrokeWidth(vg, 1.0f);
+  nvgStroke(vg);
+
+  nvgFontFace(vg, "sans");
+  nvgFontSize(vg, g_fontSize + 1.0f);
+  nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.95f));
+  nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+  nvgText(vg, px + kModalWidth * 0.5f, py + 26.0f, modal.title.c_str(), nullptr);
+
+  nvgFontSize(vg, g_fontSize);
+  nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
+  nvgText(vg, px + kModalWidth * 0.5f, py + 64.0f, modal.message.c_str(), nullptr);
+
+  float by = py + kModalHeight - kModalBtnH - 16.0f;
+  ModalResult clicked = ModalResult::None;
+
+  if (modal.type == ModalType::Confirm)
+  {
+    float total = kModalBtnW * 2.0f + kModalBtnGap;
+    float bx = px + (kModalWidth - total) * 0.5f;
+
+    bool hoverNo = inRect(g_mouseX, g_mouseY, bx, by, kModalBtnW, kModalBtnH);
+    drawModalButton(vg, bx, by, kModalBtnW, kModalBtnH, "No", hoverNo);
+    if (hoverNo && g_mouseClicked)
+    {
+      clicked = ModalResult::No;
+    }
+    bx += kModalBtnW + kModalBtnGap;
+
+    bool hoverYes = inRect(g_mouseX, g_mouseY, bx, by, kModalBtnW, kModalBtnH);
+    drawModalButton(vg, bx, by, kModalBtnW, kModalBtnH, "Yes", hoverYes);
+    if (hoverYes && g_mouseClicked)
+    {
+      clicked = ModalResult::Yes;
+    }
+  }
+  else
+  {
+    float bx = px + (kModalWidth - kModalBtnW) * 0.5f;
+    bool hoverOk = inRect(g_mouseX, g_mouseY, bx, by, kModalBtnW, kModalBtnH);
+    drawModalButton(vg, bx, by, kModalBtnW, kModalBtnH, "OK", hoverOk);
+    if (hoverOk && g_mouseClicked)
+    {
+      clicked = ModalResult::Ok;
+    }
+  }
+
+  if (clicked != ModalResult::None)
+  {
+    modal.result = clicked;
+    modal.active = false;
+  }
+}
+
+static constexpr float kInputWidth  = 380.0f;
+static constexpr float kInputHeight = 170.0f;
+
+static void drawTextInput(NVGcontext* vg, TextInput& t, float w, float h)
+{
+  if (!t.active)
+  {
+    return;
+  }
+
+  nvgBeginPath(vg);
+  nvgRect(vg, 0.0f, 0.0f, w, h);
+  nvgFillColor(vg, nvgRGBAf(0.0f, 0.0f, 0.0f, 0.55f));
+  nvgFill(vg);
+
+  float px = (w - kInputWidth) * 0.5f;
+  float py = (h - kInputHeight) * 0.5f;
+
+  nvgBeginPath(vg);
+  nvgRoundedRect(vg, px, py, kInputWidth, kInputHeight, 6.0f);
+  nvgFillColor(vg, nvgRGBf(0.22f, 0.22f, 0.22f));
+  nvgFill(vg);
+  nvgStrokeColor(vg, nvgRGBf(0.1f, 0.1f, 0.1f));
+  nvgStrokeWidth(vg, 1.0f);
+  nvgStroke(vg);
+
+  nvgFontFace(vg, "sans");
+  nvgFontSize(vg, g_fontSize + 1.0f);
+  nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.95f));
+  nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+  nvgText(vg, px + kInputWidth * 0.5f, py + 26.0f, t.label.c_str(), nullptr);
+
+  const float fieldPad = 10.0f;
+  float fx = px + fieldPad;
+  float fy = py + 50.0f;
+  float fw = kInputWidth - fieldPad * 2.0f;
+  float fh = 30.0f;
+
+  nvgBeginPath(vg);
+  nvgRoundedRect(vg, fx, fy, fw, fh, 3.0f);
+  nvgFillColor(vg, nvgRGBf(0.15f, 0.15f, 0.15f));
+  nvgFill(vg);
+  nvgStrokeColor(vg, nvgRGBf(0.35f, 0.35f, 0.35f));
+  nvgStrokeWidth(vg, 1.0f);
+  nvgStroke(vg);
+
+  nvgFontSize(vg, g_fontSize);
+  nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.95f));
+  nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+  float textX = fx + 8.0f;
+  float textY = fy + fh * 0.5f;
+  nvgText(vg, textX, textY, t.value.c_str(), nullptr);
+
+  float bounds[4];
+  std::string upToCursor = t.value.substr(0, t.cursor);
+  nvgTextBounds(vg, 0.0f, 0.0f, upToCursor.c_str(), nullptr, bounds);
+  float cursorX = textX + (bounds[2] - bounds[0]);
+
+  nvgBeginPath(vg);
+  nvgMoveTo(vg, cursorX, fy + 5.0f);
+  nvgLineTo(vg, cursorX, fy + fh - 5.0f);
+  nvgStrokeColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
+  nvgStrokeWidth(vg, 1.5f);
+  nvgStroke(vg);
+
+  float by = py + kInputHeight - kModalBtnH - 16.0f;
+  float total = kModalBtnW * 2.0f + kModalBtnGap;
+  float bx = px + (kInputWidth - total) * 0.5f;
+
+  bool hoverCancel = inRect(g_mouseX, g_mouseY, bx, by, kModalBtnW, kModalBtnH);
+  drawModalButton(vg, bx, by, kModalBtnW, kModalBtnH, "Cancel", hoverCancel);
+  if (hoverCancel && g_mouseClicked)
+  {
+    t.result = TextInputResult::Cancel;
+    t.active = false;
+    return;
+  }
+  bx += kModalBtnW + kModalBtnGap;
+
+  bool hoverOk = inRect(g_mouseX, g_mouseY, bx, by, kModalBtnW, kModalBtnH);
+  drawModalButton(vg, bx, by, kModalBtnW, kModalBtnH, "OK", hoverOk);
+  if (hoverOk && g_mouseClicked)
+  {
+    t.result = TextInputResult::Ok;
+    t.active = false;
+  }
 }
 
 static void drawTopBar(NVGcontext* vg, FileManager& fm, float w)
@@ -973,6 +1268,12 @@ static void handleKeyboardNav(AppState& app, float listH)
     app.scrollOffset = 0.0f;
     g_toggleHidden = false;
   }
+  if (g_newFolder)
+  {
+    app.textInput.open("New Folder", "");
+    app.pendingInput = PendingInput::NewFolder;
+    g_newFolder = false;
+  }
   g_navUp = false;
   g_navDown = false;
   g_navEnter = false;
@@ -988,6 +1289,33 @@ static void handleKeyboardNav(AppState& app, float listH)
     {
       app.scrollOffset = rowTop + g_rowHeight - listH;
     }
+  }
+}
+
+static void handleTextInputResult(AppState& app)
+{
+  if (app.textInput.result == TextInputResult::None)
+  {
+    return;
+  }
+  TextInputResult r = app.textInput.result;
+  app.textInput.result = TextInputResult::None;
+
+  PendingInput pending = app.pendingInput;
+  app.pendingInput = PendingInput::None;
+
+  if (r != TextInputResult::Ok)
+  {
+    return;
+  }
+  if (pending == PendingInput::NewFolder)
+  {
+    if (!app.fm.createDirectory(app.textInput.value))
+    {
+      app.modal.openInfo("Error", "Could not create folder.");
+    }
+    app.selectedIndex = -1;
+    app.scrollOffset = 0.0f;
   }
 }
 
@@ -1060,6 +1388,7 @@ int main(int argc, char** argv)
   GLFWcursor* resizeCursor = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR);
   glfwSwapInterval(1);
   glfwSetKeyCallback(window, keyCallback);
+  glfwSetCharCallback(window, charCallback);
   glfwSetCursorPosCallback(window, cursorPosCallback);
   glfwSetMouseButtonCallback(window, mouseButtonCallback);
   glfwSetScrollCallback(window, scrollCallback);
@@ -1088,6 +1417,7 @@ int main(int argc, char** argv)
   applyTheme();
 
   AppState app;
+  glfwSetWindowUserPointer(window, &app);
   app.sections = buildSections();
   app.lastPath = app.fm.currentPath();
   loadConfig(app);
@@ -1141,8 +1471,29 @@ int main(int argc, char** argv)
 
     resetOnPathChange(app);
     applyScroll(app, listH);
+    bool popupWasActive = app.modal.active || app.textInput.active;
+    bool clickBefore = g_mouseClicked;
+    if (popupWasActive)
+    {
+      g_mouseClicked = false;
+    }
+    bool modalWasActive = app.modal.active;
+    clickBefore = g_mouseClicked;
+    if (modalWasActive)
+    {
+      g_mouseClicked = false;
+    }
     handleListClick(app, mainX, listTop, mainW, listH);
     resetOnPathChange(app);
+    if (!popupWasActive)
+    {
+      handleKeyboardNav(app, listH);
+    }
+    handleTextInputResult(app);
+    if (!modalWasActive)
+    {
+      handleKeyboardNav(app, listH);
+    }
     handleKeyboardNav(app, listH);
 
     drawTopBar(vg, app.fm, w);
@@ -1157,7 +1508,28 @@ int main(int argc, char** argv)
     drawMainHeader(vg, app, mainX, mainY, mainW);
     drawRows(vg, app, mainX, listTop, mainW, listH);
 
+    if (popupWasActive)
+    {
+      g_mouseClicked = clickBefore;
+      drawModal(vg, app.modal, w, h);
+      drawTextInput(vg, app.textInput, w, h);
+    }
+
+    if (modalWasActive)
+    {
+      g_mouseClicked = clickBefore;
+      drawModal(vg, app.modal, w, h);
+    }
+
     bool resizeHover = (app.hoveredSep >= 0) || (app.dragColumn >= 0);
+    if (app.modal.active || app.textInput.active)
+    {
+      resizeHover = false;
+    }
+    if (app.modal.active)
+    {
+      resizeHover = false;
+    }
     glfwSetCursor(window, resizeHover ? resizeCursor : nullptr);
     drawSeparator(vg, 0.0f, kTopBarHeight, w, kTopBarHeight);
     drawSeparator(vg, kSidebarWidth, kTopBarHeight, kSidebarWidth, h);

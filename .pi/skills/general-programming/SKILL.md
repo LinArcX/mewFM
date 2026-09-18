@@ -19,13 +19,19 @@ Apply these rules strictly when writing or editing any piece of code.
 - always use meaningful functions and variable names.
 - always remove dead code commented code. (try your best to keep the code clean and understandable)
 - I'm using void linux. so if you want to recommend me to install packages, always give me instructions for void linux.
-- When i ask you to write code or modify some part of code, in response don't explain anything. just give me the final source code(it can be a full function/class/file)
-  or just a piece of code. BUT REMEMBER: always use indicators in your snippet to show WHERE exactly you changed:
-  --> start of change
-  
-    your changes come here..
-  
-  --> end of change
+- When i ask you to write code or modify some part of code, in response don't explain anything. just give me the final source code.
+  - Show only the relevant piece of code, with a few lines of context before and after each change.
+  - Do NOT paste whole functions, classes, or files unless the unit is entirely new or was fully rewritten.
+  - Mark each change with these exact comment markers placed INSIDE the code snippet:
+    // --> Start of Change
+    ...your changes...
+    // --> End of Change
+  - Never use `--> start of change` / `--> end of change` style markers.
+  - Never paste the whole file just to show a small edit.
+- At the beginning of every response, briefly state:
+  - **Goal:** what you are trying to do.
+  - **Result:** the expected end state.
+  - Keep it short and concise.
 - Don't responde with explanatation. just give me the chagnes. just code. nothing more. Unless i ask you EXPLICITLY to exaplin.
 - Use less tokens as much as you can.
 - Don't break previous functionalities. don't introduce regressions. don't touch something that was previously working, unless you want to improve it. and in that case, always ask me first. and discuss with me about the consequences of those changes.

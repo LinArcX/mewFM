@@ -86,6 +86,25 @@ bool FileManager::setPath(const std::string& path)
   return true;
 }
 
+bool FileManager::createDirectory(const std::string& name)
+{
+  if (name.empty() || name == "." || name == "..")
+  {
+    return false;
+  }
+  if (name.find('/') != std::string::npos)
+  {
+    return false;
+  }
+  std::error_code ec;
+  fs::path full = fs::path(m_currentPath) / name;
+  if (!fs::create_directory(full, ec))
+  {
+    return false;
+  }
+  return loadPath(m_currentPath);
+}
+
 bool FileManager::goBack()
 {
   if (m_backStack.empty())
