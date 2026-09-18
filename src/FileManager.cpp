@@ -196,45 +196,61 @@ bool FileManager::deleteEntry(const std::string& name)
   return loadPath(m_currentPath);
 }
 
-bool FileManager::copyEntry(const std::string& name)
+bool FileManager::copyEntries(const std::vector<std::string>& names)
 {
-  if (name.empty() || name == "." || name == "..")
-  {
-    return false;
-  }
-  if (name.find('/') != std::string::npos)
+  if (names.empty())
   {
     return false;
   }
   std::error_code ec;
-  fs::path full = fs::path(m_currentPath) / name;
-  if (!fs::exists(full, ec))
+  for (size_t i = 0; i < names.size(); i++)
   {
-    return false;
+    const std::string& name = names[i];
+    if (name.empty() || name == "." || name == "..")
+    {
+      return false;
+    }
+    if (name.find('/') != std::string::npos)
+    {
+      return false;
+    }
+    fs::path full = fs::path(m_currentPath) / name;
+    if (!fs::exists(full, ec))
+    {
+      return false;
+    }
   }
-  m_clipboardName = name;
+  m_clipboardNames = names;
   m_clipboardSource = m_currentPath;
   m_clipboardMode = ClipboardMode::Copy;
   return true;
 }
 
-bool FileManager::cutEntry(const std::string& name)
+bool FileManager::cutEntries(const std::vector<std::string>& names)
 {
-  if (name.empty() || name == "." || name == "..")
-  {
-    return false;
-  }
-  if (name.find('/') != std::string::npos)
+  if (names.empty())
   {
     return false;
   }
   std::error_code ec;
-  fs::path full = fs::path(m_currentPath) / name;
-  if (!fs::exists(full, ec))
+  for (size_t i = 0; i < names.size(); i++)
   {
-    return false;
+    const std::string& name = names[i];
+    if (name.empty() || name == "." || name == "..")
+    {
+      return false;
+    }
+    if (name.find('/') != std::string::npos)
+    {
+      return false;
+    }
+    fs::path full = fs::path(m_currentPath) / name;
+    if (!fs::exists(full, ec))
+    {
+      return false;
+    }
   }
-  m_clipboardName = name;
+  m_clipboardNames = names;
   m_clipboardSource = m_currentPath;
   m_clipboardMode = ClipboardMode::Cut;
   return true;
@@ -242,74 +258,78 @@ bool FileManager::cutEntry(const std::string& name)
 
 bool FileManager::paste()
 {
-  if (m_clipboardMode == ClipboardMode::None || m_clipboardName.empty())
+  if (m_clipboardMode == ClipboardMode::None || m_clipboardNames.empty())
   {
     return false;
   }
-  std::error_code ec;
-  fs::path src = fs::path(m_clipboardSource) / m_clipboardName;
-  if (!fs::exists(src, ec))
+  bool anyFailed = false;
+  for (size_t i = 0; i < m_clipboardNames.size(); i++)
+  {
+    const std::string& name = m_clipboardNames[i];
+    std::error_code ec;
+    fs::path src = fs::path(m_clipboardSource) / name;
+    if (!fs::exists(src, ec))
+    {
+      anyFailed = true;
+      continue;
+    }
+    fs::path dst = fs::path(m_currentPath) / name;
+    if (m_clipboardMode == ClipboardMode::Cut)
+    {
+      if (src == dst)
+      {
+        continue;
+      }
+      if (fs::exists(dst, ec))
+      {
+        anyFailed = true;
+        continue;
+      }
+    }
+    else
+    {
+      std::string newName = uniqueNameIn(m_currentPath, name);
+      if (newName.empty())
+      {
+        anyFailed = true;
+        continue;
+      }
+      dst = fs::path(m_currentPath) / newName;
+      std::string srcStr = src.string();
+      std::string curStr = m_currentPath;
+      if (curStr.size() > srcStr.size() &&
+          curStr.compare(0, srcStr.size(), srcStr) == 0 &&
+          curStr[srcStr.size()] == '/')
+      {
+        anyFailed = true;
+        continue;
+      }
+    }
+    if (m_clipboardMode == ClipboardMode::Cut)
+    {
+      fs::rename(src, dst, ec);
+    }
+    else
+    {
+      fs::copy(src, dst, fs::copy_options::recursive, ec);
+    }
+    if (ec)
+    {
+      anyFailed = true;
+    }
+  }
+  if (m_clipboardMode == ClipboardMode::Cut)
   {
     m_clipboardMode = ClipboardMode::None;
-    m_clipboardName.clear();
+    m_clipboardNames.clear();
     m_clipboardSource.clear();
+  }
+  bool reloaded = loadPath(m_currentPath);
+  if (anyFailed || !reloaded)
+  {
     return false;
   }
-  fs::path dst = fs::path(m_currentPath) / m_clipboardName;
-  if (m_clipboardMode == ClipboardMode::Cut)
-  {
-    if (src == dst)
-    {
-      m_clipboardMode = ClipboardMode::None;
-      m_clipboardName.clear();
-      m_clipboardSource.clear();
-      return true;
-    }
-    if (fs::exists(dst, ec))
-    {
-      return false;
-    }
-  }
-  else
-  {
-    std::string newName = uniqueNameIn(m_currentPath, m_clipboardName);
-    if (newName.empty())
-    {
-      return false;
-    }
-    dst = fs::path(m_currentPath) / newName;
-  }
-  if (m_clipboardMode == ClipboardMode::Copy)
-  {
-    std::string srcStr = src.string();
-    std::string curStr = m_currentPath;
-    if (curStr.size() > srcStr.size() &&
-        curStr.compare(0, srcStr.size(), srcStr) == 0 &&
-        curStr[srcStr.size()] == '/')
-    {
-      return false;
-    }
-  }
-  if (m_clipboardMode == ClipboardMode::Cut)
-  {
-    fs::rename(src, dst, ec);
-    if (ec)
-    {
-      return false;
-    }
-    m_clipboardMode = ClipboardMode::None;
-    m_clipboardName.clear();
-    m_clipboardSource.clear();
-  }
-  else
-  {
-    fs::copy(src, dst, fs::copy_options::recursive, ec);
-    if (ec)
-    {
-      return false;
-    }
-  }
-  return loadPath(m_currentPath);
+  return true;
 }
 
 ClipboardMode FileManager::clipboardMode() const

@@ -25,16 +25,16 @@
 ☑ Rename (inline text field or modal)
 ☑ New folder (Ctrl+Shift+N)
 ☑ Keyboard shortcuts: Ctrl+C, Ctrl+X, Ctrl+V, F2, Del, Ctrl+Shift+N
-□ Modal dialog component (yes/no/ok)
-□ Inline text input component
+☑ Modal dialog component (yes/no/ok)
+☑ Inline text input component
 □ Progress feedback for long copy/move operations
 
 ## Phase 2 — Multi-selection
 ☑ Ctrl+click toggles individual rows
 ☑ Shift+click selects a range
 ☑ Ctrl+A selects all
-□ Selection-aware file operations (act on multiple)
-□ Selection preserved across scroll
+☑ Selection-aware file operations (act on multiple)
+☑ Selection preserved across scroll
 
 ## Phase 3 — Context menu
 ☑ Right-click on a row opens a Blendish menu
@@ -78,12 +78,13 @@
 □ Permission editor in Properties
 
 ## Suggested next step
-Phase 1 is the biggest functional gap. Within it, start with:
+Phase 1 is nearly complete. The remaining item is progress feedback for long
+copy/move operations. The highest-impact next steps are:
 
-Modal dialog component — needed by delete and rename.
+Search / filter box in the top bar (Phase 5).
 
-Inline text input — needed by rename and new folder.
+Selection-aware copy/cut (Phase 2) — make Copy and Cut act on all selected rows.
 
-Then wire up operations one at a time: new folder → rename → delete → copy/cut/paste.
+Trash support (Phase 6) — safer delete workflow.
 
-That sequence gives you usable, testable features at every step.
+Status bar (Phase 7) — item count and selected count.

@@ -52,8 +52,8 @@ public:
   [[nodiscard]] bool createDirectory(const std::string& name);
   [[nodiscard]] bool renameEntry(const std::string& oldName, const std::string& newName);
   [[nodiscard]] bool deleteEntry(const std::string& name);
-  [[nodiscard]] bool copyEntry(const std::string& name);
-  [[nodiscard]] bool cutEntry(const std::string& name);
+  [[nodiscard]] bool copyEntries(const std::vector<std::string>& names);
+  [[nodiscard]] bool cutEntries(const std::vector<std::string>& names);
   [[nodiscard]] bool paste();
   ClipboardMode clipboardMode() const;
   void setSort(SortField field, bool ascending);
@@ -79,7 +79,7 @@ private:
   std::vector<std::string> m_forwardStack;
 
   ClipboardMode m_clipboardMode = ClipboardMode::None;
-  std::string m_clipboardName;
+  std::vector<std::string> m_clipboardNames;
   std::string m_clipboardSource;
 
   SortField m_sortField = SortField::Name;

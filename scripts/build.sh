@@ -132,7 +132,8 @@ while true; do
         echo "Yes"
       fi
       break ;;
-    2|n|N|no|NO|No)   echo "No";  break ;;
+    2|n|N|no|NO|No)
+      echo "GoodBye!";  break ;;
     *) echo "Please answer 1 (Yes) or 2 (No)." ;;
   esac
 done

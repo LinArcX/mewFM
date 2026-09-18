@@ -16,8 +16,8 @@ A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and ou
   - Directories navigate into themselves
   - Executables run directly
   - Other files open with `xdg-open`
-- Keyboard navigation: Up/Down arrows, Enter, Backspace (go up), F2 (rename), Del (delete), Ctrl+C/Ctrl+X/Ctrl+V (copy/cut/paste), Ctrl+L (go to path), Ctrl+H (toggle hidden files), F5 (refresh), Escape (quit)
-- Internal clipboard: copy or cut an entry, then paste it into the current directory
+- Keyboard navigation: Up/Down arrows, Enter, Backspace (go up), F2 (rename), Del (delete), Ctrl+C/Ctrl+X/Ctrl+V (copy/cut/paste), Ctrl+Shift+N (new folder), Ctrl+L (go to path), Ctrl+H (toggle hidden files), F5 (refresh), Escape (quit)
+- Internal clipboard: copy or cut one or more entries, then paste them into the current directory
 - Scroll wheel support
 - Session persistence via `~/.config/rah/config`:
   - Column widths
@@ -92,6 +92,8 @@ col0 .. col4	Column widths in pixels for Name, Size, Type, Owner, Permissions
 path	Last visited directory
 hidden	1 to show hidden files, 0 to hide
 fontSize	Base font size (8–48). Row height follows automatically
+sortField	Numeric sort column (0=Name, 1=Size, 2=Type, 3=Owner, 4=Permissions)
+sortDir	0 for ascending, 1 for descending
 collapsed_<key>	Collapse state for sidebar sections (places, devices)
 
 Values for `path`, `hidden`, and `collapsed_*` are written automatically. Column widths are written on drag release. fontSize is user-authored — `rah` does not overwrite it.

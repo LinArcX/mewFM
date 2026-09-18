@@ -1664,9 +1664,25 @@ static void handleKeyboardNav(AppState& app, float listH)
   if (g_copy)
   {
     const auto& entries = app.fm.entries();
-    if (app.selectedIndex >= 0 && app.selectedIndex < static_cast<int>(entries.size()))
+    std::vector<std::string> names;
+    if (!app.selectedIndices.empty())
     {
-      if (!app.fm.copyEntry(entries[app.selectedIndex].name))
+      for (size_t i = 0; i < app.selectedIndices.size(); i++)
+      {
+        int sel = app.selectedIndices[i];
+        if (sel >= 0 && sel < static_cast<int>(entries.size()))
+        {
+          names.push_back(entries[sel].name);
+        }
+      }
+    }
+    else if (app.selectedIndex >= 0 && app.selectedIndex < static_cast<int>(entries.size()))
+    {
+      names.push_back(entries[app.selectedIndex].name);
+    }
+    if (!names.empty())
+    {
+      if (!app.fm.copyEntries(names))
       {
         app.modal.openInfo("Error", "Could not copy.");
       }
@@ -1677,9 +1693,25 @@ static void handleKeyboardNav(AppState& app, float listH)
   if (g_cut)
   {
     const auto& entries = app.fm.entries();
-    if (app.selectedIndex >= 0 && app.selectedIndex < static_cast<int>(entries.size()))
+    std::vector<std::string> names;
+    if (!app.selectedIndices.empty())
     {
-      if (!app.fm.cutEntry(entries[app.selectedIndex].name))
+      for (size_t i = 0; i < app.selectedIndices.size(); i++)
+      {
+        int sel = app.selectedIndices[i];
+        if (sel >= 0 && sel < static_cast<int>(entries.size()))
+        {
+          names.push_back(entries[sel].name);
+        }
+      }
+    }
+    else if (app.selectedIndex >= 0 && app.selectedIndex < static_cast<int>(entries.size()))
+    {
+      names.push_back(entries[app.selectedIndex].name);
+    }
+    if (!names.empty())
+    {
+      if (!app.fm.cutEntries(names))
       {
         app.modal.openInfo("Error", "Could not cut.");
       }
