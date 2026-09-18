@@ -121,7 +121,6 @@ menu () {
     "create patch")
       read -r -p "Enter name of yoru patch: (it will be save in patches/) " filename
       file="patches/${filename}.json"
-      # touch "$file"
       nvim "$file"
       ;;
     "apply patch")
@@ -137,7 +136,7 @@ menu () {
       fi
       ;;
     "remove patch")
-      file=$(find patches -type f -printf '%p\n' | fzf)
+      file=$(find patches -type f -printf '%T@ %p\n' | sort -nr | cut -d' ' -f2- | fzf)
 
       if [ -z "$file" ]; then
         rm $file

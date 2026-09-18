@@ -441,26 +441,46 @@ void FileManager::sortEntries()
       {
         return a.isDirectory;
       }
-      const Entry& x = ascending ? a : b;
-      const Entry& y = ascending ? b : a;
-      bool less = false;
+      int cmp = 0;
       switch (field)
       {
-        case SortField::Name:        less = x.name < y.name; break;
-        case SortField::Size:        less = x.sizeBytes < y.sizeBytes; break;
-        case SortField::Type:        less = x.typeText < y.typeText; break;
-        case SortField::Owner:       less = x.ownerText < y.ownerText; break;
-        case SortField::Permissions: less = x.permText < y.permText; break;
+        case SortField::Name:
+        {
+          if (a.name < b.name) cmp = -1;
+          else if (b.name < a.name) cmp = 1;
+          break;
+        }
+        case SortField::Size:
+        {
+          if (a.sizeBytes < b.sizeBytes) cmp = -1;
+          else if (b.sizeBytes < a.sizeBytes) cmp = 1;
+          break;
+        }
+        case SortField::Type:
+        {
+          if (a.typeText < b.typeText) cmp = -1;
+          else if (b.typeText < a.typeText) cmp = 1;
+          break;
+        }
+        case SortField::Owner:
+        {
+          if (a.ownerText < b.ownerText) cmp = -1;
+          else if (b.ownerText < a.ownerText) cmp = 1;
+          break;
+        }
+        case SortField::Permissions:
+        {
+          if (a.permText < b.permText) cmp = -1;
+          else if (b.permText < a.permText) cmp = 1;
+          break;
+        }
       }
-      if (less)
+      if (cmp == 0 && field != SortField::Name)
       {
-        return true;
+        if (a.name < b.name) cmp = -1;
+        else if (b.name < a.name) cmp = 1;
       }
-      if (field == SortField::Name)
-      {
-        return false;
-      }
-      return x.name < y.name;
+      return ascending ? (cmp < 0) : (cmp > 0);
     });
 }
 
