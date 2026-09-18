@@ -164,6 +164,31 @@ bool FileManager::createDirectory(const std::string& name)
   return loadPath(m_currentPath);
 }
 
+bool FileManager::createFile(const std::string& name)
+{
+  if (name.empty() || name == "." || name == "..")
+  {
+    return false;
+  }
+  if (name.find('/') != std::string::npos)
+  {
+    return false;
+  }
+  std::error_code ec;
+  fs::path full = fs::path(m_currentPath) / name;
+  if (fs::exists(full, ec))
+  {
+    return false;
+  }
+  std::ofstream out(full.string());
+  if (!out)
+  {
+    return false;
+  }
+  out.close();
+  return loadPath(m_currentPath);
+}
+
 bool FileManager::renameEntry(const std::string& oldName, const std::string& newName)
 {
   if (oldName.empty() || newName.empty())

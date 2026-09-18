@@ -53,6 +53,7 @@ public:
   const std::string& filter() const;
   void resetTo(const std::string& path);
   [[nodiscard]] bool createDirectory(const std::string& name);
+  [[nodiscard]] bool createFile(const std::string& name);
   [[nodiscard]] bool renameEntry(const std::string& oldName, const std::string& newName);
   [[nodiscard]] bool deleteEntry(const std::string& name);
   [[nodiscard]] bool trashEntry(const std::string& name);

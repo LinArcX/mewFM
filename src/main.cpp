@@ -70,6 +70,7 @@ namespace
   {
     None,
     NewFolder,
+    NewFile,
     Rename,
     GoToPath,
     Filter,
@@ -106,6 +107,7 @@ namespace
     Rename,
     Delete,
     NewFolder,
+    NewFile,
     Refresh,
     EmptyTrash,
     Properties,
@@ -224,6 +226,7 @@ namespace
   bool  g_navBack = false;
   bool  g_toggleHidden = false;
   bool  g_newFolder = false;
+  bool  g_newFile = false;
   bool  g_rename = false;
   bool  g_delete = false;
   bool  g_forceDelete = false;
@@ -3015,6 +3018,12 @@ static void handleKeyboardNav(AppState& app, float listH)
     app.pendingInput = PendingInput::NewFolder;
     g_newFolder = false;
   }
+  if (g_newFile)
+  {
+    app.textInput.open("New File", "");
+    app.pendingInput = PendingInput::NewFile;
+    g_newFile = false;
+  }
   if (g_rename)
   {
     const auto& entries = app.fm.entries();
@@ -3268,6 +3277,19 @@ static void handleTextInputResult(AppState& app)
     else
     {
       app.toast.show("Folder created: " + app.textInput.value);
+    }
+    app.selectedIndex = -1;
+    app.scrollOffset = 0.0f;
+  }
+  if (pending == PendingInput::NewFile)
+  {
+    if (!app.fm.createFile(app.textInput.value))
+    {
+      app.modal.openInfo("Error", "Could not create file.");
+    }
+    else
+    {
+      app.toast.show("File created: " + app.textInput.value);
     }
     app.selectedIndex = -1;
     app.scrollOffset = 0.0f;
@@ -3532,6 +3554,7 @@ static std::vector<MenuItem> buildEmptyMenuItems(const AppState& app)
   std::vector<MenuItem> items;
   items.push_back({"Paste", MenuAction::Paste, true});
   items.push_back({"New Folder", MenuAction::NewFolder, true});
+  items.push_back({"New File", MenuAction::NewFile, true});
   if (isInsideTrash(app))
   {
     items.push_back({"Empty Trash", MenuAction::EmptyTrash, true});
@@ -3790,6 +3813,7 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
       }
       break;
     case MenuAction::NewFolder: g_newFolder = true; break;
+    case MenuAction::NewFile:   g_newFile = true; break;
     case MenuAction::EmptyTrash:
       app.modal.openConfirm("Empty Trash", "Permanently delete all items in Trash?");
       app.pendingConfirm = PendingConfirm::EmptyTrash;
