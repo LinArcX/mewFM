@@ -15,7 +15,7 @@ A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and ou
 - Integrated text editor: right-click a text file and choose "Edit Here" (Ctrl+S saves, Esc closes with a save prompt)
 - Single-click to select, double-click to open
 - Multi-selection: Ctrl+click toggles a row, Shift+click selects a range, Ctrl+A selects all
-- Right-click context menu: row actions (Open, Edit Here, Copy, Cut, Rename, Delete, Properties, Add to Bookmarks, Remove from Bookmarks) and empty-space actions (Paste, New Folder, New File, Refresh)
+- Right-click context menu: row actions (Open, Edit Here, Extract, Copy, Cut, Rename, Delete, Properties, Add to Bookmarks, Remove from Bookmarks) and empty-space actions (Paste, New Folder, New File, Refresh)
 - Trash: Del moves entries to `$XDG_DATA_HOME/Trash` (or `~/.local/share/Trash`) as per the freedesktop.org spec; Shift+Del deletes permanently
   - Directories navigate into themselves
   - Executables run directly
@@ -45,6 +45,8 @@ sudo xbps-install -Su base-devel glfw-devel MesaLib-devel pkg-config
 Other distributions: install the equivalent of GLFW 3, OpenGL development headers, and pkg-config.
 
 Runtime dependencies: OpenGL 2.0 (works on Intel HD 3000 and older), GLFW's X11 backend.
+
+Optional: `unzip` (install with `sudo xbps-install -Su unzip`) enables extraction of `.zip` archives. `tar` handles tar-based archives and is part of the base system.
 
 ## Build
 

@@ -100,6 +100,7 @@ namespace
     None,
     Open,
     EditHere,
+    Extract,
     Restore,
     Copy,
     Cut,
@@ -3516,6 +3517,19 @@ static bool menuItemEnabled(const AppState& app, const MenuItem& item, int rowId
     std::string ext = lowercaseExtension(entries[rowIdx].name);
     return isTextExtension(ext);
   }
+  if (item.action == MenuAction::Extract)
+  {
+    const auto& entries = app.fm.entries();
+    if (rowIdx < 0 || rowIdx >= static_cast<int>(entries.size()))
+    {
+      return false;
+    }
+    if (entries[rowIdx].isDirectory)
+    {
+      return false;
+    }
+    return FileManager::isArchive(entries[rowIdx].name);
+  }
   return true;
 }
 
@@ -3535,6 +3549,7 @@ static std::vector<MenuItem> buildRowMenuItems(const AppState& app)
   std::vector<MenuItem> items;
   items.push_back({"Open", MenuAction::Open, true});
   items.push_back({"Edit Here", MenuAction::EditHere, true});
+  items.push_back({"Extract", MenuAction::Extract, true});
   if (isInsideTrash(app))
   {
     items.push_back({"Restore", MenuAction::Restore, true});
@@ -3797,6 +3812,25 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
       break;
     case MenuAction::EditHere:
       beginEdit(app, rowIdx);
+      break;
+    case MenuAction::Extract:
+      if (rowIdx >= 0)
+      {
+        const auto& entries = app.fm.entries();
+        if (rowIdx < static_cast<int>(entries.size()) && !entries[rowIdx].isDirectory)
+        {
+          if (!app.fm.extractArchive(entries[rowIdx].name))
+          {
+            app.modal.openInfo("Error", "Could not extract archive.");
+          }
+          else
+          {
+            app.toast.show("Extracted");
+          }
+          clearSelection(app);
+          app.scrollOffset = 0.0f;
+        }
+      }
       break;
     case MenuAction::Restore:
       beginRestore(app);

@@ -56,8 +56,9 @@
 
 ## Phase 6 — System integration
 ☑ Trash support (~/.local/share/Trash)
-□ Restore from Trash
-□ Empty Trash
+☑ Restore from Trash
+☑ Empty Trash
+☑ Extract tar and zip archives
 □ "Open With" chooser dialog
 □ Mount / unmount detection for removable devices in sidebar
 

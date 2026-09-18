@@ -46,6 +46,7 @@ public:
   const std::string& currentPath() const;
   const std::vector<Entry>& entries() const;
   static std::string trashRootDir();
+  static bool isArchive(const std::string& name);
 
   void setShowHidden(bool show);
   bool showHidden() const;
@@ -57,6 +58,7 @@ public:
   [[nodiscard]] bool renameEntry(const std::string& oldName, const std::string& newName);
   [[nodiscard]] bool deleteEntry(const std::string& name);
   [[nodiscard]] bool trashEntry(const std::string& name);
+  [[nodiscard]] bool extractArchive(const std::string& name);
   [[nodiscard]] bool restoreEntry(const std::string& trashName, bool overwrite);
   [[nodiscard]] bool isRestoreConflict(const std::string& trashName) const;
   [[nodiscard]] bool emptyTrash();

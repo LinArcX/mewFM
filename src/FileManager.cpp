@@ -1,15 +1,20 @@
 #include "FileManager.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <ctime>
 #include <fstream>
 #include <filesystem>
 #include <pwd.h>
+#include <signal.h>
 #include <string>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <system_error>
+#include <unistd.h>
 
 namespace fs = std::filesystem;
 
@@ -67,6 +72,81 @@ static std::string uniqueNameIn(const std::string& dir, const std::string& name)
     }
   }
   return std::string();
+}
+
+static std::string lowercaseCopy(const std::string& s)
+{
+  std::string out = s;
+  for (char& c : out)
+  {
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  return out;
+}
+
+static bool endsWith(const std::string& s, const char* suffix)
+{
+  size_t sl = std::strlen(suffix);
+  if (s.size() < sl)
+  {
+    return false;
+  }
+  return s.compare(s.size() - sl, sl, suffix) == 0;
+}
+
+static bool runCommand(const std::vector<std::string>& args)
+{
+  if (args.empty())
+  {
+    return false;
+  }
+  struct sigaction oldAction;
+  struct sigaction newAction;
+  std::memset(&newAction, 0, sizeof(newAction));
+  newAction.sa_handler = SIG_DFL;
+  sigemptyset(&newAction.sa_mask);
+  if (sigaction(SIGCHLD, &newAction, &oldAction) != 0)
+  {
+    return false;
+  }
+  pid_t pid = fork();
+  if (pid < 0)
+  {
+    sigaction(SIGCHLD, &oldAction, nullptr);
+    return false;
+  }
+  if (pid == 0)
+  {
+    std::vector<char*> argv;
+    for (size_t i = 0; i < args.size(); i++)
+    {
+      argv.push_back(const_cast<char*>(args[i].c_str()));
+    }
+    argv.push_back(nullptr);
+    execvp(argv[0], argv.data());
+    _exit(127);
+  }
+  int status = 0;
+  pid_t waited = waitpid(pid, &status, 0);
+  sigaction(SIGCHLD, &oldAction, nullptr);
+  if (waited != pid)
+  {
+    return false;
+  }
+  return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
+bool FileManager::isArchive(const std::string& name)
+{
+  std::string lower = lowercaseCopy(name);
+  return endsWith(lower, ".tar")     ||
+         endsWith(lower, ".tar.gz")  ||
+         endsWith(lower, ".tgz")     ||
+         endsWith(lower, ".tar.bz2") ||
+         endsWith(lower, ".tbz2")    ||
+         endsWith(lower, ".tar.xz")  ||
+         endsWith(lower, ".txz")     ||
+         endsWith(lower, ".zip");
 }
 
 FileManager::FileManager()
@@ -345,6 +425,57 @@ bool FileManager::trashEntry(const std::string& name)
     out << "[Trash Info]\n";
     out << "Path=" << fs::absolute(src, ec).string() << "\n";
     out << "DeletionDate=" << currentIsoDateTime() << "\n";
+  }
+  return loadPath(m_currentPath);
+}
+
+bool FileManager::extractArchive(const std::string& name)
+{
+  if (name.empty() || name == "." || name == "..")
+  {
+    return false;
+  }
+  if (name.find('/') != std::string::npos)
+  {
+    return false;
+  }
+  std::error_code ec;
+  fs::path full = fs::path(m_currentPath) / name;
+  if (!fs::is_regular_file(full, ec))
+  {
+    return false;
+  }
+  std::string lower = lowercaseCopy(name);
+  std::vector<std::string> args;
+  if (endsWith(lower, ".zip"))
+  {
+    args.push_back("unzip");
+    args.push_back("-o");
+    args.push_back(full.string());
+    args.push_back("-d");
+    args.push_back(m_currentPath);
+  }
+  else if (endsWith(lower, ".tar")     ||
+           endsWith(lower, ".tar.gz")  ||
+           endsWith(lower, ".tgz")     ||
+           endsWith(lower, ".tar.bz2") ||
+           endsWith(lower, ".tbz2")    ||
+           endsWith(lower, ".tar.xz")  ||
+           endsWith(lower, ".txz"))
+  {
+    args.push_back("tar");
+    args.push_back("-xf");
+    args.push_back(full.string());
+    args.push_back("-C");
+    args.push_back(m_currentPath);
+  }
+  else
+  {
+    return false;
+  }
+  if (!runCommand(args))
+  {
+    return false;
   }
   return loadPath(m_currentPath);
 }
