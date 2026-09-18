@@ -114,3 +114,6 @@ install_asset assets/icon.svg    /usr/share/icons/hicolor/scalable/apps/rah.svg
 install_asset assets/rah.desktop /usr/share/applications/rah.desktop
 
 echo "${C_GREEN}>>> done${C_RESET}"
+
+echo "${C_GREEN}>>> launching rah${C_RESET}"
+"$OUT/rah"
