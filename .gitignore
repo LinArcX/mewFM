@@ -2,6 +2,7 @@ build/*
 .cache/*
 gmon.out
 package.json
+snippets/*
 node_modules/
 breakpoints.json
 package-lock.json

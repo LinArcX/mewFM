@@ -19,9 +19,10 @@ Apply these rules strictly when writing or editing any piece of code.
 - always use meaningful functions and variable names.
 - always remove dead code commented code. (try your best to keep the code clean and understandable)
 - I'm using void linux. so if you want to recommend me to install packages, always give me instructions for void linux.
-- When i ask you to write code or modify some part of code, in response don't explain anything. just give me the final source code.
+- When i ask you to write code or modify some part of code, use the snippet format:
   - Show only the relevant piece of code, with a few lines of context before and after each change.
   - Do NOT paste whole functions, classes, or files unless the unit is entirely new or was fully rewritten.
+  - New files are shown in full under a heading like `### New file: src/Foo.hpp`.
   - Mark each change with these exact comment markers placed INSIDE the code snippet:
     // --> Start of Change
     ...your changes...
