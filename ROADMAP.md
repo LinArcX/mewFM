@@ -30,9 +30,9 @@
 □ Progress feedback for long copy/move operations
 
 ## Phase 2 — Multi-selection
-□ Ctrl+click toggles individual rows
-□ Shift+click selects a range
-□ Ctrl+A selects all
+☑ Ctrl+click toggles individual rows
+☑ Shift+click selects a range
+☑ Ctrl+A selects all
 □ Selection-aware file operations (act on multiple)
 □ Selection preserved across scroll
 

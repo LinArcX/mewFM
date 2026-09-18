@@ -11,6 +11,7 @@ A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and ou
 - Sortable columns: click Name, Size, Type, Owner, or Permissions to sort; click again to toggle ascending/descending
 - Extension-aware icons (images, video, audio, documents, fonts, source code)
 - Single-click to select, double-click to open
+- Multi-selection: Ctrl+click toggles a row, Shift+click selects a range, Ctrl+A selects all
   - Directories navigate into themselves
   - Executables run directly
   - Other files open with `xdg-open`

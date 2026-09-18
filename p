@@ -37,8 +37,11 @@
 
 menu () {
   commands=(
+    # patch
+    "create patch" "apply patch" "remove patch"
+
     # debug
-    "build(debug)" "run(debug)" "create patch" "apply patch" "remove patch" "gf2" "gf2 attach" "rr record" "gf2 --rr-replay" "clean(debug)"
+    "build(debug)" "run(debug)"  "gf2" "gf2 attach" "rr record" "gf2 --rr-replay" "clean(debug)"
 
     # release
     "build(release)" "run(release)" "clean(release)"
@@ -102,22 +105,6 @@ menu () {
   selected=$(printf '%s\n' "${commands[@]}" | fzf --header="project:")
   
   case $selected in
-    "build(debug)")
-      ./scripts/build.sh --debug
-      if [ $? -eq 1 ]; then
-        # error
-        mpg123 -f 3000 /home/linarcx/VoidConf/assets/error2.mp3 > /dev/null 2>&1 
-      else
-        # success
-        mpg123 -f 3000 /home/linarcx/VoidConf/assets/success.mp3 > /dev/null 2>&1 
-      fi
-      ;;
-    "run(debug)")
-      clear
-      cd build/debug
-      ./rah 
-      cd ../..
-      ;;
     "create patch")
       read -r -p "Enter name of yoru patch: (it will be save in patches/) " filename
       file="patches/${filename}.json"
@@ -152,6 +139,22 @@ menu () {
       else
         echo "Cancelled."
       fi
+      ;;
+    "build(debug)")
+      ./scripts/build.sh --debug
+      if [ $? -eq 1 ]; then
+        # error
+        mpg123 -f 3000 /home/linarcx/VoidConf/assets/error2.mp3 > /dev/null 2>&1 
+      else
+        # success
+        mpg123 -f 3000 /home/linarcx/VoidConf/assets/success.mp3 > /dev/null 2>&1 
+      fi
+      ;;
+    "run(debug)")
+      clear
+      cd build/debug
+      ./rah 
+      cd ../..
       ;;
     "gf2")
       gf2 -nx -ex "source breakpoints.gdb" build/debug/rah

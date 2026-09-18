@@ -77,9 +77,11 @@ namespace
     PendingInput pendingInput = PendingInput::None;
     std::string renameOldName;
     PendingConfirm pendingConfirm = PendingConfirm::None;
-    std::string pendingDeleteName;
+    std::vector<std::string> pendingDeleteNames;
     float scrollOffset = 0.0f;
     int selectedIndex = -1;
+    int selectionAnchor = -1;
+    std::vector<int> selectedIndices;
     std::string lastPath;
     double lastClickTime = 0.0;
     int lastClickIndex = -1;
@@ -106,6 +108,8 @@ namespace
   bool  g_copy = false;
   bool  g_cut = false;
   bool  g_paste = false;
+  bool  g_selectAll = false;
+  int   g_mouseMods = 0;
   bool g_sidebarDirty = false;
 }
 
@@ -471,6 +475,7 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
   if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_C) g_copy = true;
   if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_X) g_cut = true;
   if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_V) g_paste = true;
+  if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_A) g_selectAll = true;
 
   if (key == GLFW_KEY_UP)    g_navUp = true;
   if (key == GLFW_KEY_DOWN)  g_navDown = true;
@@ -500,7 +505,6 @@ static void cursorPosCallback(GLFWwindow* window, double x, double y)
 static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
 {
   (void)window;
-  (void)mods;
   if (button != GLFW_MOUSE_BUTTON_LEFT)
   {
     return;
@@ -509,6 +513,7 @@ static void mouseButtonCallback(GLFWwindow* window, int button, int action, int 
   {
     g_mouseClicked = true;
     g_mouseDown = true;
+    g_mouseMods = mods;
   }
   else if (action == GLFW_RELEASE)
   {
@@ -526,6 +531,88 @@ static void scrollCallback(GLFWwindow* window, double x, double y)
 static bool inRect(float mx, float my, float x, float y, float w, float h)
 {
   return mx >= x && mx < x + w && my >= y && my < y + h;
+}
+
+static bool isEntrySelected(const AppState& app, int idx)
+{
+  for (size_t i = 0; i < app.selectedIndices.size(); i++)
+  {
+    if (app.selectedIndices[i] == idx)
+    {
+      return true;
+    }
+  }
+  return false;
+}
+
+static void setSingleSelection(AppState& app, int idx)
+{
+  app.selectedIndices.clear();
+  if (idx >= 0)
+  {
+    app.selectedIndices.push_back(idx);
+  }
+  app.selectedIndex = idx;
+  app.selectionAnchor = idx;
+}
+
+static void toggleSelection(AppState& app, int idx)
+{
+  if (idx < 0)
+  {
+    return;
+  }
+  for (size_t i = 0; i < app.selectedIndices.size(); i++)
+  {
+    if (app.selectedIndices[i] == idx)
+    {
+      app.selectedIndices.erase(app.selectedIndices.begin() + static_cast<long>(i));
+      app.selectedIndex = idx;
+      return;
+    }
+  }
+  app.selectedIndices.push_back(idx);
+  app.selectedIndex = idx;
+  app.selectionAnchor = idx;
+}
+
+static void selectRange(AppState& app, int anchor, int idx)
+{
+  if (anchor < 0 || idx < 0)
+  {
+    return;
+  }
+  int a = anchor;
+  int b = idx;
+  if (a > b)
+  {
+    int t = a;
+    a = b;
+    b = t;
+  }
+  app.selectedIndices.clear();
+  for (int i = a; i <= b; i++)
+  {
+    app.selectedIndices.push_back(i);
+  }
+  app.selectedIndex = idx;
+}
+
+static void selectAllEntries(AppState& app)
+{
+  app.selectedIndices.clear();
+  int n = static_cast<int>(app.fm.entries().size());
+  for (int i = 0; i < n; i++)
+  {
+    app.selectedIndices.push_back(i);
+  }
+}
+
+static void clearSelection(AppState& app)
+{
+  app.selectedIndices.clear();
+  app.selectedIndex = -1;
+  app.selectionAnchor = -1;
 }
 
 static std::string joinPath(const std::string& base, const std::string& name)
@@ -1322,7 +1409,7 @@ static void drawRows(NVGcontext* vg,
     {
       break;
     }
-    bool selected = (static_cast<int>(i) == app.selectedIndex);
+    bool selected = isEntrySelected(app, static_cast<int>(i));
     bool hover = inRect(g_mouseX, g_mouseY, x, rowY, w, g_rowHeight);
     if (selected)
     {
@@ -1368,7 +1455,7 @@ static void resetOnPathChange(AppState& app)
     return;
   }
   app.lastPath = app.fm.currentPath();
-  app.selectedIndex = -1;
+  clearSelection(app);
   app.scrollOffset = 0.0f;
   saveConfig(app);
 }
@@ -1385,6 +1472,24 @@ static void handleListClick(AppState& app, float listX, float listTop, float lis
   {
     return;
   }
+
+  const bool ctrl = (g_mouseMods & GLFW_MOD_CONTROL) != 0;
+  const bool shift = (g_mouseMods & GLFW_MOD_SHIFT) != 0;
+
+  if (ctrl || shift)
+  {
+    if (shift && app.selectionAnchor >= 0)
+    {
+      selectRange(app, app.selectionAnchor, idx);
+    }
+    else if (ctrl)
+    {
+      toggleSelection(app, idx);
+    }
+    app.lastClickIndex = -1;
+    return;
+  }
+
   double now = glfwGetTime();
   bool isDouble = (idx == app.lastClickIndex) && (now - app.lastClickTime < kDoubleClickTime);
   app.lastClickTime = now;
@@ -1394,11 +1499,9 @@ static void handleListClick(AppState& app, float listX, float listTop, float lis
   {
     openEntry(app, idx);
     app.lastClickIndex = -1;
+    return;
   }
-  else
-  {
-    app.selectedIndex = idx;
-  }
+  setSingleSelection(app, idx);
 }
 
 static void handleKeyboardNav(AppState& app, float listH)
@@ -1406,25 +1509,21 @@ static void handleKeyboardNav(AppState& app, float listH)
   int count = static_cast<int>(app.fm.entries().size());
   if (g_navUp && count > 0)
   {
-    if (app.selectedIndex < 0)
-    {
-      app.selectedIndex = 0;
-    }
-    else if (app.selectedIndex > 0)
-    {
-      app.selectedIndex--;
-    }
+    int newIdx = (app.selectedIndex <= 0) ? 0 : app.selectedIndex - 1;
+    setSingleSelection(app, newIdx);
   }
   if (g_navDown && count > 0)
   {
-    if (app.selectedIndex < 0)
+    int newIdx = 0;
+    if (app.selectedIndex >= 0 && app.selectedIndex < count - 1)
     {
-      app.selectedIndex = 0;
+      newIdx = app.selectedIndex + 1;
     }
-    else if (app.selectedIndex < count - 1)
+    else if (app.selectedIndex >= count - 1)
     {
-      app.selectedIndex++;
+      newIdx = count - 1;
     }
+    setSingleSelection(app, newIdx);
   }
   if (g_navEnter && app.selectedIndex >= 0)
   {
@@ -1438,7 +1537,7 @@ static void handleKeyboardNav(AppState& app, float listH)
   if (g_toggleHidden)
   {
     app.fm.setShowHidden(!app.fm.showHidden());
-    app.selectedIndex = -1;
+    clearSelection(app);
     app.scrollOffset = 0.0f;
     g_toggleHidden = false;
   }
@@ -1462,10 +1561,35 @@ static void handleKeyboardNav(AppState& app, float listH)
   if (g_delete)
   {
     const auto& entries = app.fm.entries();
-    if (app.selectedIndex >= 0 && app.selectedIndex < static_cast<int>(entries.size()))
+    std::vector<std::string> names;
+    if (!app.selectedIndices.empty())
     {
-      app.pendingDeleteName = entries[app.selectedIndex].name;
-      app.modal.openConfirm("Delete", "Delete \"" + app.pendingDeleteName + "\"?");
+      for (size_t i = 0; i < app.selectedIndices.size(); i++)
+      {
+        int sel = app.selectedIndices[i];
+        if (sel >= 0 && sel < static_cast<int>(entries.size()))
+        {
+          names.push_back(entries[sel].name);
+        }
+      }
+    }
+    else if (app.selectedIndex >= 0 && app.selectedIndex < static_cast<int>(entries.size()))
+    {
+      names.push_back(entries[app.selectedIndex].name);
+    }
+    if (!names.empty())
+    {
+      std::string msg;
+      if (names.size() == 1)
+      {
+        msg = "Delete \"" + names[0] + "\"?";
+      }
+      else
+      {
+        msg = "Delete " + std::to_string(names.size()) + " items?";
+      }
+      app.pendingDeleteNames = names;
+      app.modal.openConfirm("Delete", msg);
       app.pendingConfirm = PendingConfirm::DeleteEntry;
     }
     g_delete = false;
@@ -1509,6 +1633,12 @@ static void handleKeyboardNav(AppState& app, float listH)
       app.scrollOffset = 0.0f;
     }
     g_paste = false;
+  }
+
+  if (g_selectAll)
+  {
+    selectAllEntries(app);
+    g_selectAll = false;
   }
 
   g_navUp = false;
@@ -1577,17 +1707,25 @@ static void handleModalResult(AppState& app)
   app.pendingConfirm = PendingConfirm::None;
   if (r != ModalResult::Yes)
   {
-    app.pendingDeleteName.clear();
+    app.pendingDeleteNames.clear();
     return;
   }
   if (pending == PendingConfirm::DeleteEntry)
   {
-    if (!app.fm.deleteEntry(app.pendingDeleteName))
+    bool anyFailed = false;
+    for (size_t i = 0; i < app.pendingDeleteNames.size(); i++)
     {
-      app.modal.openInfo("Error", "Could not delete.");
+      if (!app.fm.deleteEntry(app.pendingDeleteNames[i]))
+      {
+        anyFailed = true;
+      }
     }
-    app.pendingDeleteName.clear();
-    app.selectedIndex = -1;
+    if (anyFailed)
+    {
+      app.modal.openInfo("Error", "Could not delete some items.");
+    }
+    app.pendingDeleteNames.clear();
+    clearSelection(app);
     app.scrollOffset = 0.0f;
   }
 }
