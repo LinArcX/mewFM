@@ -24,6 +24,7 @@ struct Modal
   std::string title;
   std::string message;
   ModalResult result = ModalResult::None;
+  int focus = -1;
 
   void openInfo(const std::string& t, const std::string& msg)
   {
@@ -32,6 +33,7 @@ struct Modal
     title = t;
     message = msg;
     result = ModalResult::None;
+    focus = 0;
   }
 
   void openConfirm(const std::string& t, const std::string& msg)
@@ -41,6 +43,7 @@ struct Modal
     title = t;
     message = msg;
     result = ModalResult::None;
+    focus = -1;
   }
 
   void close()

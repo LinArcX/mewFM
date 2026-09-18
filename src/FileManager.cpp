@@ -142,6 +142,34 @@ bool FileManager::renameEntry(const std::string& oldName, const std::string& new
   return loadPath(m_currentPath);
 }
 
+bool FileManager::deleteEntry(const std::string& name)
+{
+  if (name.empty())
+  {
+    return false;
+  }
+  if (name == "." || name == "..")
+  {
+    return false;
+  }
+  if (name.find('/') != std::string::npos)
+  {
+    return false;
+  }
+  std::error_code ec;
+  fs::path full = fs::path(m_currentPath) / name;
+  if (!fs::exists(full, ec))
+  {
+    return false;
+  }
+  fs::remove_all(full, ec);
+  if (ec)
+  {
+    return false;
+  }
+  return loadPath(m_currentPath);
+}
+
 bool FileManager::goBack()
 {
   if (m_backStack.empty())

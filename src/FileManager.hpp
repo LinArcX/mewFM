@@ -34,6 +34,7 @@ public:
   void resetTo(const std::string& path);
   [[nodiscard]] bool createDirectory(const std::string& name);
   [[nodiscard]] bool renameEntry(const std::string& oldName, const std::string& newName);
+  [[nodiscard]] bool deleteEntry(const std::string& name);
 
 private:
   bool loadPath(const std::string& path);

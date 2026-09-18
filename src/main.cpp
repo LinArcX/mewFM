@@ -62,6 +62,12 @@ namespace
     Rename,
   };
 
+  enum class PendingConfirm
+  {
+    None,
+    DeleteEntry,
+  };
+
   struct AppState
   {
     FileManager fm;
@@ -70,6 +76,8 @@ namespace
     TextInput textInput;
     PendingInput pendingInput = PendingInput::None;
     std::string renameOldName;
+    PendingConfirm pendingConfirm = PendingConfirm::None;
+    std::string pendingDeleteName;
     float scrollOffset = 0.0f;
     int selectedIndex = -1;
     std::string lastPath;
@@ -94,6 +102,7 @@ namespace
   bool  g_toggleHidden = false;
   bool  g_newFolder = false;
   bool  g_rename = false;
+  bool  g_delete = false;
   bool g_sidebarDirty = false;
 }
 
@@ -389,6 +398,40 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
   }
   if (modalActive)
   {
+    if (action != GLFW_PRESS && action != GLFW_REPEAT)
+    {
+      return;
+    }
+    if (app->modal.type == ModalType::Confirm)
+    {
+      if (key == GLFW_KEY_TAB || key == GLFW_KEY_LEFT || key == GLFW_KEY_RIGHT)
+      {
+        if (app->modal.focus < 0)
+        {
+          app->modal.focus = 0;
+        }
+        else
+        {
+          app->modal.focus = (app->modal.focus == 0) ? 1 : 0;
+        }
+      }
+      else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER)
+      {
+        if (app->modal.focus >= 0)
+        {
+          app->modal.result = (app->modal.focus == 0) ? ModalResult::No : ModalResult::Yes;
+          app->modal.active = false;
+        }
+      }
+    }
+    else if (app->modal.type == ModalType::Info)
+    {
+      if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER)
+      {
+        app->modal.result = ModalResult::Ok;
+        app->modal.active = false;
+      }
+    }
     return;
   }
   if (action != GLFW_PRESS && action != GLFW_REPEAT)
@@ -410,6 +453,7 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
   if (key == GLFW_KEY_ENTER) g_navEnter = true;
   if (key == GLFW_KEY_BACKSPACE) g_navBack = true;
   if (key == GLFW_KEY_F2) g_rename = true;
+  if (key == GLFW_KEY_DELETE) g_delete = true;
 }
 
 static void charCallback(GLFWwindow* window, unsigned int codepoint)
@@ -583,7 +627,8 @@ static void drawModalButton(
   float w,
   float h,
   const char* label,
-  bool hover)
+  bool hover,
+  bool focused = false)
 {
   nvgBeginPath(vg);
   nvgRoundedRect(vg, x, y, w, h, 4.0f);
@@ -593,6 +638,15 @@ static void drawModalButton(
   nvgStrokeColor(vg, nvgRGBf(0.12f, 0.12f, 0.12f));
   nvgStrokeWidth(vg, 1.0f);
   nvgStroke(vg);
+
+  if (focused)
+  {
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, x + 1.0f, y + 1.0f, w - 2.0f, h - 2.0f, 3.0f);
+    nvgStrokeColor(vg, nvgRGBf(0.55f, 0.65f, 0.85f));
+    nvgStrokeWidth(vg, 1.5f);
+    nvgStroke(vg);
+  }
 
   nvgFontFace(vg, "sans");
   nvgFontSize(vg, g_fontSize);
@@ -647,7 +701,11 @@ static void drawModal(
     float bx = px + (kModalWidth - total) * 0.5f;
 
     bool hoverNo = inRect(g_mouseX, g_mouseY, bx, by, kModalBtnW, kModalBtnH);
-    drawModalButton(vg, bx, by, kModalBtnW, kModalBtnH, "No", hoverNo);
+    if (hoverNo)
+    {
+      modal.focus = 0;
+    }
+    drawModalButton(vg, bx, by, kModalBtnW, kModalBtnH, "No", hoverNo, modal.focus == 0);
     if (hoverNo && g_mouseClicked)
     {
       clicked = ModalResult::No;
@@ -655,7 +713,11 @@ static void drawModal(
     bx += kModalBtnW + kModalBtnGap;
 
     bool hoverYes = inRect(g_mouseX, g_mouseY, bx, by, kModalBtnW, kModalBtnH);
-    drawModalButton(vg, bx, by, kModalBtnW, kModalBtnH, "Yes", hoverYes);
+    if (hoverYes)
+    {
+      modal.focus = 1;
+    }
+    drawModalButton(vg, bx, by, kModalBtnW, kModalBtnH, "Yes", hoverYes, modal.focus == 1);
     if (hoverYes && g_mouseClicked)
     {
       clicked = ModalResult::Yes;
@@ -665,7 +727,11 @@ static void drawModal(
   {
     float bx = px + (kModalWidth - kModalBtnW) * 0.5f;
     bool hoverOk = inRect(g_mouseX, g_mouseY, bx, by, kModalBtnW, kModalBtnH);
-    drawModalButton(vg, bx, by, kModalBtnW, kModalBtnH, "OK", hoverOk);
+    if (hoverOk)
+    {
+      modal.focus = 0;
+    }
+    drawModalButton(vg, bx, by, kModalBtnW, kModalBtnH, "OK", hoverOk, modal.focus == 0);
     if (hoverOk && g_mouseClicked)
     {
       clicked = ModalResult::Ok;
@@ -1289,6 +1355,17 @@ static void handleKeyboardNav(AppState& app, float listH)
     }
     g_rename = false;
   }
+  if (g_delete)
+  {
+    const auto& entries = app.fm.entries();
+    if (app.selectedIndex >= 0 && app.selectedIndex < static_cast<int>(entries.size()))
+    {
+      app.pendingDeleteName = entries[app.selectedIndex].name;
+      app.modal.openConfirm("Delete", "Delete \"" + app.pendingDeleteName + "\"?");
+      app.pendingConfirm = PendingConfirm::DeleteEntry;
+    }
+    g_delete = false;
+  }
   g_navUp = false;
   g_navDown = false;
   g_navEnter = false;
@@ -1338,6 +1415,33 @@ static void handleTextInputResult(AppState& app)
     {
       app.modal.openInfo("Error", "Could not rename.");
     }
+    app.selectedIndex = -1;
+    app.scrollOffset = 0.0f;
+  }
+}
+
+static void handleModalResult(AppState& app)
+{
+  ModalResult r = app.modal.result;
+  if (r == ModalResult::None)
+  {
+    return;
+  }
+  app.modal.result = ModalResult::None;
+  PendingConfirm pending = app.pendingConfirm;
+  app.pendingConfirm = PendingConfirm::None;
+  if (r != ModalResult::Yes)
+  {
+    app.pendingDeleteName.clear();
+    return;
+  }
+  if (pending == PendingConfirm::DeleteEntry)
+  {
+    if (!app.fm.deleteEntry(app.pendingDeleteName))
+    {
+      app.modal.openInfo("Error", "Could not delete.");
+    }
+    app.pendingDeleteName.clear();
     app.selectedIndex = -1;
     app.scrollOffset = 0.0f;
   }
@@ -1495,30 +1599,19 @@ int main(int argc, char** argv)
 
     resetOnPathChange(app);
     applyScroll(app, listH);
-    bool popupWasActive = app.modal.active || app.textInput.active;
+    bool popupActive = app.modal.active || app.textInput.active;
     bool clickBefore = g_mouseClicked;
-    if (popupWasActive)
-    {
-      g_mouseClicked = false;
-    }
-    bool modalWasActive = app.modal.active;
-    clickBefore = g_mouseClicked;
-    if (modalWasActive)
+    if (popupActive)
     {
       g_mouseClicked = false;
     }
     handleListClick(app, mainX, listTop, mainW, listH);
     resetOnPathChange(app);
-    if (!popupWasActive)
+    if (!popupActive)
     {
       handleKeyboardNav(app, listH);
     }
     handleTextInputResult(app);
-    if (!modalWasActive)
-    {
-      handleKeyboardNav(app, listH);
-    }
-    handleKeyboardNav(app, listH);
 
     drawTopBar(vg, app.fm, w);
     resetOnPathChange(app);
@@ -1532,18 +1625,14 @@ int main(int argc, char** argv)
     drawMainHeader(vg, app, mainX, mainY, mainW);
     drawRows(vg, app, mainX, listTop, mainW, listH);
 
-    if (popupWasActive)
+    if (popupActive)
     {
       g_mouseClicked = clickBefore;
       drawModal(vg, app.modal, w, h);
       drawTextInput(vg, app.textInput, w, h);
     }
 
-    if (modalWasActive)
-    {
-      g_mouseClicked = clickBefore;
-      drawModal(vg, app.modal, w, h);
-    }
+    handleModalResult(app);
 
     bool resizeHover = (app.hoveredSep >= 0) || (app.dragColumn >= 0);
     if (app.modal.active || app.textInput.active)

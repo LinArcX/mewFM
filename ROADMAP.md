@@ -21,9 +21,9 @@
 □ Adding sort mechanism to columns in mainView.
 □ Internal clipboard state (copy / cut)
 □ Paste into current directory
-□ Delete (with confirmation dialog)
-□ Rename (inline text field or modal)
-□ New folder (Ctrl+Shift+N)
+☑ Delete (with confirmation dialog)
+☑ Rename (inline text field or modal)
+☑ New folder (Ctrl+Shift+N)
 □ Keyboard shortcuts: Ctrl+C, Ctrl+X, Ctrl+V, F2, Del, Ctrl+Shift+N
 □ Modal dialog component (yes/no/ok)
 □ Inline text input component
