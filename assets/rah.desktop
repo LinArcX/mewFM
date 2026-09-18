@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=rah
+Name=Rah
 Exec=/usr/bin/rah
 Icon=/usr/share/icons/hicolor/scalable/apps/rah.svg
 Categories=System;FileManager;

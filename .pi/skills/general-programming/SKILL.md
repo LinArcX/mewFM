@@ -17,3 +17,10 @@ Apply these rules strictly when writing or editing any piece of code.
 - always use meaningful functions and variable names.
 - always remove dead code commented code. (try your best to keep the code clean and understandable)
 - I'm using void linux. so if you want to recommend me to install packages, always give me instructions for void linux.
+- When you answer me, or give me some piece of code, always use indicators in your snippet to show WHERE exactly you changed:
+  --> start of change
+  
+    your changes come here..
+  
+  --> end of change
+- Don't responde with explanatation. just give me the chagnes. just code. nothing more. Unless i ask you EXPLICITLY to exaplin.
