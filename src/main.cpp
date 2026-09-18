@@ -75,6 +75,18 @@ namespace
     Filter,
   };
 
+  struct Editor
+  {
+    bool active = false;
+    std::string path;
+    std::vector<std::string> lines;
+    int cursorLine = 0;
+    int cursorCol = 0;
+    int scrollLine = 0;
+    int visibleLines = 20;
+    bool dirty = false;
+  };
+
   enum class MenuKind
   {
     None,
@@ -86,6 +98,7 @@ namespace
   {
     None,
     Open,
+    EditHere,
     Restore,
     Copy,
     Cut,
@@ -113,6 +126,7 @@ namespace
     DeleteEntry,
     RestoreEntry,
     EmptyTrash,
+    EditorClose,
   };
 
   struct TabSnapshot
@@ -196,6 +210,7 @@ namespace
     int previewImage = -1;
     std::string previewPath;
     std::string previewText;
+    Editor editor;
   };
 
   float g_mouseX = 0.0f;
@@ -623,12 +638,285 @@ static void textInputInsert(TextInput& t, unsigned int codepoint)
   t.cursor++;
 }
 
+static bool loadEditorFile(const std::string& path, Editor& ed)
+{
+  std::ifstream in(path, std::ios::binary);
+  if (!in)
+  {
+    return false;
+  }
+  ed.lines.clear();
+  std::string line;
+  while (std::getline(in, line))
+  {
+    if (!line.empty() && line.back() == '\r')
+    {
+      line.pop_back();
+    }
+    ed.lines.push_back(line);
+  }
+  if (ed.lines.empty())
+  {
+    ed.lines.push_back(std::string());
+  }
+  return true;
+}
+
+static bool saveEditorFile(const std::string& path, const Editor& ed)
+{
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  if (!out)
+  {
+    return false;
+  }
+  for (size_t i = 0; i < ed.lines.size(); i++)
+  {
+    out << ed.lines[i];
+    if (i + 1 < ed.lines.size())
+    {
+      out << "\n";
+    }
+  }
+  return out.good();
+}
+
+static void ensureEditorCursorVisible(Editor& ed)
+{
+  if (ed.visibleLines <= 0)
+  {
+    return;
+  }
+  if (ed.cursorLine < ed.scrollLine)
+  {
+    ed.scrollLine = ed.cursorLine;
+  }
+  else if (ed.cursorLine >= ed.scrollLine + ed.visibleLines)
+  {
+    ed.scrollLine = ed.cursorLine - ed.visibleLines + 1;
+  }
+}
+
+static void handleEditorKey(AppState& app, int key, int mods)
+{
+  Editor& ed = app.editor;
+  if (ed.lines.empty())
+  {
+    ed.lines.push_back(std::string());
+  }
+  if (ed.cursorLine < 0)
+  {
+    ed.cursorLine = 0;
+  }
+  if (ed.cursorLine >= static_cast<int>(ed.lines.size()))
+  {
+    ed.cursorLine = static_cast<int>(ed.lines.size()) - 1;
+  }
+  std::string& line = ed.lines[static_cast<size_t>(ed.cursorLine)];
+  if (ed.cursorCol < 0)
+  {
+    ed.cursorCol = 0;
+  }
+  if (ed.cursorCol > static_cast<int>(line.size()))
+  {
+    ed.cursorCol = static_cast<int>(line.size());
+  }
+
+  if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_S)
+  {
+    if (saveEditorFile(ed.path, ed))
+    {
+      ed.dirty = false;
+      app.toast.show("Saved");
+    }
+    else
+    {
+      app.modal.openInfo("Error", "Could not save file.");
+    }
+    return;
+  }
+  if (key == GLFW_KEY_ESCAPE)
+  {
+    if (ed.dirty)
+    {
+      app.modal.openConfirm("Unsaved Changes", "Save before closing?");
+      app.pendingConfirm = PendingConfirm::EditorClose;
+    }
+    else
+    {
+      ed.active = false;
+      ed.lines.clear();
+      ed.path.clear();
+    }
+    return;
+  }
+  if (key == GLFW_KEY_BACKSPACE)
+  {
+    if (ed.cursorCol > 0)
+    {
+      line.erase(line.begin() + (ed.cursorCol - 1));
+      ed.cursorCol--;
+      ed.dirty = true;
+    }
+    else if (ed.cursorLine > 0)
+    {
+      int prevLen = static_cast<int>(ed.lines[ed.cursorLine - 1].size());
+      ed.lines[ed.cursorLine - 1] += line;
+      ed.lines.erase(ed.lines.begin() + ed.cursorLine);
+      ed.cursorLine--;
+      ed.cursorCol = prevLen;
+      ed.dirty = true;
+    }
+    ensureEditorCursorVisible(ed);
+    return;
+  }
+  if (key == GLFW_KEY_DELETE)
+  {
+    if (ed.cursorCol < static_cast<int>(line.size()))
+    {
+      line.erase(line.begin() + ed.cursorCol);
+      ed.dirty = true;
+    }
+    else if (ed.cursorLine + 1 < static_cast<int>(ed.lines.size()))
+    {
+      line += ed.lines[ed.cursorLine + 1];
+      ed.lines.erase(ed.lines.begin() + (ed.cursorLine + 1));
+      ed.dirty = true;
+    }
+    return;
+  }
+  if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER)
+  {
+    std::string rest = line.substr(static_cast<size_t>(ed.cursorCol));
+    line = line.substr(0, static_cast<size_t>(ed.cursorCol));
+    ed.lines.insert(ed.lines.begin() + (ed.cursorLine + 1), rest);
+    ed.cursorLine++;
+    ed.cursorCol = 0;
+    ed.dirty = true;
+    ensureEditorCursorVisible(ed);
+    return;
+  }
+  if (key == GLFW_KEY_TAB)
+  {
+    line.insert(line.begin() + ed.cursorCol, ' ');
+    line.insert(line.begin() + ed.cursorCol + 1, ' ');
+    ed.cursorCol += 2;
+    ed.dirty = true;
+    return;
+  }
+  if (key == GLFW_KEY_LEFT)
+  {
+    if (ed.cursorCol > 0)
+    {
+      ed.cursorCol--;
+    }
+    else if (ed.cursorLine > 0)
+    {
+      ed.cursorLine--;
+      ed.cursorCol = static_cast<int>(ed.lines[static_cast<size_t>(ed.cursorLine)].size());
+    }
+    ensureEditorCursorVisible(ed);
+    return;
+  }
+  if (key == GLFW_KEY_RIGHT)
+  {
+    if (ed.cursorCol < static_cast<int>(line.size()))
+    {
+      ed.cursorCol++;
+    }
+    else if (ed.cursorLine + 1 < static_cast<int>(ed.lines.size()))
+    {
+      ed.cursorLine++;
+      ed.cursorCol = 0;
+    }
+    ensureEditorCursorVisible(ed);
+    return;
+  }
+  if (key == GLFW_KEY_UP)
+  {
+    if (ed.cursorLine > 0)
+    {
+      ed.cursorLine--;
+      int len = static_cast<int>(ed.lines[static_cast<size_t>(ed.cursorLine)].size());
+      if (ed.cursorCol > len)
+      {
+        ed.cursorCol = len;
+      }
+    }
+    ensureEditorCursorVisible(ed);
+    return;
+  }
+  if (key == GLFW_KEY_DOWN)
+  {
+    if (ed.cursorLine + 1 < static_cast<int>(ed.lines.size()))
+    {
+      ed.cursorLine++;
+      int len = static_cast<int>(ed.lines[static_cast<size_t>(ed.cursorLine)].size());
+      if (ed.cursorCol > len)
+      {
+        ed.cursorCol = len;
+      }
+    }
+    ensureEditorCursorVisible(ed);
+    return;
+  }
+  if (key == GLFW_KEY_HOME)
+  {
+    ed.cursorCol = 0;
+    return;
+  }
+  if (key == GLFW_KEY_END)
+  {
+    ed.cursorCol = static_cast<int>(line.size());
+    return;
+  }
+  if (key == GLFW_KEY_PAGE_UP)
+  {
+    ed.cursorLine -= ed.visibleLines;
+    if (ed.cursorLine < 0)
+    {
+      ed.cursorLine = 0;
+    }
+    int len = static_cast<int>(ed.lines[static_cast<size_t>(ed.cursorLine)].size());
+    if (ed.cursorCol > len)
+    {
+      ed.cursorCol = len;
+    }
+    ensureEditorCursorVisible(ed);
+    return;
+  }
+  if (key == GLFW_KEY_PAGE_DOWN)
+  {
+    ed.cursorLine += ed.visibleLines;
+    if (ed.cursorLine >= static_cast<int>(ed.lines.size()))
+    {
+      ed.cursorLine = static_cast<int>(ed.lines.size()) - 1;
+    }
+    int len = static_cast<int>(ed.lines[static_cast<size_t>(ed.cursorLine)].size());
+    if (ed.cursorCol > len)
+    {
+      ed.cursorCol = len;
+    }
+    ensureEditorCursorVisible(ed);
+    return;
+  }
+}
+
 static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
   (void)scancode;
   AppState* app = static_cast<AppState*>(glfwGetWindowUserPointer(window));
   bool modalActive = (app != nullptr) && app->modal.active;
   bool inputActive = (app != nullptr) && app->textInput.active;
+  bool editorActive = (app != nullptr) && app->editor.active;
+  if (editorActive && !modalActive)
+  {
+    if (action != GLFW_PRESS && action != GLFW_REPEAT)
+    {
+      return;
+    }
+    handleEditorKey(*app, key, mods);
+    return;
+  }
   if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS && app != nullptr &&
       app->menuKind != MenuKind::None)
   {
@@ -775,7 +1063,43 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
 static void charCallback(GLFWwindow* window, unsigned int codepoint)
 {
   AppState* app = static_cast<AppState*>(glfwGetWindowUserPointer(window));
-  if (app == nullptr || !app->textInput.active)
+  if (app == nullptr)
+  {
+    return;
+  }
+  if (app->editor.active && !app->modal.active)
+  {
+    if (codepoint >= 32 && codepoint <= 126)
+    {
+      Editor& ed = app->editor;
+      if (ed.lines.empty())
+      {
+        ed.lines.push_back(std::string());
+      }
+      if (ed.cursorLine < 0)
+      {
+        ed.cursorLine = 0;
+      }
+      if (ed.cursorLine >= static_cast<int>(ed.lines.size()))
+      {
+        ed.cursorLine = static_cast<int>(ed.lines.size()) - 1;
+      }
+      std::string& line = ed.lines[static_cast<size_t>(ed.cursorLine)];
+      if (ed.cursorCol < 0)
+      {
+        ed.cursorCol = 0;
+      }
+      if (ed.cursorCol > static_cast<int>(line.size()))
+      {
+        ed.cursorCol = static_cast<int>(line.size());
+      }
+      line.insert(line.begin() + ed.cursorCol, static_cast<char>(codepoint));
+      ed.cursorCol++;
+      ed.dirty = true;
+    }
+    return;
+  }
+  if (!app->textInput.active)
   {
     return;
   }
@@ -822,9 +1146,27 @@ static void mouseButtonCallback(GLFWwindow* window, int button, int action, int 
 static void scrollCallback(GLFWwindow* window, double x, double y)
 {
   (void)x;
+  AppState* app = static_cast<AppState*>(glfwGetWindowUserPointer(window));
+  if (app != nullptr && app->editor.active)
+  {
+    app->editor.scrollLine -= static_cast<int>(y);
+    if (app->editor.scrollLine < 0)
+    {
+      app->editor.scrollLine = 0;
+    }
+    int maxScroll = static_cast<int>(app->editor.lines.size()) - app->editor.visibleLines;
+    if (maxScroll < 0)
+    {
+      maxScroll = 0;
+    }
+    if (app->editor.scrollLine > maxScroll)
+    {
+      app->editor.scrollLine = maxScroll;
+    }
+    return;
+  }
   if (g_mouseY < kTabBarHeight)
   {
-    AppState* app = static_cast<AppState*>(glfwGetWindowUserPointer(window));
     if (app != nullptr)
     {
       app->tabScrollOffset -= static_cast<float>(y) * 40.0f;
@@ -2149,6 +2491,17 @@ static std::string currentSelectionPath(const AppState& app)
 
 static void updatePreview(AppState& app, NVGcontext* vg)
 {
+  if (app.editor.active)
+  {
+    if (app.previewImage >= 0)
+    {
+      nvgDeleteImage(vg, app.previewImage);
+      app.previewImage = -1;
+    }
+    app.previewPath.clear();
+    app.previewText.clear();
+    return;
+  }
   if (!app.previewVisible)
   {
     if (app.previewImage >= 0)
@@ -2393,6 +2746,173 @@ static void drawRows(NVGcontext* vg,
     nvgText(vg, columnX(app, x, 3), cy, ownerText.c_str(), nullptr);
     nvgText(vg, columnX(app, x, 4), cy, e.permText.c_str(), nullptr);
   }
+  nvgRestore(vg);
+}
+
+static void drawEditor(NVGcontext* vg, AppState& app, float x, float y, float w, float h)
+{
+  Editor& ed = app.editor;
+
+  nvgBeginPath(vg);
+  nvgRect(vg, x, y, w, h);
+  nvgFillColor(vg, nvgRGBf(0.12f, 0.12f, 0.12f));
+  nvgFill(vg);
+
+  if (ed.lines.empty())
+  {
+    ed.lines.push_back(std::string());
+  }
+
+  const float pad = 8.0f;
+  const float headerH = 32.0f;
+  const float lineH = g_fontSize + 4.0f;
+  const float gutterW = 54.0f;
+
+  nvgBeginPath(vg);
+  nvgRect(vg, x, y, w, headerH);
+  nvgFillColor(vg, nvgRGBf(0.18f, 0.18f, 0.18f));
+  nvgFill(vg);
+
+  nvgFontFace(vg, "sans");
+  nvgFontSize(vg, g_fontSize - 1.0f);
+  nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
+  nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+
+  std::filesystem::path fp(ed.path);
+  std::string label = fp.filename().string();
+  if (label.empty())
+  {
+    label = ed.path;
+  }
+  if (ed.dirty)
+  {
+    label += " *";
+  }
+  float labelMaxW = w - pad * 2.0f - 200.0f;
+  if (labelMaxW < 40.0f)
+  {
+    labelMaxW = 40.0f;
+  }
+  std::string shownLabel = truncateToWidth(vg, label, labelMaxW);
+  nvgText(vg, x + pad, y + headerH * 0.5f, shownLabel.c_str(), nullptr);
+
+  const float btnW = 70.0f;
+  const float btnH = 22.0f;
+  const float btnGap = 6.0f;
+  float btnY = y + (headerH - btnH) * 0.5f;
+
+  float closeX = x + w - pad - btnW;
+  bool closeHover = inRect(g_mouseX, g_mouseY, closeX, btnY, btnW, btnH);
+  drawModalButton(vg, closeX, btnY, btnW, btnH, "Close", closeHover, false);
+  if (closeHover && g_mouseClicked)
+  {
+    if (ed.dirty)
+    {
+      app.modal.openConfirm("Unsaved Changes", "Save before closing?");
+      app.pendingConfirm = PendingConfirm::EditorClose;
+    }
+    else
+    {
+      ed.active = false;
+      ed.lines.clear();
+      ed.path.clear();
+    }
+  }
+
+  float saveX = closeX - btnW - btnGap;
+  bool saveHover = inRect(g_mouseX, g_mouseY, saveX, btnY, btnW, btnH);
+  drawModalButton(vg, saveX, btnY, btnW, btnH, "Save", saveHover, false);
+  if (saveHover && g_mouseClicked)
+  {
+    if (saveEditorFile(ed.path, ed))
+    {
+      ed.dirty = false;
+      app.toast.show("Saved");
+    }
+    else
+    {
+      app.modal.openInfo("Error", "Could not save file.");
+    }
+  }
+
+  float contentY = y + headerH;
+  float contentH = h - headerH;
+
+  nvgBeginPath(vg);
+  nvgRect(vg, x, contentY, w, contentH);
+  nvgFillColor(vg, nvgRGBf(0.12f, 0.12f, 0.12f));
+  nvgFill(vg);
+
+  int maxLines = static_cast<int>((contentH - pad * 2.0f) / lineH);
+  if (maxLines < 1)
+  {
+    maxLines = 1;
+  }
+  ed.visibleLines = maxLines;
+
+  if (ed.cursorLine < ed.scrollLine)
+  {
+    ed.scrollLine = ed.cursorLine;
+  }
+  if (ed.cursorLine >= ed.scrollLine + maxLines)
+  {
+    ed.scrollLine = ed.cursorLine - maxLines + 1;
+  }
+  if (ed.scrollLine < 0)
+  {
+    ed.scrollLine = 0;
+  }
+  int maxScroll = static_cast<int>(ed.lines.size()) - maxLines;
+  if (maxScroll < 0)
+  {
+    maxScroll = 0;
+  }
+  if (ed.scrollLine > maxScroll)
+  {
+    ed.scrollLine = maxScroll;
+  }
+
+  nvgSave(vg);
+  nvgScissor(vg, x, contentY, w, contentH);
+
+  nvgFontSize(vg, g_fontSize - 1.0f);
+
+  for (int i = 0; i < maxLines; i++)
+  {
+    int lineIdx = ed.scrollLine + i;
+    if (lineIdx >= static_cast<int>(ed.lines.size()))
+    {
+      break;
+    }
+    float lineY = contentY + pad + static_cast<float>(i) * lineH + lineH * 0.5f;
+
+    char numBuf[16];
+    std::snprintf(numBuf, sizeof(numBuf), "%4d", lineIdx + 1);
+    nvgFillColor(vg, nvgRGBf(0.45f, 0.45f, 0.45f));
+    nvgTextAlign(vg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    nvgText(vg, x + gutterW - 8.0f, lineY, numBuf, nullptr);
+
+    nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
+    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+    nvgText(vg, x + gutterW, lineY, ed.lines[static_cast<size_t>(lineIdx)].c_str(), nullptr);
+
+    if (lineIdx == ed.cursorLine)
+    {
+      std::string before = ed.lines[static_cast<size_t>(lineIdx)].substr(
+        0, static_cast<size_t>(ed.cursorCol));
+      float bounds[4];
+      nvgTextBounds(vg, 0.0f, 0.0f, before.c_str(), nullptr, bounds);
+      float cx = x + gutterW + (bounds[2] - bounds[0]);
+
+      nvgBeginPath(vg);
+      nvgMoveTo(vg, cx, lineY - lineH * 0.4f);
+      nvgLineTo(vg, cx, lineY + lineH * 0.4f);
+      nvgStrokeColor(vg, nvgRGBf(0.95f, 0.95f, 0.95f));
+      nvgStrokeWidth(vg, 1.5f);
+      nvgStroke(vg);
+    }
+  }
+
   nvgRestore(vg);
 }
 
@@ -2786,6 +3306,27 @@ static void handleModalResult(AppState& app)
   PendingConfirm pending = app.pendingConfirm;
   app.pendingConfirm = PendingConfirm::None;
 
+  if (pending == PendingConfirm::EditorClose)
+  {
+    if (r == ModalResult::Yes)
+    {
+      if (saveEditorFile(app.editor.path, app.editor))
+      {
+        app.toast.show("Saved");
+      }
+      else
+      {
+        app.modal.openInfo("Error", "Could not save file.");
+        return;
+      }
+    }
+    app.editor.active = false;
+    app.editor.lines.clear();
+    app.editor.path.clear();
+    app.editor.dirty = false;
+    return;
+  }
+
   if (pending == PendingConfirm::RestoreEntry)
   {
     if (r == ModalResult::Yes)
@@ -2939,6 +3480,20 @@ static bool menuItemEnabled(const AppState& app, const MenuItem& item, int rowId
     std::string full = joinPath(app.fm.currentPath(), entries[rowIdx].name);
     return isBookmarked(app, full);
   }
+  if (item.action == MenuAction::EditHere)
+  {
+    const auto& entries = app.fm.entries();
+    if (rowIdx < 0 || rowIdx >= static_cast<int>(entries.size()))
+    {
+      return false;
+    }
+    if (entries[rowIdx].isDirectory)
+    {
+      return false;
+    }
+    std::string ext = lowercaseExtension(entries[rowIdx].name);
+    return isTextExtension(ext);
+  }
   return true;
 }
 
@@ -2957,6 +3512,7 @@ static std::vector<MenuItem> buildRowMenuItems(const AppState& app)
 {
   std::vector<MenuItem> items;
   items.push_back({"Open", MenuAction::Open, true});
+  items.push_back({"Edit Here", MenuAction::EditHere, true});
   if (isInsideTrash(app))
   {
     items.push_back({"Restore", MenuAction::Restore, true});
@@ -3176,6 +3732,36 @@ static void beginRestore(AppState& app)
   app.scrollOffset = 0.0f;
 }
 
+static void beginEdit(AppState& app, int rowIdx)
+{
+  const auto& entries = app.fm.entries();
+  if (rowIdx < 0 || rowIdx >= static_cast<int>(entries.size()))
+  {
+    return;
+  }
+  if (entries[rowIdx].isDirectory)
+  {
+    return;
+  }
+  std::string ext = lowercaseExtension(entries[rowIdx].name);
+  if (!isTextExtension(ext))
+  {
+    return;
+  }
+  std::string full = joinPath(app.fm.currentPath(), entries[rowIdx].name);
+  if (!loadEditorFile(full, app.editor))
+  {
+    app.modal.openInfo("Error", "Could not open file for editing.");
+    return;
+  }
+  app.editor.active = true;
+  app.editor.path = full;
+  app.editor.cursorLine = 0;
+  app.editor.cursorCol = 0;
+  app.editor.scrollLine = 0;
+  app.editor.dirty = false;
+}
+
 static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
 {
   switch (action)
@@ -3185,6 +3771,9 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
       {
         openEntry(app, rowIdx);
       }
+      break;
+    case MenuAction::EditHere:
+      beginEdit(app, rowIdx);
       break;
     case MenuAction::Restore:
       beginRestore(app);
@@ -3540,7 +4129,7 @@ int main(int argc, char** argv)
 
     float w = static_cast<float>(winW);
     float h = static_cast<float>(winH);
-    float previewW = app.previewVisible ? kPreviewWidth : 0.0f;
+    float previewW = (app.previewVisible && !app.editor.active) ? kPreviewWidth : 0.0f;
     float mainX = kSidebarWidth;
     float mainY = kTopBarHeight;
     float mainW = w - kSidebarWidth - previewW;
@@ -3599,9 +4188,16 @@ int main(int argc, char** argv)
       g_sidebarDirty = false;
     }
     resetOnPathChange(app);
-    drawMainHeader(vg, app, mainX, mainY, mainW);
-    drawRows(vg, app, mainX, listTop, mainW, listH);
-    if (app.previewVisible)
+    if (app.editor.active)
+    {
+      drawEditor(vg, app, mainX, mainY, mainW, h - mainY - kStatusBarHeight);
+    }
+    else
+    {
+      drawMainHeader(vg, app, mainX, mainY, mainW);
+      drawRows(vg, app, mainX, listTop, mainW, listH);
+    }
+    if (app.previewVisible && !app.editor.active)
     {
       drawPreviewPanel(vg, app, mainX + mainW, mainY, previewW, h - mainY - kStatusBarHeight);
     }
@@ -3636,11 +4232,14 @@ int main(int argc, char** argv)
     drawSeparator(vg, 0.0f, kTabBarHeight, w, kTabBarHeight);
     drawSeparator(vg, 0.0f, kTopBarHeight, w, kTopBarHeight);
     drawSeparator(vg, kSidebarWidth, kTopBarHeight, kSidebarWidth, h - kStatusBarHeight);
-    if (app.previewVisible)
+    if (app.previewVisible && !app.editor.active)
     {
       drawSeparator(vg, mainX + mainW, kTopBarHeight, mainX + mainW, h - kStatusBarHeight);
     }
-    drawSeparator(vg, mainX, mainY + kHeaderHeight, mainX + mainW, mainY + kHeaderHeight);
+    if (!app.editor.active)
+    {
+      drawSeparator(vg, mainX, mainY + kHeaderHeight, mainX + mainW, mainY + kHeaderHeight);
+    }
     drawSeparator(vg, 0.0f, h - kStatusBarHeight, w, h - kStatusBarHeight);
     nvgEndFrame(vg);
 

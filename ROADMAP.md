@@ -72,6 +72,7 @@
 ☑ Tabs (multiple directories in one window)
 ☑ User bookmarks (add / remove sidebar entries)
 ☑ Preview panel (thumbnail for images, text preview)
+☑ Integrated text editor (right-click, Edit Here)
 □ List / grid view toggle
 □ Drag and drop (internal move, external in / out)
 □ Symlink handling (broken-link marker, follow toggle)
@@ -84,11 +85,7 @@ Progress feedback for long copy/move operations (Phase 1).
 
 Open With menu item, submenu, and chooser dialog (Phase 3).
 
-Restore from Trash and Empty Trash (Phase 6).
-
 Mount / unmount detection for removable devices (Phase 6).
-
-Preview panel (Phase 8).
 
 List / grid view toggle (Phase 8).
 
