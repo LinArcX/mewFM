@@ -6,13 +6,13 @@ A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and ou
 
 - File listing with Name, Size, Type, Owner, and Permissions columns
 - Top navigation bar: Home, Back, Forward, Up, and clickable breadcrumb
-- Collapsible sidebar with Places and Devices sections
+- Collapsible sidebar with Places, Devices, and Bookmarks sections
 - Resizable columns (drag separator in the header row)
 - Sortable columns: click Name, Size, Type, Owner, or Permissions to sort; click again to toggle ascending/descending
 - Extension-aware icons (images, video, audio, documents, fonts, source code)
 - Single-click to select, double-click to open
 - Multi-selection: Ctrl+click toggles a row, Shift+click selects a range, Ctrl+A selects all
-- Right-click context menu: row actions (Open, Copy, Cut, Rename, Delete, Properties) and empty-space actions (Paste, New Folder, Refresh)
+- Right-click context menu: row actions (Open, Copy, Cut, Rename, Delete, Properties, Add to Bookmarks) and empty-space actions (Paste, New Folder, Refresh)
 - Trash: Del moves entries to `$XDG_DATA_HOME/Trash` (or `~/.local/share/Trash`) as per the freedesktop.org spec; Shift+Del deletes permanently
   - Directories navigate into themselves
   - Executables run directly
@@ -88,6 +88,8 @@ sortField=0
 sortDir=0
 collapsed_places=0
 collapsed_devices=0
+collapsed_bookmarks=0
+bookmark=/home/user/Documents
 ```
 
 Key	Meaning
@@ -97,7 +99,8 @@ hidden	1 to show hidden files, 0 to hide
 fontSize	Base font size (8–48). Row height follows automatically
 sortField	Numeric sort column (0=Name, 1=Size, 2=Type, 3=Owner, 4=Permissions)
 sortDir	0 for ascending, 1 for descending
-collapsed_<key>	Collapse state for sidebar sections (places, devices)
+collapsed_<key>	Collapse state for sidebar sections (places, devices, bookmarks)
+bookmark	Absolute path of a sidebar bookmark; one line per bookmark (written on add)
 
 Values for `path`, `hidden`, and `collapsed_*` are written automatically. Column widths are written on drag release. fontSize is user-authored — `rah` does not overwrite it.
 

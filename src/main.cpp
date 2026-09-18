@@ -89,6 +89,7 @@ namespace
     NewFolder,
     Refresh,
     Properties,
+    AddBookmark,
   };
 
   struct MenuItem
@@ -106,6 +107,7 @@ namespace
     {"Rename", MenuAction::Rename, true},
     {"Delete", MenuAction::Delete, true},
     {"Properties", MenuAction::Properties, true},
+    {"Add to Bookmarks", MenuAction::AddBookmark, true},
   };
 
   const MenuItem kEmptyMenu[] =
@@ -217,6 +219,7 @@ static void loadConfig(AppState& app)
   bool savedHidden = false;
   int savedSortField = -1;
   int savedSortDir = -1;
+  std::vector<std::string> savedBookmarks;
   std::string line;
   while (std::getline(in, line))
   {
@@ -275,6 +278,38 @@ static void loadConfig(AppState& app)
         }
       }
     }
+    else if (key == "bookmark")
+    {
+      savedBookmarks.push_back(val);
+    }
+  }
+
+  for (size_t i = 0; i < savedBookmarks.size(); i++)
+  {
+    const std::string& path = savedBookmarks[i];
+    std::error_code ec;
+    if (!std::filesystem::is_directory(path, ec))
+    {
+      continue;
+    }
+    for (auto& s : app.sections)
+    {
+      if (s.key != "bookmarks")
+      {
+        continue;
+      }
+      Place p;
+      std::filesystem::path fp(path);
+      p.label = fp.filename().string();
+      if (p.label.empty())
+      {
+        p.label = path;
+      }
+      p.path = path;
+      p.icon = BND_ICON_FILE_FOLDER;
+      s.items.push_back(p);
+      break;
+    }
   }
 
   if (savedSortField >= 0 && savedSortField <= 4 && savedSortDir >= 0)
@@ -317,6 +352,13 @@ static void saveConfig(const AppState& app)
   for (const auto& s : app.sections)
   {
     out << "collapsed_" << s.key << "=" << (s.collapsed ? "1" : "0") << "\n";
+    if (s.key == "bookmarks")
+    {
+      for (const auto& bm : s.items)
+      {
+        out << "bookmark=" << bm.path << "\n";
+      }
+    }
   }
 }
 static void applyTheme()
@@ -380,6 +422,10 @@ static std::vector<Section> buildSections()
       all.push_back(filtered);
     }
   }
+  Section bookmarks;
+  bookmarks.key = "bookmarks";
+  bookmarks.title = "Bookmarks";
+  all.push_back(bookmarks);
   return all;
 }
 
@@ -1279,6 +1325,10 @@ static void drawSidebar(NVGcontext* vg,
 
   for (auto& sec : sections)
   {
+    if (sec.items.empty())
+    {
+      continue;
+    }
     bool headerHover = inRect(g_mouseX, g_mouseY, itemX, y, itemW, headerH);
     if (headerHover)
     {
@@ -1994,6 +2044,25 @@ static void applyScroll(AppState& app, float listH)
   g_scrollY = 0.0f;
 }
 
+static bool menuItemEnabled(const AppState& app, const MenuItem& item, int rowIdx)
+{
+  if (!item.enabled)
+  {
+    return false;
+  }
+  if (item.action == MenuAction::AddBookmark)
+  {
+    const auto& entries = app.fm.entries();
+    if (rowIdx < 0 || rowIdx >= static_cast<int>(entries.size()))
+    {
+      return false;
+    }
+    return entries[rowIdx].isDirectory;
+  }
+  return true;
+}
+
+
 static MenuAction handleMenuClick(const AppState& app, float w, float h)
 {
   if (app.menuKind == MenuKind::None)
@@ -2001,7 +2070,7 @@ static MenuAction handleMenuClick(const AppState& app, float w, float h)
     return MenuAction::None;
   }
   const MenuItem* items = (app.menuKind == MenuKind::Row) ? kRowMenu : kEmptyMenu;
-  const int count = (app.menuKind == MenuKind::Row) ? 6 : 3;
+  const int count = (app.menuKind == MenuKind::Row) ? 7 : 3;
   float menuH = kMenuPadY * 2.0f + kMenuItemHeight * static_cast<float>(count);
 
   float mx = app.menuX;
@@ -2020,7 +2089,7 @@ static MenuAction handleMenuClick(const AppState& app, float w, float h)
     float iy = my + kMenuPadY + static_cast<float>(i) * kMenuItemHeight;
     if (inRect(g_mouseX, g_mouseY, mx, iy, kMenuWidth, kMenuItemHeight))
     {
-      return items[i].enabled ? items[i].action : MenuAction::None;
+      return menuItemEnabled(app, items[i], app.menuRowIndex) ? items[i].action : MenuAction::None;
     }
   }
   return MenuAction::None;
@@ -2058,6 +2127,45 @@ static void openContextMenu(
   app.menuKind = MenuKind::Empty;
 }
 
+static void addBookmark(AppState& app, const std::string& fullPath)
+{
+  if (fullPath.empty())
+  {
+    return;
+  }
+  Section* pBookmarks = nullptr;
+  for (auto& s : app.sections)
+  {
+    if (s.key == "bookmarks")
+    {
+      pBookmarks = &s;
+      break;
+    }
+  }
+  if (pBookmarks == nullptr)
+  {
+    return;
+  }
+  for (size_t i = 0; i < pBookmarks->items.size(); i++)
+  {
+    if (pBookmarks->items[i].path == fullPath)
+    {
+      return;
+    }
+  }
+  Place p;
+  std::filesystem::path fp(fullPath);
+  p.label = fp.filename().string();
+  if (p.label.empty())
+  {
+    p.label = fullPath;
+  }
+  p.path = fullPath;
+  p.icon = BND_ICON_FILE_FOLDER;
+  pBookmarks->items.push_back(p);
+}
+
+
 static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
 {
   switch (action)
@@ -2088,6 +2196,18 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
       clearSelection(app);
       app.scrollOffset = 0.0f;
       break;
+    case MenuAction::AddBookmark:
+      if (rowIdx >= 0)
+      {
+        const auto& entries = app.fm.entries();
+        if (rowIdx < static_cast<int>(entries.size()) && entries[rowIdx].isDirectory)
+        {
+          std::string full = joinPath(app.fm.currentPath(), entries[rowIdx].name);
+          addBookmark(app, full);
+          saveConfig(app);
+        }
+      }
+      break;
     default:
       break;
   }
@@ -2104,7 +2224,7 @@ static void drawContextMenu(
     return;
   }
   const MenuItem* items = (app.menuKind == MenuKind::Row) ? kRowMenu : kEmptyMenu;
-  const int count = (app.menuKind == MenuKind::Row) ? 6 : 3;
+  const int count = (app.menuKind == MenuKind::Row) ? 7 : 3;
   float menuH = kMenuPadY * 2.0f + kMenuItemHeight * static_cast<float>(count);
 
   float mx = app.menuX;
@@ -2142,15 +2262,16 @@ static void drawContextMenu(
   {
     float iy = my + kMenuPadY + static_cast<float>(i) * kMenuItemHeight;
     bool hover = inRect(g_mouseX, g_mouseY, mx, iy, kMenuWidth, kMenuItemHeight);
-    if (hover && items[i].enabled)
+    bool enabled = menuItemEnabled(app, items[i], app.menuRowIndex);
+    if (hover && enabled)
     {
       nvgBeginPath(vg);
       nvgRect(vg, mx + 1.0f, iy, kMenuWidth - 2.0f, kMenuItemHeight);
       nvgFillColor(vg, nvgRGBf(0.3f, 0.3f, 0.3f));
       nvgFill(vg);
     }
-    nvgFillColor(vg, items[i].enabled ? nvgRGBf(0.9f, 0.9f, 0.9f)
-                                      : nvgRGBf(0.5f, 0.5f, 0.5f));
+    nvgFillColor(vg, enabled ? nvgRGBf(0.9f, 0.9f, 0.9f)
+                             : nvgRGBf(0.5f, 0.5f, 0.5f));
     nvgText(vg, mx + 10.0f, iy + kMenuItemHeight * 0.5f, items[i].label, nullptr);
   }
 }
