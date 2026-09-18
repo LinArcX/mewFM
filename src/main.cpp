@@ -141,6 +141,37 @@ namespace
     int lastClickIndex = -1;
   };
 
+  struct Theme
+  {
+    NVGcolor bg          = nvgRGBf(0.15f, 0.15f, 0.15f);
+    NVGcolor text        = nvgRGBf(0.9f, 0.9f, 0.9f);
+    NVGcolor rowSelected = nvgRGBf(0.2f, 0.35f, 0.55f);
+    NVGcolor rowHover    = nvgRGBf(0.25f, 0.25f, 0.25f);
+    NVGcolor rowStripe   = nvgRGBAf(1.0f, 1.0f, 1.0f, 0.035f);
+  };
+
+  struct Toast
+  {
+    std::string message;
+    double shownAt = 0.0;
+    double duration = 3.0;
+
+    void show(const std::string& msg)
+    {
+      message = msg;
+      shownAt = glfwGetTime();
+    }
+
+    bool active() const
+    {
+      if (message.empty())
+      {
+        return false;
+      }
+      return (glfwGetTime() - shownAt) < duration;
+    }
+  };
+
   struct AppState
   {
     FileManager fm;
@@ -172,6 +203,8 @@ namespace
     int activeTab = 0;
     float tabScrollOffset = 0.0f;
     bool tabScrollToActive = true;
+    Theme theme;
+    Toast toast;
   };
 
   float g_mouseX = 0.0f;
@@ -234,6 +267,46 @@ static std::string configFilePath()
   return base + "/rah/config";
 }
 
+static bool parseThemeColor(const std::string& s, NVGcolor& out)
+{
+  float v[3] = {0.0f, 0.0f, 0.0f};
+  size_t start = 0;
+  for (int i = 0; i < 3; i++)
+  {
+    std::string tok;
+    if (i < 2)
+    {
+      size_t comma = s.find(',', start);
+      if (comma == std::string::npos)
+      {
+        return false;
+      }
+      tok = s.substr(start, comma - start);
+      start = comma + 1;
+    }
+    else
+    {
+      tok = s.substr(start);
+    }
+    char* pEnd = nullptr;
+    v[i] = std::strtof(tok.c_str(), &pEnd);
+    if (pEnd == tok.c_str() || *pEnd != '\0')
+    {
+      return false;
+    }
+    if (v[i] < 0.0f)
+    {
+      v[i] = 0.0f;
+    }
+    if (v[i] > 1.0f)
+    {
+      v[i] = 1.0f;
+    }
+  }
+  out = nvgRGBf(v[0], v[1], v[2]);
+  return true;
+}
+
 static void loadConfig(AppState& app)
 {
   std::ifstream in(configFilePath());
@@ -291,6 +364,30 @@ static void loadConfig(AppState& app)
       if (s >= 8.0f && s <= 48.0f)
       {
         g_fontSize = s;
+      }
+    }
+    else if (key == "theme.bg")
+    {
+      parseThemeColor(val, app.theme.bg);
+    }
+    else if (key == "theme.text")
+    {
+      parseThemeColor(val, app.theme.text);
+    }
+    else if (key == "theme.rowSelected")
+    {
+      parseThemeColor(val, app.theme.rowSelected);
+    }
+    else if (key == "theme.rowHover")
+    {
+      parseThemeColor(val, app.theme.rowHover);
+    }
+    else if (key == "theme.rowStripe")
+    {
+      NVGcolor c;
+      if (parseThemeColor(val, c))
+      {
+        app.theme.rowStripe = nvgRGBAf(c.r, c.g, c.b, 0.035f);
       }
     }
     else if (key.compare(0, 10, "collapsed_") == 0)
@@ -2012,20 +2109,27 @@ static void drawRows(NVGcontext* vg,
     {
       break;
     }
+    if ((i % 2) == 0)
+    {
+      nvgBeginPath(vg);
+      nvgRect(vg, x, rowY, w, g_rowHeight);
+      nvgFillColor(vg, app.theme.rowStripe);
+      nvgFill(vg);
+    }
     bool selected = isEntrySelected(app, static_cast<int>(i));
     bool hover = inRect(g_mouseX, g_mouseY, x, rowY, w, g_rowHeight);
     if (selected)
     {
       nvgBeginPath(vg);
       nvgRect(vg, x, rowY, w, g_rowHeight);
-      nvgFillColor(vg, nvgRGBf(0.2f, 0.35f, 0.55f));
+      nvgFillColor(vg, app.theme.rowSelected);
       nvgFill(vg);
     }
     else if (hover)
     {
       nvgBeginPath(vg);
       nvgRect(vg, x, rowY, w, g_rowHeight);
-      nvgFillColor(vg, nvgRGBf(0.25f, 0.25f, 0.25f));
+      nvgFillColor(vg, app.theme.rowHover);
       nvgFill(vg);
     }
     const Entry& e = entries[i];
@@ -2041,7 +2145,7 @@ static void drawRows(NVGcontext* vg,
     std::string typeText = truncateToWidth(vg, e.typeText,  app.colWidths[2] - cellPad);
     std::string ownerText = truncateToWidth(vg, e.ownerText, app.colWidths[3] - cellPad);
 
-    nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
+    nvgFillColor(vg, app.theme.text);
     nvgText(vg, iconX + kIconSize + kIconGap, cy, nameText.c_str(), nullptr);
     nvgText(vg, columnX(app, x, 1), cy, sizeText.c_str(), nullptr);
     nvgText(vg, columnX(app, x, 2), cy, typeText.c_str(), nullptr);
@@ -2227,6 +2331,10 @@ static void handleKeyboardNav(AppState& app, float listH)
       {
         app.modal.openInfo("Error", "Could not copy.");
       }
+      else
+      {
+        app.toast.show("Copied");
+      }
     }
     g_copy = false;
   }
@@ -2256,6 +2364,10 @@ static void handleKeyboardNav(AppState& app, float listH)
       {
         app.modal.openInfo("Error", "Could not cut.");
       }
+      else
+      {
+        app.toast.show("Cut");
+      }
     }
     g_cut = false;
   }
@@ -2267,6 +2379,10 @@ static void handleKeyboardNav(AppState& app, float listH)
       if (!app.fm.paste())
       {
         app.modal.openInfo("Error", "Could not paste.");
+      }
+      else
+      {
+        app.toast.show("Pasted");
       }
       app.selectedIndex = -1;
       app.scrollOffset = 0.0f;
@@ -2382,6 +2498,10 @@ static void handleTextInputResult(AppState& app)
     {
       app.modal.openInfo("Error", "Could not create folder.");
     }
+    else
+    {
+      app.toast.show("Folder created: " + app.textInput.value);
+    }
     app.selectedIndex = -1;
     app.scrollOffset = 0.0f;
   }
@@ -2390,6 +2510,10 @@ static void handleTextInputResult(AppState& app)
     if (!app.fm.renameEntry(app.renameOldName, app.textInput.value))
     {
       app.modal.openInfo("Error", "Could not rename.");
+    }
+    else
+    {
+      app.toast.show("Renamed to " + app.textInput.value);
     }
     app.selectedIndex = -1;
     app.scrollOffset = 0.0f;
@@ -2438,6 +2562,10 @@ static void handleModalResult(AppState& app)
       app.modal.openInfo("Error", isTrash
         ? "Could not move some items to trash."
         : "Could not delete some items.");
+    }
+    else
+    {
+      app.toast.show(isTrash ? "Moved to trash" : "Deleted");
     }
     app.pendingDeleteNames.clear();
     clearSelection(app);
@@ -2793,6 +2921,37 @@ static std::string humanSize(unsigned long long bytes)
 }
 
 
+static void drawToast(NVGcontext* vg, const AppState& app, float w, float h)
+{
+  if (!app.toast.active())
+  {
+    return;
+  }
+  nvgFontFace(vg, "sans");
+  nvgFontSize(vg, g_fontSize - 1.0f);
+  float bounds[4];
+  nvgTextBounds(vg, 0.0f, 0.0f, app.toast.message.c_str(), nullptr, bounds);
+  float textW = bounds[2] - bounds[0];
+  const float padX = 14.0f;
+  const float padY = 8.0f;
+  float boxW = textW + padX * 2.0f;
+  float boxH = g_fontSize + padY * 2.0f;
+  float boxX = (w - boxW) * 0.5f;
+  float boxY = h - kStatusBarHeight - boxH - 12.0f;
+
+  nvgBeginPath(vg);
+  nvgRoundedRect(vg, boxX, boxY, boxW, boxH, 6.0f);
+  nvgFillColor(vg, nvgRGBAf(0.0f, 0.0f, 0.0f, 0.75f));
+  nvgFill(vg);
+  nvgStrokeColor(vg, nvgRGBAf(1.0f, 1.0f, 1.0f, 0.15f));
+  nvgStrokeWidth(vg, 1.0f);
+  nvgStroke(vg);
+
+  nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.95f));
+  nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+  nvgText(vg, boxX + boxW * 0.5f, boxY + boxH * 0.5f, app.toast.message.c_str(), nullptr);
+}
+
 static void drawStatusBar(NVGcontext* vg, const AppState& app, float x, float y, float w)
 {
   bndBackground(vg, x, y, w, kStatusBarHeight);
@@ -2965,7 +3124,7 @@ int main(int argc, char** argv)
     float pxRatio = (winW > 0) ? (static_cast<float>(fbW) / static_cast<float>(winW)) : 1.0f;
 
     glViewport(0, 0, fbW, fbH);
-    glClearColor(0.15f, 0.15f, 0.15f, 1.0f);
+    glClearColor(app.theme.bg.r, app.theme.bg.g, app.theme.bg.b, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
     nvgBeginFrame(vg, static_cast<float>(winW), static_cast<float>(winH), pxRatio);
@@ -3031,6 +3190,7 @@ int main(int argc, char** argv)
     drawMainHeader(vg, app, mainX, mainY, mainW);
     drawRows(vg, app, mainX, listTop, mainW, listH);
     drawStatusBar(vg, app, 0.0f, h - kStatusBarHeight, w);
+    drawToast(vg, app, w, h);
 
     if (popupActive)
     {
