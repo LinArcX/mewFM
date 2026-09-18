@@ -24,7 +24,7 @@ A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and ou
 - Internal clipboard: copy or cut one or more entries, then paste them into the current directory
 - Scroll wheel support
 - Live name filter via Ctrl+F: shows only entries whose name contains the typed substring; Escape or Cancel clears it
-- Status bar: item count, selected count, and free space on the current filesystem
+- Status bar: item count, selected count, free space on the current filesystem, and a real-time progress bar for long copy / move operations
 - Session persistence via `~/.config/rah/config`:
   - Column widths
   - Last visited path

@@ -3145,18 +3145,21 @@ static void handleKeyboardNav(AppState& app, float listH)
 
   if (g_paste)
   {
-    if (app.fm.clipboardMode() != ClipboardMode::None)
+    if (app.fm.fileOpProgress().active)
     {
-      if (!app.fm.paste())
+      app.toast.show("Operation in progress");
+    }
+    else if (app.fm.clipboardMode() != ClipboardMode::None)
+    {
+      if (!app.fm.startPaste())
       {
         app.modal.openInfo("Error", "Could not paste.");
       }
       else
       {
-        app.toast.show("Pasted");
+        app.selectedIndex = -1;
+        app.scrollOffset = 0.0f;
       }
-      app.selectedIndex = -1;
-      app.scrollOffset = 0.0f;
     }
     g_paste = false;
   }
@@ -4049,6 +4052,68 @@ static void drawStatusBar(NVGcontext* vg, const AppState& app, float x, float y,
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
   nvgText(vg, x + kPadX, cy, left.c_str(), nullptr);
 
+  const FileOpProgress& prog = app.fm.fileOpProgress();
+  if (prog.active)
+  {
+    float lb[4];
+    nvgTextBounds(vg, 0.0f, 0.0f, left.c_str(), nullptr, lb);
+    float px = x + kPadX + (lb[2] - lb[0]) + 20.0f;
+
+    nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
+    nvgText(vg, px, cy, prog.label.c_str(), nullptr);
+
+    float lb2[4];
+    nvgTextBounds(vg, 0.0f, 0.0f, prog.label.c_str(), nullptr, lb2);
+    px += (lb2[2] - lb2[0]) + 10.0f;
+
+    const float barW = 140.0f;
+    const float barH = 8.0f;
+    const float barY = cy - barH * 0.5f;
+
+    float percent = 0.0f;
+    if (prog.totalBytes > 0)
+    {
+      percent = static_cast<float>(prog.doneBytes) /
+                static_cast<float>(prog.totalBytes);
+      if (percent > 1.0f)
+      {
+        percent = 1.0f;
+      }
+      if (percent < 0.0f)
+      {
+        percent = 0.0f;
+      }
+    }
+
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, px, barY, barW, barH, barH * 0.5f);
+    nvgFillColor(vg, nvgRGBf(0.18f, 0.18f, 0.18f));
+    nvgFill(vg);
+
+    if (percent > 0.0f)
+    {
+      float fillW = barW * percent;
+      if (fillW < barH)
+      {
+        fillW = barH;
+      }
+      nvgBeginPath(vg);
+      nvgRoundedRect(vg, px, barY, fillW, barH, barH * 0.5f);
+      nvgFillColor(vg, nvgRGBf(0.35f, 0.55f, 0.85f));
+      nvgFill(vg);
+    }
+
+    px += barW + 8.0f;
+
+    char pctBuf[16];
+    std::snprintf(pctBuf, sizeof(pctBuf), "%3d%%",
+                  static_cast<int>(percent * 100.0f + 0.5f));
+    nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
+    nvgText(vg, px, cy, pctBuf, nullptr);
+  }
+
+  nvgFillColor(vg, nvgRGBf(0.7f, 0.7f, 0.7f));
+
   struct statvfs st;
   if (statvfs(app.fm.currentPath().c_str(), &st) == 0)
   {
@@ -4170,6 +4235,20 @@ int main(int argc, char** argv)
   while (!glfwWindowShouldClose(window))
   {
     glfwPollEvents();
+
+    const FileOpStatus opStatus = app.fm.pollFileOp();
+    if (opStatus == FileOpStatus::FinishedCopy)
+    {
+      app.toast.show("Copied");
+    }
+    else if (opStatus == FileOpStatus::FinishedMove)
+    {
+      app.toast.show("Moved");
+    }
+    else if (opStatus == FileOpStatus::Failed)
+    {
+      app.toast.show("File operation failed");
+    }
 
     int winW = 0;
     int winH = 0;

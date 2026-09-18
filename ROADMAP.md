@@ -27,7 +27,7 @@
 ☑ Keyboard shortcuts: Ctrl+C, Ctrl+X, Ctrl+V, F2, Del, Ctrl+Shift+N
 ☑ Modal dialog component (yes/no/ok)
 ☑ Inline text input component
-□ Progress feedback for long copy/move operations
+☑ Progress feedback for long copy/move operations
 
 ## Phase 2 — Multi-selection
 ☑ Ctrl+click toggles individual rows
@@ -81,8 +81,6 @@
 
 ## Suggested next step
 Several roadmap items are already implemented in the code but were still marked as pending. The remaining work is:
-
-Progress feedback for long copy/move operations (Phase 1).
 
 Open With menu item, submenu, and chooser dialog (Phase 3).
 

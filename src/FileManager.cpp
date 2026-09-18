@@ -2,10 +2,12 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <fcntl.h>
 #include <fstream>
 #include <filesystem>
 #include <pwd.h>
@@ -631,80 +633,453 @@ bool FileManager::cutEntries(const std::vector<std::string>& names)
   return true;
 }
 
-bool FileManager::paste()
+static double monotonicSeconds()
+{
+  struct timespec ts;
+  if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+  {
+    return 0.0;
+  }
+  return static_cast<double>(ts.tv_sec) + static_cast<double>(ts.tv_nsec) * 1e-9;
+}
+
+static bool sameDevice(const std::string& a, const std::string& b)
+{
+  struct stat sa;
+  struct stat sb;
+  if (::stat(a.c_str(), &sa) != 0)
+  {
+    return false;
+  }
+  if (::stat(b.c_str(), &sb) != 0)
+  {
+    return false;
+  }
+  return sa.st_dev == sb.st_dev;
+}
+
+void FileManager::clearFileOp()
+{
+  m_opKind = FileOpKind::None;
+  m_opStage = FileOpStage::None;
+  m_opLabel.clear();
+  m_opSrcDir.clear();
+  m_opDstDir.clear();
+  m_opTopNames.clear();
+  m_opFiles.clear();
+  m_opDirs.clear();
+  m_opBuffer.clear();
+  m_opDirIndex = 0;
+  m_opFileIndex = 0;
+  m_opDeleteIndex = 0;
+  m_opRenameIndex = 0;
+  m_opTotalBytes = 0;
+  m_opDoneBytes = 0;
+  m_opSrcFd = -1;
+  m_opDstFd = -1;
+  m_opFailed = false;
+  m_opProgress = FileOpProgress();
+}
+
+void FileManager::closeFileOpFds()
+{
+  if (m_opSrcFd >= 0)
+  {
+    ::close(m_opSrcFd);
+    m_opSrcFd = -1;
+  }
+  if (m_opDstFd >= 0)
+  {
+    ::close(m_opDstFd);
+    m_opDstFd = -1;
+  }
+}
+
+bool FileManager::collectDirPlan(const std::string& srcRoot, const std::string& dstRoot)
+{
+  struct DirPair
+  {
+    fs::path src;
+    fs::path dst;
+  };
+  std::vector<DirPair> stack;
+  DirPair root;
+  root.src = fs::path(srcRoot);
+  root.dst = fs::path(dstRoot);
+  stack.push_back(root);
+  m_opDirs.push_back(dstRoot);
+
+  std::error_code ec;
+  while (!stack.empty())
+  {
+    DirPair cur = stack.back();
+    stack.pop_back();
+    fs::directory_iterator it(cur.src, ec);
+    if (ec)
+    {
+      return false;
+    }
+    for (const auto& entry : it)
+    {
+      const fs::path& p = entry.path();
+      std::string name = p.filename().string();
+      fs::path d = cur.dst / name;
+      if (fs::is_directory(p, ec))
+      {
+        m_opDirs.push_back(d.string());
+        DirPair sub;
+        sub.src = p;
+        sub.dst = d;
+        stack.push_back(sub);
+      }
+      else if (fs::is_regular_file(p, ec))
+      {
+        std::uintmax_t sz = fs::file_size(p, ec);
+        if (ec)
+        {
+          ec.clear();
+          sz = 0;
+        }
+        FileOpFile f;
+        f.src = p.string();
+        f.dst = d.string();
+        f.size = static_cast<unsigned long long>(sz);
+        m_opFiles.push_back(f);
+        m_opTotalBytes += f.size;
+      }
+      ec.clear();
+    }
+  }
+  return true;
+}
+
+bool FileManager::buildFileOpPlan(const std::string& srcDir,
+                                  const std::string& dstDir,
+                                  const std::vector<std::string>& names,
+                                  bool moveMode)
+{
+  std::error_code ec;
+  for (size_t i = 0; i < names.size(); i++)
+  {
+    const std::string& name = names[i];
+    if (name.empty() || name == "." || name == ".." ||
+        name.find('/') != std::string::npos)
+    {
+      return false;
+    }
+    fs::path src = fs::path(srcDir) / name;
+    if (!fs::exists(src, ec))
+    {
+      return false;
+    }
+
+    std::string dstName = name;
+    if (!moveMode)
+    {
+      dstName = uniqueNameIn(dstDir, name);
+      if (dstName.empty())
+      {
+        return false;
+      }
+      std::string srcStr = src.string();
+      if (dstDir.size() > srcStr.size() &&
+          dstDir.compare(0, srcStr.size(), srcStr) == 0 &&
+          dstDir[srcStr.size()] == '/')
+      {
+        return false;
+      }
+    }
+    fs::path dst = fs::path(dstDir) / dstName;
+
+    if (fs::is_directory(src, ec))
+    {
+      if (!collectDirPlan(src.string(), dst.string()))
+      {
+        return false;
+      }
+    }
+    else if (fs::is_regular_file(src, ec))
+    {
+      std::uintmax_t sz = fs::file_size(src, ec);
+      if (ec)
+      {
+        ec.clear();
+        sz = 0;
+      }
+      FileOpFile f;
+      f.src = src.string();
+      f.dst = dst.string();
+      f.size = static_cast<unsigned long long>(sz);
+      m_opFiles.push_back(f);
+      m_opTotalBytes += f.size;
+    }
+    ec.clear();
+  }
+  return true;
+}
+
+bool FileManager::startPaste()
 {
   if (m_clipboardMode == ClipboardMode::None || m_clipboardNames.empty())
   {
     return false;
   }
-  bool anyFailed = false;
-  for (size_t i = 0; i < m_clipboardNames.size(); i++)
+  if (m_opProgress.active)
   {
-    const std::string& name = m_clipboardNames[i];
-    std::error_code ec;
-    fs::path src = fs::path(m_clipboardSource) / name;
-    if (!fs::exists(src, ec))
+    return false;
+  }
+
+  clearFileOp();
+
+  const bool isMove = (m_clipboardMode == ClipboardMode::Cut);
+  const std::string srcDir = m_clipboardSource;
+  const std::string dstDir = m_currentPath;
+
+  m_opSrcDir = srcDir;
+  m_opDstDir = dstDir;
+  m_opTopNames = m_clipboardNames;
+  m_opBuffer.resize(64 * 1024);
+
+  if (isMove && sameDevice(srcDir, dstDir))
+  {
+    m_opKind = FileOpKind::Move;
+    m_opStage = FileOpStage::RenameTopLevel;
+    m_opTotalBytes = 1;
+  }
+  else
+  {
+    m_opKind = isMove ? FileOpKind::Move : FileOpKind::Copy;
+    m_opStage = FileOpStage::MakeDirs;
+    if (!buildFileOpPlan(srcDir, dstDir, m_clipboardNames, isMove))
     {
-      anyFailed = true;
-      continue;
-    }
-    fs::path dst = fs::path(m_currentPath) / name;
-    if (m_clipboardMode == ClipboardMode::Cut)
-    {
-      if (src == dst)
-      {
-        continue;
-      }
-      if (fs::exists(dst, ec))
-      {
-        anyFailed = true;
-        continue;
-      }
-    }
-    else
-    {
-      std::string newName = uniqueNameIn(m_currentPath, name);
-      if (newName.empty())
-      {
-        anyFailed = true;
-        continue;
-      }
-      dst = fs::path(m_currentPath) / newName;
-      std::string srcStr = src.string();
-      std::string curStr = m_currentPath;
-      if (curStr.size() > srcStr.size() &&
-          curStr.compare(0, srcStr.size(), srcStr) == 0 &&
-          curStr[srcStr.size()] == '/')
-      {
-        anyFailed = true;
-        continue;
-      }
-    }
-    if (m_clipboardMode == ClipboardMode::Cut)
-    {
-      fs::rename(src, dst, ec);
-    }
-    else
-    {
-      fs::copy(src, dst, fs::copy_options::recursive, ec);
-    }
-    if (ec)
-    {
-      anyFailed = true;
+      clearFileOp();
+      return false;
     }
   }
-  if (m_clipboardMode == ClipboardMode::Cut)
+
+  m_opLabel = std::string(isMove ? "Moving " : "Copying ") +
+              std::to_string(m_clipboardNames.size()) +
+              (m_clipboardNames.size() == 1 ? " item" : " items");
+
+  m_opProgress.active = true;
+  m_opProgress.failed = false;
+  m_opProgress.label = m_opLabel;
+  m_opProgress.totalBytes = m_opTotalBytes;
+  m_opProgress.doneBytes = 0;
+  return true;
+}
+
+bool FileManager::stepCopyChunk()
+{
+  if (m_opSrcFd < 0)
+  {
+    if (m_opFileIndex >= m_opFiles.size())
+    {
+      return true;
+    }
+    const FileOpFile& f = m_opFiles[m_opFileIndex];
+    int sfd = ::open(f.src.c_str(), O_RDONLY);
+    if (sfd < 0)
+    {
+      return false;
+    }
+    int dfd = ::open(f.dst.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (dfd < 0)
+    {
+      ::close(sfd);
+      return false;
+    }
+    m_opSrcFd = sfd;
+    m_opDstFd = dfd;
+  }
+
+  ssize_t got = ::read(m_opSrcFd, m_opBuffer.data(), m_opBuffer.size());
+  if (got < 0)
+  {
+    closeFileOpFds();
+    return false;
+  }
+  if (got == 0)
+  {
+    closeFileOpFds();
+    m_opFileIndex++;
+    return true;
+  }
+
+  ssize_t sent = 0;
+  while (sent < got)
+  {
+    ssize_t w = ::write(m_opDstFd,
+                        m_opBuffer.data() + sent,
+                        static_cast<size_t>(got - sent));
+    if (w < 0)
+    {
+      if (errno == EINTR)
+      {
+        continue;
+      }
+      closeFileOpFds();
+      return false;
+    }
+    sent += w;
+  }
+  m_opDoneBytes += static_cast<unsigned long long>(got);
+  return true;
+}
+
+bool FileManager::stepFileOp(double budgetSeconds)
+{
+  const double startTime = monotonicSeconds();
+  while (true)
+  {
+    if (monotonicSeconds() - startTime >= budgetSeconds)
+    {
+      return false;
+    }
+
+    switch (m_opStage)
+    {
+      case FileOpStage::None:
+        return true;
+
+      case FileOpStage::MakeDirs:
+      {
+        if (m_opDirIndex >= m_opDirs.size())
+        {
+          m_opStage = FileOpStage::CopyFiles;
+          break;
+        }
+        std::error_code ec;
+        fs::create_directories(m_opDirs[m_opDirIndex], ec);
+        if (ec)
+        {
+          m_opFailed = true;
+          return true;
+        }
+        m_opDirIndex++;
+        break;
+      }
+
+      case FileOpStage::CopyFiles:
+      {
+        if (m_opSrcFd < 0 && m_opFileIndex >= m_opFiles.size())
+        {
+          m_opDoneBytes = m_opTotalBytes;
+          m_opStage = (m_opKind == FileOpKind::Move)
+            ? FileOpStage::DeleteSources
+            : FileOpStage::None;
+          break;
+        }
+        if (!stepCopyChunk())
+        {
+          m_opFailed = true;
+          return true;
+        }
+        break;
+      }
+
+      case FileOpStage::DeleteSources:
+      {
+        if (m_opDeleteIndex >= m_opTopNames.size())
+        {
+          m_opStage = FileOpStage::None;
+          break;
+        }
+        std::error_code ec;
+        fs::path src = fs::path(m_opSrcDir) / m_opTopNames[m_opDeleteIndex];
+        fs::remove_all(src, ec);
+        m_opDeleteIndex++;
+        break;
+      }
+
+      case FileOpStage::RenameTopLevel:
+      {
+        if (m_opRenameIndex >= m_opTopNames.size())
+        {
+          m_opDoneBytes = m_opTotalBytes;
+          m_opStage = FileOpStage::None;
+          break;
+        }
+        std::error_code ec;
+        fs::path src = fs::path(m_opSrcDir) / m_opTopNames[m_opRenameIndex];
+        fs::path dst = fs::path(m_opDstDir) / m_opTopNames[m_opRenameIndex];
+        m_opRenameIndex++;
+        if (src == dst)
+        {
+          break;
+        }
+        if (fs::exists(dst, ec))
+        {
+          m_opFailed = true;
+          return true;
+        }
+        fs::rename(src, dst, ec);
+        if (ec)
+        {
+          m_opFailed = true;
+          return true;
+        }
+        break;
+      }
+    }
+  }
+}
+
+void FileManager::finalizeFileOp(bool success)
+{
+  closeFileOpFds();
+  m_opProgress.active = false;
+  m_opProgress.failed = !success;
+  m_opProgress.doneBytes = m_opDoneBytes;
+  m_opProgress.totalBytes = m_opTotalBytes;
+  m_opStage = FileOpStage::None;
+  m_opKind = FileOpKind::None;
+  m_opFailed = !success;
+
+  if (success && m_clipboardMode == ClipboardMode::Cut)
   {
     m_clipboardMode = ClipboardMode::None;
     m_clipboardNames.clear();
     m_clipboardSource.clear();
   }
-  bool reloaded = loadPath(m_currentPath);
-  if (anyFailed || !reloaded)
+
+  loadPath(m_currentPath);
+}
+
+FileOpStatus FileManager::pollFileOp()
+{
+  if (!m_opProgress.active)
   {
-    return false;
+    return FileOpStatus::Idle;
   }
-  return true;
+
+  const double kBudget = 0.008;
+  const bool done = stepFileOp(kBudget);
+
+  m_opProgress.doneBytes = m_opDoneBytes;
+  m_opProgress.totalBytes = m_opTotalBytes;
+
+  if (!done)
+  {
+    return FileOpStatus::Running;
+  }
+
+  const bool success = !m_opFailed;
+  const FileOpKind finishedKind = m_opKind;
+  finalizeFileOp(success);
+
+  if (!success)
+  {
+    return FileOpStatus::Failed;
+  }
+  return (finishedKind == FileOpKind::Move)
+    ? FileOpStatus::FinishedMove
+    : FileOpStatus::FinishedCopy;
+}
+
+const FileOpProgress& FileManager::fileOpProgress() const
+{
+  return m_opProgress;
 }
 
 ClipboardMode FileManager::clipboardMode() const

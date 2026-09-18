@@ -31,6 +31,24 @@ enum class SortField
   Permissions,
 };
 
+enum class FileOpStatus
+{
+  Idle,
+  Running,
+  FinishedCopy,
+  FinishedMove,
+  Failed,
+};
+
+struct FileOpProgress
+{
+  bool active = false;
+  bool failed = false;
+  std::string label;
+  unsigned long long totalBytes = 0;
+  unsigned long long doneBytes = 0;
+};
+
 class FileManager
 {
 public:
@@ -64,7 +82,9 @@ public:
   [[nodiscard]] bool emptyTrash();
   [[nodiscard]] bool copyEntries(const std::vector<std::string>& names);
   [[nodiscard]] bool cutEntries(const std::vector<std::string>& names);
-  [[nodiscard]] bool paste();
+  [[nodiscard]] bool startPaste();
+  [[nodiscard]] FileOpStatus pollFileOp();
+  const FileOpProgress& fileOpProgress() const;
   ClipboardMode clipboardMode() const;
   void setSort(SortField field, bool ascending);
   SortField sortField() const;
@@ -72,9 +92,43 @@ public:
   [[nodiscard]] bool refresh();
 
 private:
+  enum class FileOpKind
+  {
+    None,
+    Copy,
+    Move,
+  };
+
+  enum class FileOpStage
+  {
+    None,
+    MakeDirs,
+    CopyFiles,
+    DeleteSources,
+    RenameTopLevel,
+  };
+
+  struct FileOpFile
+  {
+    std::string src;
+    std::string dst;
+    unsigned long long size = 0;
+  };
+
   bool loadPath(const std::string& path);
   void applyFilter();
   static std::string parentOf(const std::string& path);
+
+  bool buildFileOpPlan(const std::string& srcDir,
+                       const std::string& dstDir,
+                       const std::vector<std::string>& names,
+                       bool moveMode);
+  bool collectDirPlan(const std::string& srcRoot, const std::string& dstRoot);
+  bool stepFileOp(double budgetSeconds);
+  bool stepCopyChunk();
+  void closeFileOpFds();
+  void finalizeFileOp(bool success);
+  void clearFileOp();
 
   bool buildEntry(const std::string& fullPath, const std::string& name, Entry& out);
   void sortEntries();
@@ -100,4 +154,23 @@ private:
 
   bool m_showHidden = false;
 
+  FileOpKind m_opKind = FileOpKind::None;
+  FileOpStage m_opStage = FileOpStage::None;
+  std::string m_opLabel;
+  std::string m_opSrcDir;
+  std::string m_opDstDir;
+  std::vector<std::string> m_opTopNames;
+  std::vector<FileOpFile> m_opFiles;
+  std::vector<std::string> m_opDirs;
+  std::vector<char> m_opBuffer;
+  size_t m_opDirIndex = 0;
+  size_t m_opFileIndex = 0;
+  size_t m_opDeleteIndex = 0;
+  size_t m_opRenameIndex = 0;
+  unsigned long long m_opTotalBytes = 0;
+  unsigned long long m_opDoneBytes = 0;
+  int m_opSrcFd = -1;
+  int m_opDstFd = -1;
+  bool m_opFailed = false;
+  FileOpProgress m_opProgress;
 };
