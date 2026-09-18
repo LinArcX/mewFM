@@ -468,6 +468,22 @@ static void saveConfig(const AppState& app)
   {
     out << "col" << i << "=" << app.colWidths[i] << "\n";
   }
+  char colorBuf[64];
+  std::snprintf(colorBuf, sizeof(colorBuf), "%.3f,%.3f,%.3f",
+                app.theme.bg.r, app.theme.bg.g, app.theme.bg.b);
+  out << "theme.bg=" << colorBuf << "\n";
+  std::snprintf(colorBuf, sizeof(colorBuf), "%.3f,%.3f,%.3f",
+                app.theme.text.r, app.theme.text.g, app.theme.text.b);
+  out << "theme.text=" << colorBuf << "\n";
+  std::snprintf(colorBuf, sizeof(colorBuf), "%.3f,%.3f,%.3f",
+                app.theme.rowSelected.r, app.theme.rowSelected.g, app.theme.rowSelected.b);
+  out << "theme.rowSelected=" << colorBuf << "\n";
+  std::snprintf(colorBuf, sizeof(colorBuf), "%.3f,%.3f,%.3f",
+                app.theme.rowHover.r, app.theme.rowHover.g, app.theme.rowHover.b);
+  out << "theme.rowHover=" << colorBuf << "\n";
+  std::snprintf(colorBuf, sizeof(colorBuf), "%.3f,%.3f,%.3f",
+                app.theme.rowStripe.r, app.theme.rowStripe.g, app.theme.rowStripe.b);
+  out << "theme.rowStripe=" << colorBuf << "\n";
   out << "path=" << app.fm.currentPath() << "\n";
   out << "hidden=" << (app.fm.showHidden() ? "1" : "0") << "\n";
   out << "sortField=" << static_cast<int>(app.fm.sortField()) << "\n";
