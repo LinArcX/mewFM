@@ -15,6 +15,7 @@
 #include <fstream>
 #include <cctype>
 #include <csignal>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -22,12 +23,14 @@
 #include <unistd.h>
 #include <utility>
 #include <vector>
+#include <sys/statvfs.h>
 
 namespace
 {
   constexpr float kTopBarHeight = 40.0f;
   constexpr float kSidebarWidth = 220.0f;
   constexpr float kHeaderHeight = 26.0f;
+  constexpr float kStatusBarHeight = 22.0f;
   float g_fontSize  = 16.0f;
   float g_rowHeight = 24.0f;
   constexpr float kPadX         =   8.0f;
@@ -2029,6 +2032,70 @@ static void drawContextMenu(
   }
 }
 
+static std::string humanSize(unsigned long long bytes)
+{
+  const char* units[] = {"B", "KB", "MB", "GB", "TB"};
+  double value = static_cast<double>(bytes);
+  int unit = 0;
+  while (value >= 1024.0 && unit < 4)
+  {
+    value /= 1024.0;
+    unit++;
+  }
+  char buf[32];
+  if (unit == 0)
+  {
+    std::snprintf(buf, sizeof(buf), "%llu %s", bytes, units[unit]);
+  }
+  else
+  {
+    std::snprintf(buf, sizeof(buf), "%.1f %s", value, units[unit]);
+  }
+  return std::string(buf);
+}
+
+
+static void drawStatusBar(NVGcontext* vg, const AppState& app, float x, float y, float w)
+{
+  bndBackground(vg, x, y, w, kStatusBarHeight);
+
+  const size_t total = app.fm.entries().size();
+  const size_t selCount = app.selectedIndices.size();
+
+  std::string left;
+  if (selCount > 0)
+  {
+    left = std::to_string(selCount) + " of " + std::to_string(total) + " selected";
+  }
+  else if (total == 1)
+  {
+    left = "1 item";
+  }
+  else
+  {
+    left = std::to_string(total) + " items";
+  }
+
+  nvgFontFace(vg, "sans");
+  nvgFontSize(vg, g_fontSize - 2.0f);
+  nvgFillColor(vg, nvgRGBf(0.7f, 0.7f, 0.7f));
+
+  const float cy = y + kStatusBarHeight * 0.5f;
+  nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+  nvgText(vg, x + kPadX, cy, left.c_str(), nullptr);
+
+  struct statvfs st;
+  if (statvfs(app.fm.currentPath().c_str(), &st) == 0)
+  {
+    unsigned long long freeBytes = static_cast<unsigned long long>(st.f_bavail) *
+                                   static_cast<unsigned long long>(st.f_frsize);
+    std::string right = humanSize(freeBytes) + " free";
+    nvgTextAlign(vg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+    nvgText(vg, x + w - kPadX, cy, right.c_str(), nullptr);
+  }
+}
+
+
 static std::string expandTilde(const std::string& p)
 {
   if (p.empty() || p[0] != '~')
@@ -2157,7 +2224,7 @@ int main(int argc, char** argv)
     float mainY = kTopBarHeight;
     float mainW = w - kSidebarWidth;
     float listTop = mainY + kHeaderHeight;
-    float listH = h - listTop;
+    float listH = h - listTop - kStatusBarHeight;
 
     resetOnPathChange(app);
     applyScroll(app, listH);
@@ -2210,6 +2277,7 @@ int main(int argc, char** argv)
     resetOnPathChange(app);
     drawMainHeader(vg, app, mainX, mainY, mainW);
     drawRows(vg, app, mainX, listTop, mainW, listH);
+    drawStatusBar(vg, app, 0.0f, h - kStatusBarHeight, w);
 
     if (popupActive)
     {
@@ -2237,8 +2305,9 @@ int main(int argc, char** argv)
     }
     glfwSetCursor(window, resizeHover ? resizeCursor : nullptr);
     drawSeparator(vg, 0.0f, kTopBarHeight, w, kTopBarHeight);
-    drawSeparator(vg, kSidebarWidth, kTopBarHeight, kSidebarWidth, h);
+    drawSeparator(vg, kSidebarWidth, kTopBarHeight, kSidebarWidth, h - kStatusBarHeight);
     drawSeparator(vg, mainX, mainY + kHeaderHeight, w, mainY + kHeaderHeight);
+    drawSeparator(vg, 0.0f, h - kStatusBarHeight, w, h - kStatusBarHeight);
     nvgEndFrame(vg);
 
     glfwSwapBuffers(window);

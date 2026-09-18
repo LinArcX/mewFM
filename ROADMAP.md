@@ -62,7 +62,7 @@
 □ Mount / unmount detection for removable devices in sidebar
 
 ## Phase 7 — UX polish
-□ Status bar (item count, selected count, free space)
+☑ Status bar (item count, selected count, free space)
 □ Row striping or subtle separators
 □ Configurable theme (colors from config)
 □ Toast / notification for operation results
