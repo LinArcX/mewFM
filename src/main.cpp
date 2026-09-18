@@ -4011,7 +4011,7 @@ static void drawToast(NVGcontext* vg, const AppState& app, float w, float h)
   nvgText(vg, boxX + boxW * 0.5f, boxY + boxH * 0.5f, app.toast.message.c_str(), nullptr);
 }
 
-static void drawStatusBar(NVGcontext* vg, const AppState& app, float x, float y, float w)
+static void drawStatusBar(NVGcontext* vg, AppState& app, float x, float y, float w)
 {
   bndBackground(vg, x, y, w, kStatusBarHeight);
 
@@ -4110,6 +4110,35 @@ static void drawStatusBar(NVGcontext* vg, const AppState& app, float x, float y,
                   static_cast<int>(percent * 100.0f + 0.5f));
     nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
     nvgText(vg, px, cy, pctBuf, nullptr);
+
+    float pb[4];
+    nvgTextBounds(vg, 0.0f, 0.0f, pctBuf, nullptr, pb);
+    px += (pb[2] - pb[0]) + 10.0f;
+
+    const float pauseBtnW = 64.0f;
+    const float pauseBtnH = 16.0f;
+    const float pauseBtnY = cy - pauseBtnH * 0.5f;
+    const bool pauseHover = inRect(g_mouseX, g_mouseY, px, pauseBtnY, pauseBtnW, pauseBtnH);
+    const bool isPaused = prog.paused;
+
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, px, pauseBtnY, pauseBtnW, pauseBtnH, 3.0f);
+    nvgFillColor(vg, pauseHover ? nvgRGBf(0.35f, 0.35f, 0.35f)
+                                : nvgRGBf(0.25f, 0.25f, 0.25f));
+    nvgFill(vg);
+    nvgStrokeColor(vg, nvgRGBf(0.12f, 0.12f, 0.12f));
+    nvgStrokeWidth(vg, 1.0f);
+    nvgStroke(vg);
+
+    nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
+    nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgText(vg, px + pauseBtnW * 0.5f, cy, isPaused ? "Resume" : "Pause", nullptr);
+    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+
+    if (pauseHover && g_mouseClicked)
+    {
+      app.fm.setFileOpPaused(!isPaused);
+    }
   }
 
   nvgFillColor(vg, nvgRGBf(0.7f, 0.7f, 0.7f));

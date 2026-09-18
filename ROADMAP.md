@@ -27,7 +27,7 @@
 ☑ Keyboard shortcuts: Ctrl+C, Ctrl+X, Ctrl+V, F2, Del, Ctrl+Shift+N
 ☑ Modal dialog component (yes/no/ok)
 ☑ Inline text input component
-☑ Progress feedback for long copy/move operations
+☑ Progress feedback for long copy/move operations (with pause / resume)
 
 ## Phase 2 — Multi-selection
 ☑ Ctrl+click toggles individual rows

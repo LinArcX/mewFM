@@ -678,6 +678,7 @@ void FileManager::clearFileOp()
   m_opSrcFd = -1;
   m_opDstFd = -1;
   m_opFailed = false;
+  m_opPaused = false;
   m_opProgress = FileOpProgress();
 }
 
@@ -1030,11 +1031,13 @@ void FileManager::finalizeFileOp(bool success)
   closeFileOpFds();
   m_opProgress.active = false;
   m_opProgress.failed = !success;
+  m_opProgress.paused = false;
   m_opProgress.doneBytes = m_opDoneBytes;
   m_opProgress.totalBytes = m_opTotalBytes;
   m_opStage = FileOpStage::None;
   m_opKind = FileOpKind::None;
   m_opFailed = !success;
+  m_opPaused = false;
 
   if (success && m_clipboardMode == ClipboardMode::Cut)
   {
@@ -1051,6 +1054,12 @@ FileOpStatus FileManager::pollFileOp()
   if (!m_opProgress.active)
   {
     return FileOpStatus::Idle;
+  }
+
+  if (m_opPaused)
+  {
+    m_opProgress.paused = true;
+    return FileOpStatus::Running;
   }
 
   const double kBudget = 0.008;
@@ -1080,6 +1089,25 @@ FileOpStatus FileManager::pollFileOp()
 const FileOpProgress& FileManager::fileOpProgress() const
 {
   return m_opProgress;
+}
+
+void FileManager::setFileOpPaused(bool paused)
+{
+  if (!m_opProgress.active)
+  {
+    return;
+  }
+  if (m_opPaused == paused)
+  {
+    return;
+  }
+  m_opPaused = paused;
+  m_opProgress.paused = paused;
+}
+
+bool FileManager::fileOpPaused() const
+{
+  return m_opPaused;
 }
 
 ClipboardMode FileManager::clipboardMode() const

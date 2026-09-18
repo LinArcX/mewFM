@@ -44,6 +44,7 @@ struct FileOpProgress
 {
   bool active = false;
   bool failed = false;
+  bool paused = false;
   std::string label;
   unsigned long long totalBytes = 0;
   unsigned long long doneBytes = 0;
@@ -85,6 +86,8 @@ public:
   [[nodiscard]] bool startPaste();
   [[nodiscard]] FileOpStatus pollFileOp();
   const FileOpProgress& fileOpProgress() const;
+  void setFileOpPaused(bool paused);
+  bool fileOpPaused() const;
   ClipboardMode clipboardMode() const;
   void setSort(SortField field, bool ascending);
   SortField sortField() const;
@@ -172,5 +175,6 @@ private:
   int m_opSrcFd = -1;
   int m_opDstFd = -1;
   bool m_opFailed = false;
+  bool m_opPaused = false;
   FileOpProgress m_opProgress;
 };
