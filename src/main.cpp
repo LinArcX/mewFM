@@ -31,6 +31,7 @@ namespace
   constexpr float kToolBarHeight = 40.0f;
   constexpr float kTopBarHeight = kTabBarHeight + kToolBarHeight;
   constexpr float kSidebarWidth = 220.0f;
+  constexpr float kPreviewWidth = 280.0f;
   constexpr float kHeaderHeight = 26.0f;
   constexpr float kStatusBarHeight = 22.0f;
   float g_fontSize  = 16.0f;
@@ -191,6 +192,10 @@ namespace
     bool tabScrollToActive = true;
     Theme theme;
     Toast toast;
+    bool previewVisible = true;
+    int previewImage = -1;
+    std::string previewPath;
+    std::string previewText;
   };
 
   float g_mouseX = 0.0f;
@@ -214,6 +219,7 @@ namespace
   bool  g_gotoPath = false;
   bool  g_filter = false;
   bool  g_refresh = false;
+  bool  g_togglePreview = false;
   bool  g_newTab = false;
   bool  g_closeTab = false;
   bool  g_nextTab = false;
@@ -756,6 +762,7 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
     }
   }
   if (key == GLFW_KEY_F5) g_refresh = true;
+  if (key == GLFW_KEY_F3) g_togglePreview = true;
 
   if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_L) g_gotoPath = true;
   if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_F) g_filter = true;
@@ -2093,6 +2100,233 @@ static std::string truncateToWidth(NVGcontext* vg, const std::string& text, floa
   return text.substr(0, lo) + ellipsis;
 }
 
+static std::string lowercaseExtension(const std::string& name)
+{
+  size_t dot = name.find_last_of('.');
+  if (dot == std::string::npos || dot + 1 >= name.size())
+  {
+    return std::string();
+  }
+  std::string ext = name.substr(dot + 1);
+  for (char& c : ext)
+  {
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  return ext;
+}
+
+static bool isImageExtension(const std::string& ext)
+{
+  return ext == "png" || ext == "jpg" || ext == "jpeg" ||
+         ext == "bmp" || ext == "gif" || ext == "tga"  ||
+         ext == "psd" || ext == "hdr" || ext == "pic"  ||
+         ext == "pnm";
+}
+
+static bool isTextExtension(const std::string& ext)
+{
+  return ext == "txt"  || ext == "md"   || ext == "log"  ||
+         ext == "cpp"  || ext == "hpp"  || ext == "h"    ||
+         ext == "c"    || ext == "cc"   || ext == "py"   ||
+         ext == "sh"   || ext == "json" || ext == "xml"  ||
+         ext == "yml"  || ext == "yaml" || ext == "toml" ||
+         ext == "ini"  || ext == "cfg"  || ext == "conf" ||
+         ext == "ts"   || ext == "js"   || ext == "rs"   ||
+         ext == "go"   || ext == "java" || ext == "lua"  ||
+         ext == "pl"   || ext == "rb"   || ext == "html" ||
+         ext == "css";
+}
+
+static std::string currentSelectionPath(const AppState& app)
+{
+  const auto& entries = app.fm.entries();
+  if (app.selectedIndex < 0 || app.selectedIndex >= static_cast<int>(entries.size()))
+  {
+    return std::string();
+  }
+  return joinPath(app.fm.currentPath(), entries[app.selectedIndex].name);
+}
+
+static void updatePreview(AppState& app, NVGcontext* vg)
+{
+  if (!app.previewVisible)
+  {
+    if (app.previewImage >= 0)
+    {
+      nvgDeleteImage(vg, app.previewImage);
+      app.previewImage = -1;
+    }
+    app.previewPath.clear();
+    app.previewText.clear();
+    return;
+  }
+  std::string path = currentSelectionPath(app);
+  if (path == app.previewPath)
+  {
+    return;
+  }
+  if (app.previewImage >= 0)
+  {
+    nvgDeleteImage(vg, app.previewImage);
+    app.previewImage = -1;
+  }
+  app.previewText.clear();
+  app.previewPath = path;
+  if (path.empty())
+  {
+    return;
+  }
+  std::error_code ec;
+  if (!std::filesystem::is_regular_file(path, ec))
+  {
+    return;
+  }
+  std::filesystem::path p(path);
+  std::string ext = lowercaseExtension(p.filename().string());
+  if (isImageExtension(ext))
+  {
+    int img = nvgCreateImage(vg, path.c_str(), 0);
+    if (img >= 0)
+    {
+      app.previewImage = img;
+    }
+    return;
+  }
+  if (!isTextExtension(ext))
+  {
+    return;
+  }
+  std::ifstream in(path, std::ios::binary);
+  if (!in)
+  {
+    return;
+  }
+  const size_t kMaxPreviewBytes = 64 * 1024;
+  std::string buf;
+  buf.resize(kMaxPreviewBytes);
+  in.read(&buf[0], static_cast<std::streamsize>(kMaxPreviewBytes));
+  buf.resize(static_cast<size_t>(in.gcount()));
+  std::string cleaned;
+  cleaned.reserve(buf.size());
+  for (size_t i = 0; i < buf.size(); i++)
+  {
+    if (buf[i] != '\r')
+    {
+      cleaned.push_back(buf[i]);
+    }
+  }
+  app.previewText = cleaned;
+}
+
+static void drawPreviewPanel(
+  NVGcontext* vg,
+  const AppState& app,
+  float x,
+  float y,
+  float w,
+  float h)
+{
+  bndBackground(vg, x, y, w, h);
+
+  const float pad = 8.0f;
+  const float headerH = 24.0f;
+
+  nvgFontFace(vg, "sans");
+  nvgFontSize(vg, g_fontSize - 1.0f);
+  nvgFillColor(vg, nvgRGBf(0.7f, 0.7f, 0.7f));
+  nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+
+  std::string title = "Preview";
+  if (!app.previewPath.empty())
+  {
+    std::filesystem::path fp(app.previewPath);
+    std::string name = fp.filename().string();
+    if (!name.empty())
+    {
+      title = name;
+    }
+    else
+    {
+      title = app.previewPath;
+    }
+  }
+  std::string shownTitle = truncateToWidth(vg, title, w - pad * 2.0f);
+  nvgText(vg, x + pad, y + headerH * 0.5f, shownTitle.c_str(), nullptr);
+
+  float contentY = y + headerH + pad;
+  float contentH = h - headerH - pad * 2.0f;
+  float contentW = w - pad * 2.0f;
+
+  if (app.previewPath.empty())
+  {
+    nvgFillColor(vg, nvgRGBf(0.5f, 0.5f, 0.5f));
+    nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgText(vg, x + w * 0.5f, y + h * 0.5f, "No selection", nullptr);
+    return;
+  }
+
+  if (app.previewImage >= 0)
+  {
+    int iw = 0;
+    int ih = 0;
+    nvgImageSize(vg, app.previewImage, &iw, &ih);
+    if (iw > 0 && ih > 0)
+    {
+      float sx = contentW / static_cast<float>(iw);
+      float sy = contentH / static_cast<float>(ih);
+      float scale = sx < sy ? sx : sy;
+      if (scale > 1.0f)
+      {
+        scale = 1.0f;
+      }
+      float dw = static_cast<float>(iw) * scale;
+      float dh = static_cast<float>(ih) * scale;
+      float dx = x + (w - dw) * 0.5f;
+      float dy = contentY + (contentH - dh) * 0.5f;
+      NVGpaint imgPaint = nvgImagePattern(vg, dx, dy, dw, dh, 0.0f, app.previewImage, 1.0f);
+      nvgBeginPath(vg);
+      nvgRect(vg, dx, dy, dw, dh);
+      nvgFillPaint(vg, imgPaint);
+      nvgFill(vg);
+    }
+    return;
+  }
+
+  if (!app.previewText.empty())
+  {
+    nvgSave(vg);
+    nvgScissor(vg, x + pad, contentY, contentW, contentH);
+    nvgFontSize(vg, g_fontSize - 2.0f);
+    nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
+    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+    float lineH = g_fontSize + 2.0f;
+    int maxLines = static_cast<int>(contentH / lineH) + 1;
+    int drawn = 0;
+    float ty = contentY + lineH * 0.5f;
+    size_t start = 0;
+    while (start < app.previewText.size() && drawn < maxLines)
+    {
+      size_t nl = app.previewText.find('\n', start);
+      if (nl == std::string::npos)
+      {
+        nl = app.previewText.size();
+      }
+      std::string line = app.previewText.substr(start, nl - start);
+      std::string shown = truncateToWidth(vg, line, contentW);
+      nvgText(vg, x + pad, ty, shown.c_str(), nullptr);
+      ty += lineH;
+      drawn++;
+      start = nl + 1;
+    }
+    nvgRestore(vg);
+    return;
+  }
+
+  nvgFillColor(vg, nvgRGBf(0.5f, 0.5f, 0.5f));
+  nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+  nvgText(vg, x + w * 0.5f, y + h * 0.5f, "No preview available", nullptr);
+}
+
 static void drawRows(NVGcontext* vg,
                      const AppState& app,
                      float x, float y, float w, float h)
@@ -2420,6 +2654,12 @@ static void handleKeyboardNav(AppState& app, float listH)
     clearSelection(app);
     app.scrollOffset = 0.0f;
     g_refresh = false;
+  }
+
+  if (g_togglePreview)
+  {
+    app.previewVisible = !app.previewVisible;
+    g_togglePreview = false;
   }
 
   if (g_selectAll)
@@ -3300,9 +3540,10 @@ int main(int argc, char** argv)
 
     float w = static_cast<float>(winW);
     float h = static_cast<float>(winH);
+    float previewW = app.previewVisible ? kPreviewWidth : 0.0f;
     float mainX = kSidebarWidth;
     float mainY = kTopBarHeight;
-    float mainW = w - kSidebarWidth;
+    float mainW = w - kSidebarWidth - previewW;
     float listTop = mainY + kHeaderHeight;
     float listH = h - listTop - kStatusBarHeight;
 
@@ -3346,6 +3587,8 @@ int main(int argc, char** argv)
     }
     handleTextInputResult(app);
 
+    updatePreview(app, vg);
+
     drawTabBar(vg, app, w);
     drawTopBar(vg, app, w);
     resetOnPathChange(app);
@@ -3358,6 +3601,10 @@ int main(int argc, char** argv)
     resetOnPathChange(app);
     drawMainHeader(vg, app, mainX, mainY, mainW);
     drawRows(vg, app, mainX, listTop, mainW, listH);
+    if (app.previewVisible)
+    {
+      drawPreviewPanel(vg, app, mainX + mainW, mainY, previewW, h - mainY - kStatusBarHeight);
+    }
     drawStatusBar(vg, app, 0.0f, h - kStatusBarHeight, w);
     drawToast(vg, app, w, h);
 
@@ -3389,7 +3636,11 @@ int main(int argc, char** argv)
     drawSeparator(vg, 0.0f, kTabBarHeight, w, kTabBarHeight);
     drawSeparator(vg, 0.0f, kTopBarHeight, w, kTopBarHeight);
     drawSeparator(vg, kSidebarWidth, kTopBarHeight, kSidebarWidth, h - kStatusBarHeight);
-    drawSeparator(vg, mainX, mainY + kHeaderHeight, w, mainY + kHeaderHeight);
+    if (app.previewVisible)
+    {
+      drawSeparator(vg, mainX + mainW, kTopBarHeight, mainX + mainW, h - kStatusBarHeight);
+    }
+    drawSeparator(vg, mainX, mainY + kHeaderHeight, mainX + mainW, mainY + kHeaderHeight);
     drawSeparator(vg, 0.0f, h - kStatusBarHeight, w, h - kStatusBarHeight);
     nvgEndFrame(vg);
 
@@ -3399,6 +3650,11 @@ int main(int argc, char** argv)
   }
 
   saveConfig(app);
+  if (app.previewImage >= 0)
+  {
+    nvgDeleteImage(vg, app.previewImage);
+    app.previewImage = -1;
+  }
   nvgDeleteGL2(vg);
   if (resizeCursor != nullptr)
   {

@@ -71,7 +71,7 @@
 ## Phase 8 — Advanced
 ☑ Tabs (multiple directories in one window)
 ☑ User bookmarks (add / remove sidebar entries)
-□ Preview panel (thumbnail for images, text preview)
+☑ Preview panel (thumbnail for images, text preview)
 □ List / grid view toggle
 □ Drag and drop (internal move, external in / out)
 □ Symlink handling (broken-link marker, follow toggle)
