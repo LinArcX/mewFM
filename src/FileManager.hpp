@@ -14,6 +14,13 @@ struct Entry
   bool isExecutable = false;
 };
 
+enum class ClipboardMode
+{
+  None,
+  Copy,
+  Cut,
+};
+
 class FileManager
 {
 public:
@@ -35,6 +42,10 @@ public:
   [[nodiscard]] bool createDirectory(const std::string& name);
   [[nodiscard]] bool renameEntry(const std::string& oldName, const std::string& newName);
   [[nodiscard]] bool deleteEntry(const std::string& name);
+  [[nodiscard]] bool copyEntry(const std::string& name);
+  [[nodiscard]] bool cutEntry(const std::string& name);
+  [[nodiscard]] bool paste();
+  ClipboardMode clipboardMode() const;
 
 private:
   bool loadPath(const std::string& path);
@@ -52,6 +63,10 @@ private:
   std::vector<Entry> m_entries;
   std::vector<std::string> m_backStack;
   std::vector<std::string> m_forwardStack;
+
+  ClipboardMode m_clipboardMode = ClipboardMode::None;
+  std::string m_clipboardName;
+  std::string m_clipboardSource;
 
   bool m_showHidden = false;
 

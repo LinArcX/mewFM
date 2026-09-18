@@ -38,7 +38,7 @@
 menu () {
   commands=(
     # debug
-    "build(debug)" "run(debug)" "gf2" "gf2 attach" "rr record" "gf2 --rr-replay" "clean(debug)"
+    "build(debug)" "run(debug)" "apply patch" "remove patch" "gf2" "gf2 attach" "rr record" "gf2 --rr-replay" "clean(debug)"
 
     # release
     "build(release)" "run(release)" "clean(release)"
@@ -117,6 +117,36 @@ menu () {
       cd build/debug
       ./rah 
       cd ../..
+      ;;
+    "apply patch")
+      file=$(find patches -type f -printf '%p\n' | fzf)
+
+      if [ -n "$file" ]; then
+          if python3 scripts/extractFiles.py "$file"; then
+            echo "Patch Success!"
+            ./scripts/build.sh --debug
+          else
+            echo "Patch Failed!"
+          fi
+      fi
+      ;;
+    "remove patch")
+      file=$(find patches -type f -printf '%p\n' | fzf)
+
+      if [ -z "$file" ]; then
+        rm $file
+        exit 0
+      fi
+
+      echo "Selected: $file"
+      read -r -p "Remove this file? [y/N] " answer
+      
+      if [[ "$answer" == "y" || "$answer" == "Y" ]]; then
+        rm -- "$file"
+        echo "Removed: $file"
+      else
+        echo "Cancelled."
+      fi
       ;;
     "gf2")
       gf2 -nx -ex "source breakpoints.gdb" build/debug/rah

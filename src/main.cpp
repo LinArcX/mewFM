@@ -103,6 +103,9 @@ namespace
   bool  g_newFolder = false;
   bool  g_rename = false;
   bool  g_delete = false;
+  bool  g_copy = false;
+  bool  g_cut = false;
+  bool  g_paste = false;
   bool g_sidebarDirty = false;
 }
 
@@ -447,6 +450,10 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
   {
     g_newFolder = true;
   }
+
+  if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_C) g_copy = true;
+  if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_X) g_cut = true;
+  if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_V) g_paste = true;
 
   if (key == GLFW_KEY_UP)    g_navUp = true;
   if (key == GLFW_KEY_DOWN)  g_navDown = true;
@@ -1366,6 +1373,47 @@ static void handleKeyboardNav(AppState& app, float listH)
     }
     g_delete = false;
   }
+
+  if (g_copy)
+  {
+    const auto& entries = app.fm.entries();
+    if (app.selectedIndex >= 0 && app.selectedIndex < static_cast<int>(entries.size()))
+    {
+      if (!app.fm.copyEntry(entries[app.selectedIndex].name))
+      {
+        app.modal.openInfo("Error", "Could not copy.");
+      }
+    }
+    g_copy = false;
+  }
+
+  if (g_cut)
+  {
+    const auto& entries = app.fm.entries();
+    if (app.selectedIndex >= 0 && app.selectedIndex < static_cast<int>(entries.size()))
+    {
+      if (!app.fm.cutEntry(entries[app.selectedIndex].name))
+      {
+        app.modal.openInfo("Error", "Could not cut.");
+      }
+    }
+    g_cut = false;
+  }
+
+  if (g_paste)
+  {
+    if (app.fm.clipboardMode() != ClipboardMode::None)
+    {
+      if (!app.fm.paste())
+      {
+        app.modal.openInfo("Error", "Could not paste.");
+      }
+      app.selectedIndex = -1;
+      app.scrollOffset = 0.0f;
+    }
+    g_paste = false;
+  }
+
   g_navUp = false;
   g_navDown = false;
   g_navEnter = false;
