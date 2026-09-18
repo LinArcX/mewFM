@@ -39,6 +39,9 @@ namespace
   constexpr float kIconGap      = 4.0f;
   constexpr float kMinColWidth  = 40.0f;
   constexpr int   kNumCols      = 5;
+  constexpr float kMenuWidth      = 160.0f;
+  constexpr float kMenuItemHeight =  26.0f;
+  constexpr float kMenuPadY       =   4.0f;
 
   struct Place
   {
@@ -62,6 +65,49 @@ namespace
     Rename,
   };
 
+  enum class MenuKind
+  {
+    None,
+    Row,
+    Empty,
+  };
+
+  enum class MenuAction
+  {
+    None,
+    Open,
+    Copy,
+    Cut,
+    Paste,
+    Rename,
+    Delete,
+    NewFolder,
+    Refresh,
+  };
+
+  struct MenuItem
+  {
+    const char* label;
+    MenuAction action;
+    bool enabled;
+  };
+
+  const MenuItem kRowMenu[] =
+  {
+    {"Open",   MenuAction::Open,   true},
+    {"Copy",   MenuAction::Copy,   true},
+    {"Cut",    MenuAction::Cut,    true},
+    {"Rename", MenuAction::Rename, true},
+    {"Delete", MenuAction::Delete, true},
+  };
+
+  const MenuItem kEmptyMenu[] =
+  {
+    {"Paste",      MenuAction::Paste,     true},
+    {"New Folder", MenuAction::NewFolder, true},
+    {"Refresh",    MenuAction::Refresh,   true},
+  };
+
   enum class PendingConfirm
   {
     None,
@@ -78,6 +124,10 @@ namespace
     std::string renameOldName;
     PendingConfirm pendingConfirm = PendingConfirm::None;
     std::vector<std::string> pendingDeleteNames;
+    MenuKind menuKind = MenuKind::None;
+    float menuX = 0.0f;
+    float menuY = 0.0f;
+    int menuRowIndex = -1;
     float scrollOffset = 0.0f;
     int selectedIndex = -1;
     int selectionAnchor = -1;
@@ -110,6 +160,7 @@ namespace
   bool  g_paste = false;
   bool  g_selectAll = false;
   int   g_mouseMods = 0;
+  bool  g_rightClicked = false;
   bool g_sidebarDirty = false;
 }
 
@@ -384,6 +435,12 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
   AppState* app = static_cast<AppState*>(glfwGetWindowUserPointer(window));
   bool modalActive = (app != nullptr) && app->modal.active;
   bool inputActive = (app != nullptr) && app->textInput.active;
+  if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS && app != nullptr &&
+      app->menuKind != MenuKind::None)
+  {
+    app->menuKind = MenuKind::None;
+    return;
+  }
   if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS)
   {
     if (inputActive)
@@ -505,19 +562,22 @@ static void cursorPosCallback(GLFWwindow* window, double x, double y)
 static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
 {
   (void)window;
-  if (button != GLFW_MOUSE_BUTTON_LEFT)
+  if (button == GLFW_MOUSE_BUTTON_LEFT)
   {
-    return;
+    if (action == GLFW_PRESS)
+    {
+      g_mouseClicked = true;
+      g_mouseDown = true;
+      g_mouseMods = mods;
+    }
+    else if (action == GLFW_RELEASE)
+    {
+      g_mouseDown = false;
+    }
   }
-  if (action == GLFW_PRESS)
+  else if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS)
   {
-    g_mouseClicked = true;
-    g_mouseDown = true;
-    g_mouseMods = mods;
-  }
-  else if (action == GLFW_RELEASE)
-  {
-    g_mouseDown = false;
+    g_rightClicked = true;
   }
 }
 
@@ -1750,6 +1810,161 @@ static void applyScroll(AppState& app, float listH)
   g_scrollY = 0.0f;
 }
 
+static MenuAction handleMenuClick(const AppState& app, float w, float h)
+{
+  if (app.menuKind == MenuKind::None)
+  {
+    return MenuAction::None;
+  }
+  const MenuItem* items = (app.menuKind == MenuKind::Row) ? kRowMenu : kEmptyMenu;
+  const int count = (app.menuKind == MenuKind::Row) ? 5 : 3;
+  float menuH = kMenuPadY * 2.0f + kMenuItemHeight * static_cast<float>(count);
+
+  float mx = app.menuX;
+  float my = app.menuY;
+  if (mx + kMenuWidth > w)
+  {
+    mx = w - kMenuWidth;
+  }
+  if (my + menuH > h)
+  {
+    my = h - menuH;
+  }
+
+  for (int i = 0; i < count; i++)
+  {
+    float iy = my + kMenuPadY + static_cast<float>(i) * kMenuItemHeight;
+    if (inRect(g_mouseX, g_mouseY, mx, iy, kMenuWidth, kMenuItemHeight))
+    {
+      return items[i].enabled ? items[i].action : MenuAction::None;
+    }
+  }
+  return MenuAction::None;
+}
+
+static void openContextMenu(
+  AppState& app,
+  float listX,
+  float listTop,
+  float listW,
+  float listH)
+{
+  app.menuX = g_mouseX;
+  app.menuY = g_mouseY;
+  app.menuRowIndex = -1;
+  if (inRect(g_mouseX, g_mouseY, listX, listTop, listW, listH))
+  {
+    int idx = static_cast<int>((g_mouseY - listTop + app.scrollOffset) / g_rowHeight);
+    int count = static_cast<int>(app.fm.entries().size());
+    if (idx >= 0 && idx < count)
+    {
+      if (!isEntrySelected(app, idx))
+      {
+        setSingleSelection(app, idx);
+      }
+      else
+      {
+        app.selectedIndex = idx;
+      }
+      app.menuKind = MenuKind::Row;
+      app.menuRowIndex = idx;
+      return;
+    }
+  }
+  app.menuKind = MenuKind::Empty;
+}
+
+static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
+{
+  switch (action)
+  {
+    case MenuAction::Open:
+      if (rowIdx >= 0)
+      {
+        openEntry(app, rowIdx);
+      }
+      break;
+    case MenuAction::Copy:      g_copy = true; break;
+    case MenuAction::Cut:       g_cut = true; break;
+    case MenuAction::Paste:     g_paste = true; break;
+    case MenuAction::Rename:    g_rename = true; break;
+    case MenuAction::Delete:    g_delete = true; break;
+    case MenuAction::NewFolder: g_newFolder = true; break;
+    case MenuAction::Refresh:
+      if (!app.fm.refresh())
+      {
+        app.modal.openInfo("Error", "Could not refresh.");
+      }
+      clearSelection(app);
+      app.scrollOffset = 0.0f;
+      break;
+    default:
+      break;
+  }
+}
+
+static void drawContextMenu(
+  NVGcontext* vg,
+  const AppState& app,
+  float w,
+  float h)
+{
+  if (app.menuKind == MenuKind::None)
+  {
+    return;
+  }
+  const MenuItem* items = (app.menuKind == MenuKind::Row) ? kRowMenu : kEmptyMenu;
+  const int count = (app.menuKind == MenuKind::Row) ? 5 : 3;
+  float menuH = kMenuPadY * 2.0f + kMenuItemHeight * static_cast<float>(count);
+
+  float mx = app.menuX;
+  float my = app.menuY;
+  if (mx + kMenuWidth > w)
+  {
+    mx = w - kMenuWidth;
+  }
+  if (my + menuH > h)
+  {
+    my = h - menuH;
+  }
+  if (mx < 0.0f)
+  {
+    mx = 0.0f;
+  }
+  if (my < 0.0f)
+  {
+    my = 0.0f;
+  }
+
+  nvgBeginPath(vg);
+  nvgRoundedRect(vg, mx, my, kMenuWidth, menuH, 4.0f);
+  nvgFillColor(vg, nvgRGBf(0.22f, 0.22f, 0.22f));
+  nvgFill(vg);
+  nvgStrokeColor(vg, nvgRGBf(0.1f, 0.1f, 0.1f));
+  nvgStrokeWidth(vg, 1.0f);
+  nvgStroke(vg);
+
+  nvgFontFace(vg, "sans");
+  nvgFontSize(vg, g_fontSize);
+  nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+
+  for (int i = 0; i < count; i++)
+  {
+    float iy = my + kMenuPadY + static_cast<float>(i) * kMenuItemHeight;
+    bool hover = inRect(g_mouseX, g_mouseY, mx, iy, kMenuWidth, kMenuItemHeight);
+    if (hover && items[i].enabled)
+    {
+      nvgBeginPath(vg);
+      nvgRect(vg, mx + 1.0f, iy, kMenuWidth - 2.0f, kMenuItemHeight);
+      nvgFillColor(vg, nvgRGBf(0.3f, 0.3f, 0.3f));
+      nvgFill(vg);
+    }
+    nvgFillColor(vg, items[i].enabled ? nvgRGBf(0.9f, 0.9f, 0.9f)
+                                      : nvgRGBf(0.5f, 0.5f, 0.5f));
+    nvgText(vg, mx + 10.0f, iy + kMenuItemHeight * 0.5f, items[i].label, nullptr);
+  }
+}
+
 static std::string expandTilde(const std::string& p)
 {
   if (p.empty() || p[0] != '~')
@@ -1888,6 +2103,30 @@ int main(int argc, char** argv)
     {
       g_mouseClicked = false;
     }
+    bool hadMenu = (app.menuKind != MenuKind::None);
+    if (!popupActive)
+    {
+      if (g_rightClicked)
+      {
+        openContextMenu(
+          app,
+          mainX,
+          listTop,
+          mainW,
+          listH);
+        g_rightClicked = false;
+      }
+      else if (hadMenu && g_mouseClicked)
+      {
+        MenuAction menuAction = handleMenuClick(app, w, h);
+        if (menuAction != MenuAction::None)
+        {
+          executeMenuAction(app, menuAction, app.menuRowIndex);
+        }
+        app.menuKind = MenuKind::None;
+        g_mouseClicked = false;
+      }
+    }
     handleListClick(app, mainX, listTop, mainW, listH);
     resetOnPathChange(app);
     if (!popupActive)
@@ -1917,6 +2156,12 @@ int main(int argc, char** argv)
 
     handleModalResult(app);
 
+    drawContextMenu(
+      vg,
+      app,
+      w,
+      h);
+
     bool resizeHover = (app.hoveredSep >= 0) || (app.dragColumn >= 0);
     if (app.modal.active || app.textInput.active)
     {
@@ -1934,6 +2179,7 @@ int main(int argc, char** argv)
 
     glfwSwapBuffers(window);
     g_mouseClicked = false;
+    g_rightClicked = false;
   }
 
   saveConfig(app);

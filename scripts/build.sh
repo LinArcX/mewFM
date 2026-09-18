@@ -126,7 +126,7 @@ while true; do
   case "$answer" in
     1|y|Y|yes|YES|Yes)
       if [ -n "$FILENAME" ]; then
-        echo "$FILENAME"
+        rm "$FILENAME"
       else
         echo "Yes"
       fi

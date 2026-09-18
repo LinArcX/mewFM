@@ -317,6 +317,11 @@ ClipboardMode FileManager::clipboardMode() const
   return m_clipboardMode;
 }
 
+bool FileManager::refresh()
+{
+  return loadPath(m_currentPath);
+}
+
 bool FileManager::goBack()
 {
   if (m_backStack.empty())

@@ -37,9 +37,9 @@
 □ Selection preserved across scroll
 
 ## Phase 3 — Context menu
-□ Right-click on a row opens a Blendish menu
+☑ Right-click on a row opens a Blendish menu
 □ Menu items: Open, Open With, Copy, Cut, Rename, Delete, Properties
-□ Right-click on empty space: Paste, New Folder, Refresh
+☑ Right-click on empty space: Paste, New Folder, Refresh
 □ Submenu for "Open With"
 
 ## Phase 4 — Sorting

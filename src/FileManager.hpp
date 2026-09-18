@@ -59,6 +59,7 @@ public:
   void setSort(SortField field, bool ascending);
   SortField sortField() const;
   bool sortAscending() const;
+  [[nodiscard]] bool refresh();
 
 private:
   bool loadPath(const std::string& path);
