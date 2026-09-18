@@ -59,6 +59,7 @@ namespace
   {
     None,
     NewFolder,
+    Rename,
   };
 
   struct AppState
@@ -68,6 +69,7 @@ namespace
     Modal modal;
     TextInput textInput;
     PendingInput pendingInput = PendingInput::None;
+    std::string renameOldName;
     float scrollOffset = 0.0f;
     int selectedIndex = -1;
     std::string lastPath;
@@ -91,6 +93,7 @@ namespace
   bool  g_navBack = false;
   bool  g_toggleHidden = false;
   bool  g_newFolder = false;
+  bool  g_rename = false;
   bool g_sidebarDirty = false;
 }
 
@@ -401,11 +404,12 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
   {
     g_newFolder = true;
   }
- 
+
   if (key == GLFW_KEY_UP)    g_navUp = true;
   if (key == GLFW_KEY_DOWN)  g_navDown = true;
   if (key == GLFW_KEY_ENTER) g_navEnter = true;
   if (key == GLFW_KEY_BACKSPACE) g_navBack = true;
+  if (key == GLFW_KEY_F2) g_rename = true;
 }
 
 static void charCallback(GLFWwindow* window, unsigned int codepoint)
@@ -1274,6 +1278,17 @@ static void handleKeyboardNav(AppState& app, float listH)
     app.pendingInput = PendingInput::NewFolder;
     g_newFolder = false;
   }
+  if (g_rename)
+  {
+    const auto& entries = app.fm.entries();
+    if (app.selectedIndex >= 0 && app.selectedIndex < static_cast<int>(entries.size()))
+    {
+      app.renameOldName = entries[app.selectedIndex].name;
+      app.textInput.open("Rename", app.renameOldName);
+      app.pendingInput = PendingInput::Rename;
+    }
+    g_rename = false;
+  }
   g_navUp = false;
   g_navDown = false;
   g_navEnter = false;
@@ -1313,6 +1328,15 @@ static void handleTextInputResult(AppState& app)
     if (!app.fm.createDirectory(app.textInput.value))
     {
       app.modal.openInfo("Error", "Could not create folder.");
+    }
+    app.selectedIndex = -1;
+    app.scrollOffset = 0.0f;
+  }
+  if (pending == PendingInput::Rename)
+  {
+    if (!app.fm.renameEntry(app.renameOldName, app.textInput.value))
+    {
+      app.modal.openInfo("Error", "Could not rename.");
     }
     app.selectedIndex = -1;
     app.scrollOffset = 0.0f;

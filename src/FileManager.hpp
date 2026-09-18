@@ -33,6 +33,7 @@ public:
   bool showHidden() const;
   void resetTo(const std::string& path);
   [[nodiscard]] bool createDirectory(const std::string& name);
+  [[nodiscard]] bool renameEntry(const std::string& oldName, const std::string& newName);
 
 private:
   bool loadPath(const std::string& path);

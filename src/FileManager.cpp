@@ -105,6 +105,43 @@ bool FileManager::createDirectory(const std::string& name)
   return loadPath(m_currentPath);
 }
 
+bool FileManager::renameEntry(const std::string& oldName, const std::string& newName)
+{
+  if (oldName.empty() || newName.empty())
+  {
+    return false;
+  }
+  if (oldName == "." || oldName == ".." || newName == "." || newName == "..")
+  {
+    return false;
+  }
+  if (oldName.find('/') != std::string::npos || newName.find('/') != std::string::npos)
+  {
+    return false;
+  }
+  if (oldName == newName)
+  {
+    return true;
+  }
+  std::error_code ec;
+  fs::path oldFull = fs::path(m_currentPath) / oldName;
+  fs::path newFull = fs::path(m_currentPath) / newName;
+  if (!fs::exists(oldFull, ec))
+  {
+    return false;
+  }
+  if (fs::exists(newFull, ec))
+  {
+    return false;
+  }
+  fs::rename(oldFull, newFull, ec);
+  if (ec)
+  {
+    return false;
+  }
+  return loadPath(m_currentPath);
+}
+
 bool FileManager::goBack()
 {
   if (m_backStack.empty())
