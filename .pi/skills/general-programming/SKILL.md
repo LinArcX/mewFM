@@ -8,8 +8,10 @@ description: Guidelines and rules for writing any piece of code. Use when writin
 Apply these rules strictly when writing or editing any piece of code.
 
 - Always write Safe and Minimal code. (Highest priority)
+  -Simplicity and security and efficiency is the highest priority for me.
 - Don't write bloated code.
-- Don't over-engineer things.
+- Don't over-engineer/over-complicate things.
+- Don't over-explain things.
 - Makes software that is easy to understand, easy to debug, easy to maintain.
 - Safety/minimalism should be your highest priority.
 - Try to NOT use external libraries as much as you can.
@@ -17,10 +19,14 @@ Apply these rules strictly when writing or editing any piece of code.
 - always use meaningful functions and variable names.
 - always remove dead code commented code. (try your best to keep the code clean and understandable)
 - I'm using void linux. so if you want to recommend me to install packages, always give me instructions for void linux.
-- When you answer me, or give me some piece of code, always use indicators in your snippet to show WHERE exactly you changed:
+- When i ask you to write code or modify some part of code, in response don't explain anything. just give me the final source code(it can be a full function/class/file)
+  or just a piece of code. BUT REMEMBER: always use indicators in your snippet to show WHERE exactly you changed:
   --> start of change
   
     your changes come here..
   
   --> end of change
 - Don't responde with explanatation. just give me the chagnes. just code. nothing more. Unless i ask you EXPLICITLY to exaplin.
+- Use less tokens as much as you can.
+- Don't break previous functionalities. don't introduce regressions. don't touch something that was previously working, unless you want to improve it. and in that case, always ask me first. and discuss with me about the consequences of those changes.
+- Don't write in chineese. always write in english.
