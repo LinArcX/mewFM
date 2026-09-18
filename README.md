@@ -16,9 +16,10 @@ A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and ou
   - Directories navigate into themselves
   - Executables run directly
   - Other files open with `xdg-open`
-- Keyboard navigation: Up/Down arrows, Enter, Backspace (go up), F2 (rename), Del (delete), Ctrl+C/Ctrl+X/Ctrl+V (copy/cut/paste), Ctrl+Shift+N (new folder), Ctrl+L (go to path), Ctrl+H (toggle hidden files), F5 (refresh), Escape (quit)
+- Keyboard navigation: Up/Down arrows, Enter, Backspace (go up), F2 (rename), Del (delete), Ctrl+C/Ctrl+X/Ctrl+V (copy/cut/paste), Ctrl+Shift+N (new folder), Ctrl+F (filter), Ctrl+L (go to path), Ctrl+H (toggle hidden files), F5 (refresh), Escape (quit)
 - Internal clipboard: copy or cut one or more entries, then paste them into the current directory
 - Scroll wheel support
+- Live name filter via Ctrl+F: shows only entries whose name contains the typed substring; Escape or Cancel clears it
 - Status bar: item count, selected count, and free space on the current filesystem
 - Session persistence via `~/.config/rah/config`:
   - Column widths

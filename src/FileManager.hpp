@@ -48,6 +48,8 @@ public:
 
   void setShowHidden(bool show);
   bool showHidden() const;
+  void setFilter(const std::string& filter);
+  const std::string& filter() const;
   void resetTo(const std::string& path);
   [[nodiscard]] bool createDirectory(const std::string& name);
   [[nodiscard]] bool renameEntry(const std::string& oldName, const std::string& newName);
@@ -63,6 +65,7 @@ public:
 
 private:
   bool loadPath(const std::string& path);
+  void applyFilter();
   static std::string parentOf(const std::string& path);
 
   bool buildEntry(const std::string& fullPath, const std::string& name, Entry& out);
@@ -74,7 +77,9 @@ private:
   std::string typeTextForName(const std::string& name) const;
 
   std::string m_currentPath;
+  std::vector<Entry> m_allEntries;
   std::vector<Entry> m_entries;
+  std::string m_filter;
   std::vector<std::string> m_backStack;
   std::vector<std::string> m_forwardStack;
 

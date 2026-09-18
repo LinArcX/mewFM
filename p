@@ -38,7 +38,7 @@
 menu () {
   commands=(
     # patch
-    "create patch" "apply patch" "remove patch"
+    "create patch"
 
     # debug
     "build(debug)" "run(debug)"  "gf2" "gf2 attach" "rr record" "gf2 --rr-replay" "clean(debug)"
@@ -109,35 +109,8 @@ menu () {
       read -r -p "Enter name of yoru patch: (it will be save in patches/) " filename
       file="patches/${filename}.json"
       nvim "$file"
-      ;;
-    "apply patch")
-      file=$(find patches -type f -printf '%T@ %p\n' | sort -nr | cut -d' ' -f2- | fzf)
-
-      if [ -n "$file" ]; then
-          if python3 scripts/extractFiles.py "$file"; then
-            echo "Patch Success!"
-            ./scripts/build.sh $file --debug
-          else
-            echo "Patch Failed!"
-          fi
-      fi
-      ;;
-    "remove patch")
-      file=$(find patches -type f -printf '%T@ %p\n' | sort -nr | cut -d' ' -f2- | fzf)
-
-      if [ -z "$file" ]; then
-        rm $file
-        exit 0
-      fi
-
-      echo "Selected: $file"
-      read -r -p "Remove this file? [y/N] " answer
-      
-      if [[ "$answer" == "y" || "$answer" == "Y" ]]; then
-        rm -- "$file"
-        echo "Removed: $file"
-      else
-        echo "Cancelled."
+      if [ $? -eq 0 ] && [ -s "$file" ]; then
+        ./scripts/applyPatch.sh $file
       fi
       ;;
     "build(debug)")

@@ -50,7 +50,7 @@
 
 ## Phase 5 — Convenience
 □ Search / filter box in top bar
-□ Live filter of the current directory
+☑ Live filter of the current directory
 ☑ Ctrl+L to type a path directly
 ☑ Refresh (F5)
 

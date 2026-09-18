@@ -67,6 +67,7 @@ namespace
     NewFolder,
     Rename,
     GoToPath,
+    Filter,
   };
 
   enum class MenuKind
@@ -164,6 +165,7 @@ namespace
   bool  g_paste = false;
   bool  g_selectAll = false;
   bool  g_gotoPath = false;
+  bool  g_filter = false;
   bool  g_refresh = false;
   int   g_mouseMods = 0;
   bool  g_rightClicked = false;
@@ -451,6 +453,15 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
   {
     if (inputActive)
     {
+      if (app->pendingInput == PendingInput::Filter)
+      {
+        app->fm.setFilter("");
+        app->pendingInput = PendingInput::None;
+        app->selectedIndices.clear();
+        app->selectedIndex = -1;
+        app->selectionAnchor = -1;
+        app->scrollOffset = 0.0f;
+      }
       app->textInput.close();
       return;
     }
@@ -481,6 +492,14 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
       app->textInput.cursor++;
     else if (key == GLFW_KEY_HOME) app->textInput.cursor = 0;
     else if (key == GLFW_KEY_END)  app->textInput.cursor = app->textInput.value.size();
+    if (app->pendingInput == PendingInput::Filter)
+    {
+      app->fm.setFilter(app->textInput.value);
+      app->selectedIndices.clear();
+      app->selectedIndex = -1;
+      app->selectionAnchor = -1;
+      app->scrollOffset = 0.0f;
+    }
     return;
   }
   if (modalActive)
@@ -549,6 +568,7 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
   if (key == GLFW_KEY_F5) g_refresh = true;
 
   if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_L) g_gotoPath = true;
+  if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_F) g_filter = true;
 }
 
 static void charCallback(GLFWwindow* window, unsigned int codepoint)
@@ -559,6 +579,14 @@ static void charCallback(GLFWwindow* window, unsigned int codepoint)
     return;
   }
   textInputInsert(app->textInput, codepoint);
+  if (app->pendingInput == PendingInput::Filter)
+  {
+    app->fm.setFilter(app->textInput.value);
+    app->selectedIndices.clear();
+    app->selectedIndex = -1;
+    app->selectionAnchor = -1;
+    app->scrollOffset = 0.0f;
+  }
 }
 
 static void cursorPosCallback(GLFWwindow* window, double x, double y)
@@ -1743,6 +1771,13 @@ static void handleKeyboardNav(AppState& app, float listH)
     g_gotoPath = false;
   }
 
+  if (g_filter)
+  {
+    app.textInput.open("Filter", app.fm.filter());
+    app.pendingInput = PendingInput::Filter;
+    g_filter = false;
+  }
+
   if (g_refresh)
   {
     if (!app.fm.refresh())
@@ -1792,6 +1827,12 @@ static void handleTextInputResult(AppState& app)
 
   if (r != TextInputResult::Ok)
   {
+    if (pending == PendingInput::Filter)
+    {
+      app.fm.setFilter("");
+      clearSelection(app);
+      app.scrollOffset = 0.0f;
+    }
     return;
   }
   if (pending == PendingInput::NewFolder)
@@ -2063,7 +2104,19 @@ static void drawStatusBar(NVGcontext* vg, const AppState& app, float x, float y,
   const size_t selCount = app.selectedIndices.size();
 
   std::string left;
-  if (selCount > 0)
+  if (!app.fm.filter().empty())
+  {
+    left = "Filter \"" + app.fm.filter() + "\": ";
+    if (selCount > 0)
+    {
+      left += std::to_string(selCount) + " of " + std::to_string(total) + " selected";
+    }
+    else
+    {
+      left += std::to_string(total) + " matches";
+    }
+  }
+  else if (selCount > 0)
   {
     left = std::to_string(selCount) + " of " + std::to_string(total) + " selected";
   }

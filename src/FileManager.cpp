@@ -56,7 +56,7 @@ bool FileManager::loadPath(const std::string& path)
     return false;
   }
   m_currentPath = path;
-  m_entries.clear();
+  m_allEntries.clear();
   fs::directory_iterator it(path, ec);
   if (ec)
   {
@@ -73,11 +73,11 @@ bool FileManager::loadPath(const std::string& path)
     Entry entry;
     if (buildEntry(p.string(), name, entry))
     {
-      m_entries.push_back(entry);
+      m_allEntries.push_back(entry);
     }
   }
 
-  sortEntries();
+  applyFilter();
   return true;
 }
 
@@ -340,6 +340,36 @@ ClipboardMode FileManager::clipboardMode() const
 bool FileManager::refresh()
 {
   return loadPath(m_currentPath);
+}
+
+void FileManager::setFilter(const std::string& filter)
+{
+  if (m_filter == filter)
+  {
+    return;
+  }
+  m_filter = filter;
+  applyFilter();
+}
+
+
+const std::string& FileManager::filter() const
+{
+  return m_filter;
+}
+
+
+void FileManager::applyFilter()
+{
+  m_entries.clear();
+  for (size_t i = 0; i < m_allEntries.size(); i++)
+  {
+    if (m_filter.empty() || m_allEntries[i].name.find(m_filter) != std::string::npos)
+    {
+      m_entries.push_back(m_allEntries[i]);
+    }
+  }
+  sortEntries();
 }
 
 bool FileManager::goBack()
