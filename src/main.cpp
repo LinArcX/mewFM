@@ -168,6 +168,8 @@ namespace
     float dragStartWidth = 0.0f;
     std::vector<TabSnapshot> tabs;
     int activeTab = 0;
+    float tabScrollOffset = 0.0f;
+    bool tabScrollToActive = true;
   };
 
   float g_mouseX = 0.0f;
@@ -194,6 +196,7 @@ namespace
   bool  g_newTab = false;
   bool  g_closeTab = false;
   bool  g_nextTab = false;
+  bool  g_prevTab = false;
   int   g_mouseMods = 0;
   bool  g_rightClicked = false;
   bool g_sidebarDirty = false;
@@ -652,7 +655,8 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
   if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_F) g_filter = true;
   if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_T) g_newTab = true;
   if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_W) g_closeTab = true;
-  if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_TAB) g_nextTab = true;
+  if ((mods & GLFW_MOD_CONTROL) && (mods & GLFW_MOD_SHIFT) && key == GLFW_KEY_TAB) g_prevTab = true;
+  else if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_TAB) g_nextTab = true;
 }
 
 static void charCallback(GLFWwindow* window, unsigned int codepoint)
@@ -704,8 +708,20 @@ static void mouseButtonCallback(GLFWwindow* window, int button, int action, int 
 
 static void scrollCallback(GLFWwindow* window, double x, double y)
 {
-  (void)window;
   (void)x;
+  if (g_mouseY < kTabBarHeight)
+  {
+    AppState* app = static_cast<AppState*>(glfwGetWindowUserPointer(window));
+    if (app != nullptr)
+    {
+      app->tabScrollOffset -= static_cast<float>(y) * 40.0f;
+      if (app->tabScrollOffset < 0.0f)
+      {
+        app->tabScrollOffset = 0.0f;
+      }
+    }
+    return;
+  }
   g_scrollY += static_cast<float>(y);
 }
 
@@ -843,6 +859,7 @@ static void switchTab(AppState& app, int newIndex)
   saveActiveIntoTab(app);
   app.activeTab = newIndex;
   loadActiveFromTab(app);
+  app.tabScrollToActive = true;
 }
 
 static void createNewTab(AppState& app)
@@ -854,6 +871,7 @@ static void createNewTab(AppState& app)
   app.tabs.push_back(t);
   app.activeTab = static_cast<int>(app.tabs.size()) - 1;
   loadActiveFromTab(app);
+  app.tabScrollToActive = true;
 }
 
 static void closeTab(AppState& app, int index)
@@ -874,6 +892,7 @@ static void closeTab(AppState& app, int index)
       app.activeTab = static_cast<int>(app.tabs.size()) - 1;
     }
     loadActiveFromTab(app);
+    app.tabScrollToActive = true;
     return;
   }
   app.tabs.erase(app.tabs.begin() + index);
@@ -1288,6 +1307,8 @@ static void drawTextInput(NVGcontext* vg, TextInput& t, float w, float h)
   }
 }
 
+static std::string truncateToWidth(NVGcontext* vg, const std::string& text, float maxWidth);
+
 static void drawTabBar(NVGcontext* vg, AppState& app, float w)
 {
   bndBackground(vg, 0.0f, 0.0f, w, kTabBarHeight);
@@ -1299,24 +1320,110 @@ static void drawTabBar(NVGcontext* vg, AppState& app, float w)
   const float tabH = kTabBarHeight - 4.0f;
   const float tabY = 2.0f;
   const float padX = 10.0f;
-  float x = kPadX;
-
-  int closeIndex = -1;
-  int switchTo = -1;
+  const float gap = 2.0f;
+  const float closeReserve = 18.0f;
+  const float maxTabW = 200.0f;
+  const float minTabW = 70.0f;
+  const float plusW = 24.0f;
+  const float plusGap = 4.0f;
 
   const int tabCount = static_cast<int>(app.tabs.size());
+
+  std::vector<float> tabWidths;
+  tabWidths.reserve(static_cast<size_t>(tabCount));
+  float totalW = 0.0f;
   for (int i = 0; i < tabCount; i++)
   {
     std::string label = tabLabelFor(app, i);
     float bounds[4];
     nvgTextBounds(vg, 0.0f, 0.0f, label.c_str(), nullptr, bounds);
     float textW = bounds[2] - bounds[0];
-    float tabW = textW + padX * 2.0f;
+    float tabW = textW + padX * 2.0f + closeReserve;
+    if (tabW > maxTabW)
+    {
+      tabW = maxTabW;
+    }
+    if (tabW < minTabW)
+    {
+      tabW = minTabW;
+    }
+    tabWidths.push_back(tabW);
+    totalW += tabW + gap;
+  }
+
+  const float barLeft = kPadX;
+  const float barRight = w - kPadX - plusW - plusGap;
+  const float availW = barRight - barLeft;
+  if (availW <= 0.0f)
+  {
+    return;
+  }
+
+  float maxScroll = totalW - availW;
+  if (maxScroll < 0.0f)
+  {
+    maxScroll = 0.0f;
+  }
+  if (app.tabScrollOffset < 0.0f)
+  {
+    app.tabScrollOffset = 0.0f;
+  }
+  if (app.tabScrollOffset > maxScroll)
+  {
+    app.tabScrollOffset = maxScroll;
+  }
+
+  if (app.tabScrollToActive && tabCount > 0)
+  {
+    float activeX = 0.0f;
+    for (int i = 0; i < app.activeTab && i < tabCount; i++)
+    {
+      activeX += tabWidths[static_cast<size_t>(i)] + gap;
+    }
+    float activeW = (app.activeTab >= 0 && app.activeTab < tabCount)
+      ? tabWidths[static_cast<size_t>(app.activeTab)] : 0.0f;
+    if (activeX < app.tabScrollOffset)
+    {
+      app.tabScrollOffset = activeX;
+    }
+    if (activeX + activeW > app.tabScrollOffset + availW)
+    {
+      app.tabScrollOffset = activeX + activeW - availW;
+    }
+    if (app.tabScrollOffset < 0.0f)
+    {
+      app.tabScrollOffset = 0.0f;
+    }
+    if (app.tabScrollOffset > maxScroll)
+    {
+      app.tabScrollOffset = maxScroll;
+    }
+    app.tabScrollToActive = false;
+  }
+
+  nvgSave(vg);
+  nvgScissor(vg, barLeft, 0.0f, availW, kTabBarHeight);
+
+  float x = barLeft - app.tabScrollOffset;
+  int closeIndex = -1;
+  int switchTo = -1;
+
+  for (int i = 0; i < tabCount; i++)
+  {
+    float tabW = tabWidths[static_cast<size_t>(i)];
+    std::string label = tabLabelFor(app, i);
+    float maxTextW = tabW - padX * 2.0f - closeReserve;
+    if (maxTextW < 0.0f)
+    {
+      maxTextW = 0.0f;
+    }
+    std::string shown = truncateToWidth(vg, label, maxTextW);
 
     bool active = (i == app.activeTab);
-    bool hover = inRect(g_mouseX, g_mouseY, x, tabY, tabW, tabH);
+    bool visible = (x + tabW > barLeft) && (x < barRight);
+    bool hover = visible && inRect(g_mouseX, g_mouseY, x, tabY, tabW, tabH);
     bool closeHover = false;
-    float closeX = x + tabW - 16.0f;
+    float closeX = x + tabW - closeReserve + 4.0f;
     if (hover)
     {
       closeHover = inRect(g_mouseX, g_mouseY, closeX, tabY + 4.0f, 12.0f, tabH - 8.0f);
@@ -1339,10 +1446,7 @@ static void drawTabBar(NVGcontext* vg, AppState& app, float w)
     nvgFill(vg);
 
     nvgFillColor(vg, active ? nvgRGBf(1.0f, 1.0f, 1.0f) : nvgRGBf(0.75f, 0.75f, 0.75f));
-    nvgSave(vg);
-    nvgScissor(vg, x + 1.0f, tabY, tabW - 18.0f, tabH);
-    nvgText(vg, x + padX, tabY + tabH * 0.5f, label.c_str(), nullptr);
-    nvgRestore(vg);
+    nvgText(vg, x + padX, tabY + tabH * 0.5f, shown.c_str(), nullptr);
 
     if (tabCount > 1 && hover)
     {
@@ -1364,18 +1468,20 @@ static void drawTabBar(NVGcontext* vg, AppState& app, float w)
       }
     }
 
-    x += tabW + 2.0f;
+    x += tabW + gap;
   }
 
-  const float plusW = 24.0f;
-  bool plusHover = inRect(g_mouseX, g_mouseY, x, tabY, plusW, tabH);
+  nvgRestore(vg);
+
+  const float plusX = w - kPadX - plusW;
+  bool plusHover = inRect(g_mouseX, g_mouseY, plusX, tabY, plusW, tabH);
   nvgBeginPath(vg);
-  nvgRoundedRect(vg, x, tabY, plusW, tabH, 4.0f);
+  nvgRoundedRect(vg, plusX, tabY, plusW, tabH, 4.0f);
   nvgFillColor(vg, plusHover ? nvgRGBf(0.3f, 0.3f, 0.3f) : nvgRGBf(0.2f, 0.2f, 0.2f));
   nvgFill(vg);
   nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
   nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-  nvgText(vg, x + plusW * 0.5f, tabY + tabH * 0.5f, "+", nullptr);
+  nvgText(vg, plusX + plusW * 0.5f, tabY + tabH * 0.5f, "+", nullptr);
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
 
   bool newTabRequested = (plusHover && g_mouseClicked);
@@ -2216,6 +2322,16 @@ static void handleKeyboardNav(AppState& app, float listH)
       switchTab(app, next);
     }
     g_nextTab = false;
+  }
+  if (g_prevTab)
+  {
+    int n = static_cast<int>(app.tabs.size());
+    if (n > 1)
+    {
+      int prev = (app.activeTab - 1 + n) % n;
+      switchTab(app, prev);
+    }
+    g_prevTab = false;
   }
 
   g_navUp = false;
