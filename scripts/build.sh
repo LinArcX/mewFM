@@ -22,16 +22,18 @@ fi
 MODE="debug"
 MODE_SET=0
 CLEAN=0
+FILENAME=""
 for arg in "$@"; do
   case "$arg" in
     --debug)   MODE="debug";   MODE_SET=1 ;;
     --release) MODE="release"; MODE_SET=1 ;;
     --clean)   CLEAN=1 ;;
     -h|--help)
-      echo "Usage: scripts/build.sh [--debug|--release|--clean]"
+      echo "Usage: scripts/build.sh [--debug|--release|--clean] [filename]"
       exit 0
       ;;
-    *) echo "${C_RED}build.sh: unknown option: $arg${C_RESET}" >&2; exit 1 ;;
+    -*) echo "${C_RED}build.sh: unknown option: $arg${C_RESET}" >&2; exit 1 ;;
+    *)  FILENAME="$arg" ;;
   esac
 done
 
@@ -116,4 +118,20 @@ install_asset assets/rah.desktop /usr/share/applications/rah.desktop
 echo "${C_GREEN}>>> done${C_RESET}"
 
 echo "${C_GREEN}>>> launching rah${C_RESET}"
-"$OUT/rah" &
+"$OUT/rah"
+
+echo ""
+while true; do
+  read -r -p "Were you happy with the new feature? [1] Yes  [2] No: " answer
+  case "$answer" in
+    1|y|Y|yes|YES|Yes)
+      if [ -n "$FILENAME" ]; then
+        echo "$FILENAME"
+      else
+        echo "Yes"
+      fi
+      break ;;
+    2|n|N|no|NO|No)   echo "No";  break ;;
+    *) echo "Please answer 1 (Yes) or 2 (No)." ;;
+  esac
+done

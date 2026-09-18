@@ -116,7 +116,7 @@ menu () {
       if [ -n "$file" ]; then
           if python3 scripts/extractFiles.py "$file"; then
             echo "Patch Success!"
-            ./scripts/build.sh --debug
+            ./scripts/build.sh $file --debug
           else
             echo "Patch Failed!"
           fi
