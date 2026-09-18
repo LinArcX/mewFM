@@ -66,7 +66,7 @@
 □ Row striping or subtle separators
 □ Configurable theme (colors from config)
 □ Toast / notification for operation results
-□ "Properties" dialog (detailed stat + path)
+☑ "Properties" dialog (detailed stat + path)
 
 ## Phase 8 — Advanced
 □ Tabs (multiple directories in one window)

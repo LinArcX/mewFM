@@ -88,6 +88,7 @@ namespace
     Delete,
     NewFolder,
     Refresh,
+    Properties,
   };
 
   struct MenuItem
@@ -104,6 +105,7 @@ namespace
     {"Cut",    MenuAction::Cut,    true},
     {"Rename", MenuAction::Rename, true},
     {"Delete", MenuAction::Delete, true},
+    {"Properties", MenuAction::Properties, true},
   };
 
   const MenuItem kEmptyMenu[] =
@@ -824,6 +826,36 @@ static void openEntry(AppState& app, int index)
   }
 }
 
+
+static void showProperties(AppState& app, int index)
+{
+  const auto& entries = app.fm.entries();
+  if (index < 0 || index >= static_cast<int>(entries.size()))
+  {
+    return;
+  }
+  const Entry& e = entries[index];
+  std::string full = joinPath(app.fm.currentPath(), e.name);
+
+  std::string msg;
+  msg += "Name: " + e.name + "\n";
+  msg += "Path: " + full + "\n";
+  msg += "Type: " + e.typeText + "\n";
+  if (e.isDirectory)
+  {
+    msg += "Size: " + e.sizeText + "\n";
+  }
+  else
+  {
+    msg += "Size: " + e.sizeText + " (" + std::to_string(e.sizeBytes) + " bytes)\n";
+  }
+  msg += "Owner: " + e.ownerText + "\n";
+  msg += "Permissions: " + e.permText + "\n";
+  msg += std::string("Executable: ") + (e.isExecutable ? "yes" : "no");
+
+  app.modal.openInfo("Properties", msg);
+}
+
 static void drawSeparator(NVGcontext* vg, float x1, float y1, float x2, float y2)
 {
   nvgBeginPath(vg);
@@ -891,11 +923,24 @@ static void drawModal(
   nvgFillColor(vg, nvgRGBAf(0.0f, 0.0f, 0.0f, 0.55f));
   nvgFill(vg);
 
+  int lineCount = 1;
+  for (size_t i = 0; i < modal.message.size(); i++)
+  {
+    if (modal.message[i] == '\n')
+    {
+      lineCount++;
+    }
+  }
+  float boxH = 94.0f + static_cast<float>(lineCount) * (g_fontSize + 6.0f);
+  if (boxH < kModalHeight)
+  {
+    boxH = kModalHeight;
+  }
   float px = (w - kModalWidth) * 0.5f;
-  float py = (h - kModalHeight) * 0.5f;
+  float py = (h - boxH) * 0.5f;
 
   nvgBeginPath(vg);
-  nvgRoundedRect(vg, px, py, kModalWidth, kModalHeight, 6.0f);
+  nvgRoundedRect(vg, px, py, kModalWidth, boxH, 6.0f);
   nvgFillColor(vg, nvgRGBf(0.22f, 0.22f, 0.22f));
   nvgFill(vg);
   nvgStrokeColor(vg, nvgRGBf(0.1f, 0.1f, 0.1f));
@@ -910,9 +955,18 @@ static void drawModal(
 
   nvgFontSize(vg, g_fontSize);
   nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
-  nvgText(vg, px + kModalWidth * 0.5f, py + 64.0f, modal.message.c_str(), nullptr);
+  if (lineCount > 1)
+  {
+    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
+    nvgTextBox(vg, px + 16.0f, py + 50.0f, kModalWidth - 32.0f, modal.message.c_str(), nullptr);
+  }
+  else
+  {
+    nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgText(vg, px + kModalWidth * 0.5f, py + 64.0f, modal.message.c_str(), nullptr);
+  }
 
-  float by = py + kModalHeight - kModalBtnH - 16.0f;
+  float by = py + boxH - kModalBtnH - 16.0f;
   ModalResult clicked = ModalResult::None;
 
   if (modal.type == ModalType::Confirm)
@@ -1947,7 +2001,7 @@ static MenuAction handleMenuClick(const AppState& app, float w, float h)
     return MenuAction::None;
   }
   const MenuItem* items = (app.menuKind == MenuKind::Row) ? kRowMenu : kEmptyMenu;
-  const int count = (app.menuKind == MenuKind::Row) ? 5 : 3;
+  const int count = (app.menuKind == MenuKind::Row) ? 6 : 3;
   float menuH = kMenuPadY * 2.0f + kMenuItemHeight * static_cast<float>(count);
 
   float mx = app.menuX;
@@ -2019,6 +2073,12 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
     case MenuAction::Paste:     g_paste = true; break;
     case MenuAction::Rename:    g_rename = true; break;
     case MenuAction::Delete:    g_delete = true; break;
+    case MenuAction::Properties:
+      if (rowIdx >= 0)
+      {
+        showProperties(app, rowIdx);
+      }
+      break;
     case MenuAction::NewFolder: g_newFolder = true; break;
     case MenuAction::Refresh:
       if (!app.fm.refresh())
@@ -2044,7 +2104,7 @@ static void drawContextMenu(
     return;
   }
   const MenuItem* items = (app.menuKind == MenuKind::Row) ? kRowMenu : kEmptyMenu;
-  const int count = (app.menuKind == MenuKind::Row) ? 5 : 3;
+  const int count = (app.menuKind == MenuKind::Row) ? 6 : 3;
   float menuH = kMenuPadY * 2.0f + kMenuItemHeight * static_cast<float>(count);
 
   float mx = app.menuX;

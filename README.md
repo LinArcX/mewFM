@@ -12,7 +12,7 @@ A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and ou
 - Extension-aware icons (images, video, audio, documents, fonts, source code)
 - Single-click to select, double-click to open
 - Multi-selection: Ctrl+click toggles a row, Shift+click selects a range, Ctrl+A selects all
-- Right-click context menu: row actions (Open, Copy, Cut, Rename, Delete) and empty-space actions (Paste, New Folder, Refresh)
+- Right-click context menu: row actions (Open, Copy, Cut, Rename, Delete, Properties) and empty-space actions (Paste, New Folder, Refresh)
 - Trash: Del moves entries to `$XDG_DATA_HOME/Trash` (or `~/.local/share/Trash`) as per the freedesktop.org spec; Shift+Del deletes permanently
   - Directories navigate into themselves
   - Executables run directly
