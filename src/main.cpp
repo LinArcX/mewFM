@@ -63,6 +63,7 @@ namespace
     None,
     NewFolder,
     Rename,
+    GoToPath,
   };
 
   enum class MenuKind
@@ -159,6 +160,8 @@ namespace
   bool  g_cut = false;
   bool  g_paste = false;
   bool  g_selectAll = false;
+  bool  g_gotoPath = false;
+  bool  g_refresh = false;
   int   g_mouseMods = 0;
   bool  g_rightClicked = false;
   bool g_sidebarDirty = false;
@@ -540,6 +543,9 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
   if (key == GLFW_KEY_BACKSPACE) g_navBack = true;
   if (key == GLFW_KEY_F2) g_rename = true;
   if (key == GLFW_KEY_DELETE) g_delete = true;
+  if (key == GLFW_KEY_F5) g_refresh = true;
+
+  if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_L) g_gotoPath = true;
 }
 
 static void charCallback(GLFWwindow* window, unsigned int codepoint)
@@ -1695,6 +1701,24 @@ static void handleKeyboardNav(AppState& app, float listH)
     g_paste = false;
   }
 
+  if (g_gotoPath)
+  {
+    app.textInput.open("Go to Path", app.fm.currentPath());
+    app.pendingInput = PendingInput::GoToPath;
+    g_gotoPath = false;
+  }
+
+  if (g_refresh)
+  {
+    if (!app.fm.refresh())
+    {
+      app.modal.openInfo("Error", "Could not refresh.");
+    }
+    clearSelection(app);
+    app.scrollOffset = 0.0f;
+    g_refresh = false;
+  }
+
   if (g_selectAll)
   {
     selectAllEntries(app);
@@ -1752,6 +1776,14 @@ static void handleTextInputResult(AppState& app)
     }
     app.selectedIndex = -1;
     app.scrollOffset = 0.0f;
+  }
+
+  if (pending == PendingInput::GoToPath)
+  {
+    if (!app.fm.setPath(app.textInput.value))
+    {
+      app.modal.openInfo("Error", "Could not open path.");
+    }
   }
 }
 

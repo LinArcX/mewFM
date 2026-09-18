@@ -51,8 +51,8 @@
 ## Phase 5 — Convenience
 □ Search / filter box in top bar
 □ Live filter of the current directory
-□ Ctrl+L to type a path directly
-□ Refresh (F5)
+☑ Ctrl+L to type a path directly
+☑ Refresh (F5)
 
 ## Phase 6 — System integration
 □ Trash support (~/.local/share/Trash)

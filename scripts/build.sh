@@ -127,6 +127,7 @@ while true; do
     1|y|Y|yes|YES|Yes)
       if [ -n "$FILENAME" ]; then
         rm "$FILENAME"
+        echo "Patch: $FILENAME has been removed"
       else
         echo "Yes"
       fi
