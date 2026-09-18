@@ -18,6 +18,7 @@
 ☑ Separator lines between panels
 
 ## Phase 1 — Core file operations
+□ Adding sort mechanism to columns in mainView.
 □ Internal clipboard state (copy / cut)
 □ Paste into current directory
 □ Delete (with confirmation dialog)
