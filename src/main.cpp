@@ -27,7 +27,9 @@
 
 namespace
 {
-  constexpr float kTopBarHeight = 40.0f;
+  constexpr float kTabBarHeight = 26.0f;
+  constexpr float kToolBarHeight = 40.0f;
+  constexpr float kTopBarHeight = kTabBarHeight + kToolBarHeight;
   constexpr float kSidebarWidth = 220.0f;
   constexpr float kHeaderHeight = 26.0f;
   constexpr float kStatusBarHeight = 22.0f;
@@ -36,7 +38,7 @@ namespace
   constexpr float kPadX         =   8.0f;
   constexpr float kBtnSize      =  28.0f;
   constexpr float kBtnGap       =   4.0f;
-  constexpr float kBtnY         = (kTopBarHeight - kBtnSize) * 0.5f;
+  constexpr float kBtnY         = kTabBarHeight + (kToolBarHeight - kBtnSize) * 0.5f;
   constexpr double kDoubleClickTime = 0.4;
   constexpr float kIconSize     = 16.0f;
   constexpr float kIconGap      = 4.0f;
@@ -125,6 +127,18 @@ namespace
     DeleteEntry,
   };
 
+  struct TabSnapshot
+  {
+    FileManager fm;
+    int selectedIndex = -1;
+    int selectionAnchor = -1;
+    std::vector<int> selectedIndices;
+    float scrollOffset = 0.0f;
+    std::string lastPath;
+    double lastClickTime = 0.0;
+    int lastClickIndex = -1;
+  };
+
   struct AppState
   {
     FileManager fm;
@@ -152,6 +166,8 @@ namespace
     int hoveredSep = -1;
     float dragStartMouseX = 0.0f;
     float dragStartWidth = 0.0f;
+    std::vector<TabSnapshot> tabs;
+    int activeTab = 0;
   };
 
   float g_mouseX = 0.0f;
@@ -175,6 +191,9 @@ namespace
   bool  g_gotoPath = false;
   bool  g_filter = false;
   bool  g_refresh = false;
+  bool  g_newTab = false;
+  bool  g_closeTab = false;
+  bool  g_nextTab = false;
   int   g_mouseMods = 0;
   bool  g_rightClicked = false;
   bool g_sidebarDirty = false;
@@ -631,6 +650,9 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
 
   if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_L) g_gotoPath = true;
   if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_F) g_filter = true;
+  if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_T) g_newTab = true;
+  if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_W) g_closeTab = true;
+  if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_TAB) g_nextTab = true;
 }
 
 static void charCallback(GLFWwindow* window, unsigned int codepoint)
@@ -772,6 +794,117 @@ static void clearSelection(AppState& app)
   app.selectedIndices.clear();
   app.selectedIndex = -1;
   app.selectionAnchor = -1;
+}
+
+static void saveActiveIntoTab(AppState& app)
+{
+  if (app.activeTab < 0 || app.activeTab >= static_cast<int>(app.tabs.size()))
+  {
+    return;
+  }
+  TabSnapshot& t = app.tabs[app.activeTab];
+  t.fm = app.fm;
+  t.selectedIndex = app.selectedIndex;
+  t.selectionAnchor = app.selectionAnchor;
+  t.selectedIndices = app.selectedIndices;
+  t.scrollOffset = app.scrollOffset;
+  t.lastPath = app.lastPath;
+  t.lastClickTime = app.lastClickTime;
+  t.lastClickIndex = app.lastClickIndex;
+}
+
+static void loadActiveFromTab(AppState& app)
+{
+  if (app.activeTab < 0 || app.activeTab >= static_cast<int>(app.tabs.size()))
+  {
+    return;
+  }
+  const TabSnapshot& t = app.tabs[app.activeTab];
+  app.fm = t.fm;
+  app.selectedIndex = t.selectedIndex;
+  app.selectionAnchor = t.selectionAnchor;
+  app.selectedIndices = t.selectedIndices;
+  app.scrollOffset = t.scrollOffset;
+  app.lastPath = t.lastPath;
+  app.lastClickTime = t.lastClickTime;
+  app.lastClickIndex = t.lastClickIndex;
+}
+
+static void switchTab(AppState& app, int newIndex)
+{
+  if (newIndex < 0 || newIndex >= static_cast<int>(app.tabs.size()))
+  {
+    return;
+  }
+  if (newIndex == app.activeTab)
+  {
+    return;
+  }
+  saveActiveIntoTab(app);
+  app.activeTab = newIndex;
+  loadActiveFromTab(app);
+}
+
+static void createNewTab(AppState& app)
+{
+  saveActiveIntoTab(app);
+  TabSnapshot t;
+  t.fm.resetTo(app.fm.currentPath());
+  t.lastPath = app.fm.currentPath();
+  app.tabs.push_back(t);
+  app.activeTab = static_cast<int>(app.tabs.size()) - 1;
+  loadActiveFromTab(app);
+}
+
+static void closeTab(AppState& app, int index)
+{
+  if (app.tabs.size() <= 1)
+  {
+    return;
+  }
+  if (index < 0 || index >= static_cast<int>(app.tabs.size()))
+  {
+    return;
+  }
+  if (index == app.activeTab)
+  {
+    app.tabs.erase(app.tabs.begin() + index);
+    if (app.activeTab >= static_cast<int>(app.tabs.size()))
+    {
+      app.activeTab = static_cast<int>(app.tabs.size()) - 1;
+    }
+    loadActiveFromTab(app);
+    return;
+  }
+  app.tabs.erase(app.tabs.begin() + index);
+  if (app.activeTab > index)
+  {
+    app.activeTab--;
+  }
+}
+
+static std::string tabLabelFor(const AppState& app, int index)
+{
+  std::string path;
+  if (index == app.activeTab)
+  {
+    path = app.fm.currentPath();
+  }
+  else if (index >= 0 && index < static_cast<int>(app.tabs.size()))
+  {
+    path = app.tabs[index].fm.currentPath();
+  }
+  if (path.empty())
+  {
+    return std::string("/");
+  }
+  std::filesystem::path p(path);
+  std::string name = p.filename().string();
+  if (name.empty())
+  {
+    name = path;
+  }
+  return name;
 }
 
 static std::string joinPath(const std::string& base, const std::string& name)
@@ -1155,10 +1288,116 @@ static void drawTextInput(NVGcontext* vg, TextInput& t, float w, float h)
   }
 }
 
+static void drawTabBar(NVGcontext* vg, AppState& app, float w)
+{
+  bndBackground(vg, 0.0f, 0.0f, w, kTabBarHeight);
+
+  nvgFontFace(vg, "sans");
+  nvgFontSize(vg, g_fontSize - 1.0f);
+  nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+
+  const float tabH = kTabBarHeight - 4.0f;
+  const float tabY = 2.0f;
+  const float padX = 10.0f;
+  float x = kPadX;
+
+  int closeIndex = -1;
+  int switchTo = -1;
+
+  const int tabCount = static_cast<int>(app.tabs.size());
+  for (int i = 0; i < tabCount; i++)
+  {
+    std::string label = tabLabelFor(app, i);
+    float bounds[4];
+    nvgTextBounds(vg, 0.0f, 0.0f, label.c_str(), nullptr, bounds);
+    float textW = bounds[2] - bounds[0];
+    float tabW = textW + padX * 2.0f;
+
+    bool active = (i == app.activeTab);
+    bool hover = inRect(g_mouseX, g_mouseY, x, tabY, tabW, tabH);
+    bool closeHover = false;
+    float closeX = x + tabW - 16.0f;
+    if (hover)
+    {
+      closeHover = inRect(g_mouseX, g_mouseY, closeX, tabY + 4.0f, 12.0f, tabH - 8.0f);
+    }
+
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, x, tabY, tabW, tabH, 4.0f);
+    if (active)
+    {
+      nvgFillColor(vg, nvgRGBf(0.28f, 0.28f, 0.28f));
+    }
+    else if (hover)
+    {
+      nvgFillColor(vg, nvgRGBf(0.22f, 0.22f, 0.22f));
+    }
+    else
+    {
+      nvgFillColor(vg, nvgRGBf(0.18f, 0.18f, 0.18f));
+    }
+    nvgFill(vg);
+
+    nvgFillColor(vg, active ? nvgRGBf(1.0f, 1.0f, 1.0f) : nvgRGBf(0.75f, 0.75f, 0.75f));
+    nvgSave(vg);
+    nvgScissor(vg, x + 1.0f, tabY, tabW - 18.0f, tabH);
+    nvgText(vg, x + padX, tabY + tabH * 0.5f, label.c_str(), nullptr);
+    nvgRestore(vg);
+
+    if (tabCount > 1 && hover)
+    {
+      nvgFillColor(vg, closeHover ? nvgRGBf(1.0f, 0.4f, 0.4f) : nvgRGBf(0.7f, 0.7f, 0.7f));
+      nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+      nvgText(vg, closeX + 6.0f, tabY + tabH * 0.5f, "x", nullptr);
+      nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+    }
+
+    if (hover && g_mouseClicked)
+    {
+      if (closeHover && tabCount > 1)
+      {
+        closeIndex = i;
+      }
+      else
+      {
+        switchTo = i;
+      }
+    }
+
+    x += tabW + 2.0f;
+  }
+
+  const float plusW = 24.0f;
+  bool plusHover = inRect(g_mouseX, g_mouseY, x, tabY, plusW, tabH);
+  nvgBeginPath(vg);
+  nvgRoundedRect(vg, x, tabY, plusW, tabH, 4.0f);
+  nvgFillColor(vg, plusHover ? nvgRGBf(0.3f, 0.3f, 0.3f) : nvgRGBf(0.2f, 0.2f, 0.2f));
+  nvgFill(vg);
+  nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
+  nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+  nvgText(vg, x + plusW * 0.5f, tabY + tabH * 0.5f, "+", nullptr);
+  nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+
+  bool newTabRequested = (plusHover && g_mouseClicked);
+
+  if (closeIndex >= 0)
+  {
+    closeTab(app, closeIndex);
+  }
+  else if (switchTo >= 0)
+  {
+    switchTab(app, switchTo);
+  }
+  else if (newTabRequested)
+  {
+    createNewTab(app);
+  }
+}
+
 static void drawTopBar(NVGcontext* vg, AppState& app, float w)
 {
   FileManager& fm = app.fm;
-  bndBackground(vg, 0.0f, 0.0f, w, kTopBarHeight);
+  bndBackground(vg, 0.0f, kTabBarHeight, w, kToolBarHeight);
   float x = kPadX;
 
   bool homeHover = inRect(g_mouseX, g_mouseY, x, kBtnY, kBtnSize, kBtnSize);
@@ -1233,7 +1472,7 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
   nvgFontFace(vg, "sans");
   nvgFontSize(vg, g_fontSize);
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-  float cy = kTopBarHeight * 0.5f;
+  float cy = kTabBarHeight + kToolBarHeight * 0.5f;
 
     std::string navTo;
   const float filterBoxX = w - kFilterBoxW - kPadX;
@@ -1255,7 +1494,7 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
     {
       break;
     }
-    bool hover = inRect(g_mouseX, g_mouseY, x, 0.0f, segW, kTopBarHeight);
+    bool hover = inRect(g_mouseX, g_mouseY, x, kTabBarHeight, segW, kToolBarHeight);
     if (hover)
     {
       nvgBeginPath(vg);
@@ -1288,7 +1527,7 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
     }
   }
 
-  const float filterBoxY = (kTopBarHeight - kFilterBoxH) * 0.5f;
+  const float filterBoxY = kTabBarHeight + (kToolBarHeight - kFilterBoxH) * 0.5f;
   bool filterHover = inRect(g_mouseX, g_mouseY, filterBoxX, filterBoxY, kFilterBoxW, kFilterBoxH);
   nvgBeginPath(vg);
   nvgRoundedRect(vg, filterBoxX, filterBoxY, kFilterBoxW, kFilterBoxH, 3.0f);
@@ -1958,6 +2197,27 @@ static void handleKeyboardNav(AppState& app, float listH)
     g_selectAll = false;
   }
 
+  if (g_newTab)
+  {
+    createNewTab(app);
+    g_newTab = false;
+  }
+  if (g_closeTab)
+  {
+    closeTab(app, app.activeTab);
+    g_closeTab = false;
+  }
+  if (g_nextTab)
+  {
+    int n = static_cast<int>(app.tabs.size());
+    if (n > 1)
+    {
+      int next = (app.activeTab + 1) % n;
+      switchTab(app, next);
+    }
+    g_nextTab = false;
+  }
+
   g_navUp = false;
   g_navDown = false;
   g_navEnter = false;
@@ -2477,6 +2737,8 @@ int main(int argc, char** argv)
   app.sections = buildSections();
   app.lastPath = app.fm.currentPath();
   loadConfig(app);
+  app.tabs.push_back(TabSnapshot());
+  saveActiveIntoTab(app);
 
   if (argc >= 2)
   {
@@ -2565,6 +2827,7 @@ int main(int argc, char** argv)
     }
     handleTextInputResult(app);
 
+    drawTabBar(vg, app, w);
     drawTopBar(vg, app, w);
     resetOnPathChange(app);
     drawSidebar(vg, app.fm, app.sections, h);
@@ -2603,6 +2866,7 @@ int main(int argc, char** argv)
       resizeHover = false;
     }
     glfwSetCursor(window, resizeHover ? resizeCursor : nullptr);
+    drawSeparator(vg, 0.0f, kTabBarHeight, w, kTabBarHeight);
     drawSeparator(vg, 0.0f, kTopBarHeight, w, kTopBarHeight);
     drawSeparator(vg, kSidebarWidth, kTopBarHeight, kSidebarWidth, h - kStatusBarHeight);
     drawSeparator(vg, mainX, mainY + kHeaderHeight, w, mainY + kHeaderHeight);
