@@ -1067,7 +1067,7 @@ static void charCallback(GLFWwindow* window, unsigned int codepoint)
   {
     return;
   }
-  if (app->editor.active && !app->modal.active)
+  if (app->editor.active)
   {
     if (codepoint >= 32 && codepoint <= 126)
     {
