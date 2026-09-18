@@ -49,7 +49,7 @@
 ☑ Persist sort column + direction in config
 
 ## Phase 5 — Convenience
-□ Search / filter box in top bar
+☑ Search / filter box in top bar
 ☑ Live filter of the current directory
 ☑ Ctrl+L to type a path directly
 ☑ Refresh (F5)
@@ -63,14 +63,14 @@
 
 ## Phase 7 — UX polish
 ☑ Status bar (item count, selected count, free space)
-□ Row striping or subtle separators
-□ Configurable theme (colors from config)
-□ Toast / notification for operation results
+☑ Row striping or subtle separators
+☑ Configurable theme (colors from config)
+☑ Toast / notification for operation results
 ☑ "Properties" dialog (detailed stat + path)
 
 ## Phase 8 — Advanced
-□ Tabs (multiple directories in one window)
-□ User bookmarks (add / remove sidebar entries)
+☑ Tabs (multiple directories in one window)
+☑ User bookmarks (add / remove sidebar entries)
 □ Preview panel (thumbnail for images, text preview)
 □ List / grid view toggle
 □ Drag and drop (internal move, external in / out)
@@ -78,13 +78,22 @@
 □ Permission editor in Properties
 
 ## Suggested next step
-Phase 1 is nearly complete. The remaining item is progress feedback for long
-copy/move operations. The highest-impact next steps are:
+Several roadmap items are already implemented in the code but were still marked as pending. The remaining work is:
 
-Search / filter box in the top bar (Phase 5).
+Progress feedback for long copy/move operations (Phase 1).
 
-Selection-aware copy/cut (Phase 2) — make Copy and Cut act on all selected rows.
+Open With menu item, submenu, and chooser dialog (Phase 3).
 
-Trash support (Phase 6) — safer delete workflow.
+Restore from Trash and Empty Trash (Phase 6).
 
-Status bar (Phase 7) — item count and selected count.
+Mount / unmount detection for removable devices (Phase 6).
+
+Preview panel (Phase 8).
+
+List / grid view toggle (Phase 8).
+
+Drag and drop (Phase 8).
+
+Symlink handling (Phase 8).
+
+Permission editor in Properties (Phase 8).

@@ -7,17 +7,18 @@ A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and ou
 - File listing with Name, Size, Type, Owner, and Permissions columns
 - Top navigation bar: Home, Back, Forward, Up, and clickable breadcrumb
 - Collapsible sidebar with Places, Devices, and Bookmarks sections
+- Multiple tabs (Ctrl+T to open, Ctrl+W to close, Ctrl+Tab / Ctrl+Shift+Tab to switch)
 - Resizable columns (drag separator in the header row)
 - Sortable columns: click Name, Size, Type, Owner, or Permissions to sort; click again to toggle ascending/descending
 - Extension-aware icons (images, video, audio, documents, fonts, source code)
 - Single-click to select, double-click to open
 - Multi-selection: Ctrl+click toggles a row, Shift+click selects a range, Ctrl+A selects all
-- Right-click context menu: row actions (Open, Copy, Cut, Rename, Delete, Properties, Add to Bookmarks) and empty-space actions (Paste, New Folder, Refresh)
+- Right-click context menu: row actions (Open, Copy, Cut, Rename, Delete, Properties, Add to Bookmarks, Remove from Bookmarks) and empty-space actions (Paste, New Folder, Refresh)
 - Trash: Del moves entries to `$XDG_DATA_HOME/Trash` (or `~/.local/share/Trash`) as per the freedesktop.org spec; Shift+Del deletes permanently
   - Directories navigate into themselves
   - Executables run directly
   - Other files open with `xdg-open`
-- Keyboard navigation: Up/Down arrows, Enter, Backspace (go up), F2 (rename), Del (move to trash), Shift+Del (permanent delete), Ctrl+C/Ctrl+X/Ctrl+V (copy/cut/paste), Ctrl+Shift+N (new folder), Ctrl+F (filter), Ctrl+L (go to path), Ctrl+H (toggle hidden files), F5 (refresh), Escape (quit)
+- Keyboard navigation: Up/Down arrows, Enter, Backspace (go up), F2 (rename), Del (move to trash), Shift+Del (permanent delete), Ctrl+C/Ctrl+X/Ctrl+V (copy/cut/paste), Ctrl+Shift+N (new folder), Ctrl+F (filter), Ctrl+L (go to path), Ctrl+H (toggle hidden files), F5 (refresh), Ctrl+T (new tab), Ctrl+W (close tab), Ctrl+Tab / Ctrl+Shift+Tab (switch tabs), Escape (quit)
 - Internal clipboard: copy or cut one or more entries, then paste them into the current directory
 - Scroll wheel support
 - Live name filter via Ctrl+F: shows only entries whose name contains the typed substring; Escape or Cancel clears it
@@ -29,6 +30,7 @@ A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and ou
   - Collapsed state of sidebar sections
   - Sort field and direction
   - Font size
+  - Theme colors
 - Command-line argument: `rah <path>` opens that directory (or the parent, if a file is given)
 - Font and icons embedded into the binary — no runtime asset files needed
 
@@ -81,6 +83,11 @@ col1=90
 col2=110
 col3=100
 col4=110
+theme.bg=0.150,0.150,0.150
+theme.text=0.900,0.900,0.900
+theme.rowSelected=0.200,0.350,0.550
+theme.rowHover=0.250,0.250,0.250
+theme.rowStripe=1.000,1.000,1.000
 path=/home/user
 hidden=0
 fontSize=14
@@ -101,6 +108,11 @@ sortField	Numeric sort column (0=Name, 1=Size, 2=Type, 3=Owner, 4=Permissions)
 sortDir	0 for ascending, 1 for descending
 collapsed_<key>	Collapse state for sidebar sections (places, devices, bookmarks)
 bookmark	Absolute path of a sidebar bookmark; one line per bookmark (written on add)
+theme.bg	Background color (R,G,B floats 0.0-1.0)
+theme.text	Text color (R,G,B floats)
+theme.rowSelected	Selected-row color (R,G,B floats)
+theme.rowHover	Hovered-row color (R,G,B floats)
+theme.rowStripe	Row stripe color (R,G,B floats; alpha fixed at 0.035)
 
 Values for `path`, `hidden`, and `collapsed_*` are written automatically. Column widths are written on drag release. fontSize is user-authored — `rah` does not overwrite it.
 
