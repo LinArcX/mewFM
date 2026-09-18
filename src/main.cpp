@@ -45,6 +45,8 @@ namespace
   constexpr float kMenuWidth      = 160.0f;
   constexpr float kMenuItemHeight =  26.0f;
   constexpr float kMenuPadY       =   4.0f;
+  constexpr float kFilterBoxW     = 200.0f;
+  constexpr float kFilterBoxH     =  24.0f;
 
   struct Place
   {
@@ -1153,8 +1155,9 @@ static void drawTextInput(NVGcontext* vg, TextInput& t, float w, float h)
   }
 }
 
-static void drawTopBar(NVGcontext* vg, FileManager& fm, float w)
+static void drawTopBar(NVGcontext* vg, AppState& app, float w)
 {
+  FileManager& fm = app.fm;
   bndBackground(vg, 0.0f, 0.0f, w, kTopBarHeight);
   float x = kPadX;
 
@@ -1233,6 +1236,7 @@ static void drawTopBar(NVGcontext* vg, FileManager& fm, float w)
   float cy = kTopBarHeight * 0.5f;
 
     std::string navTo;
+  const float filterBoxX = w - kFilterBoxW - kPadX;
   for (size_t k = 0; k < crumbs.size(); k++)
   {
     const bool isRoot = (k == 0);
@@ -1246,6 +1250,10 @@ static void drawTopBar(NVGcontext* vg, FileManager& fm, float w)
       float bounds[4];
       nvgTextBounds(vg, 0.0f, 0.0f, crumbs[k].first.c_str(), nullptr, bounds);
       segW = (bounds[2] - bounds[0]) + 12.0f;
+    }
+    if (filterBoxX > 0.0f && x + segW > filterBoxX)
+    {
+      break;
     }
     bool hover = inRect(g_mouseX, g_mouseY, x, 0.0f, segW, kTopBarHeight);
     if (hover)
@@ -1278,6 +1286,41 @@ static void drawTopBar(NVGcontext* vg, FileManager& fm, float w)
       nvgTextBounds(vg, 0.0f, 0.0f, "/", nullptr, sb);
       x += (sb[2] - sb[0]) + 4.0f;
     }
+  }
+
+  const float filterBoxY = (kTopBarHeight - kFilterBoxH) * 0.5f;
+  bool filterHover = inRect(g_mouseX, g_mouseY, filterBoxX, filterBoxY, kFilterBoxW, kFilterBoxH);
+  nvgBeginPath(vg);
+  nvgRoundedRect(vg, filterBoxX, filterBoxY, kFilterBoxW, kFilterBoxH, 3.0f);
+  nvgFillColor(vg, filterHover ? nvgRGBf(0.28f, 0.28f, 0.28f) : nvgRGBf(0.18f, 0.18f, 0.18f));
+  nvgFill(vg);
+  nvgStrokeColor(vg, nvgRGBf(0.3f, 0.3f, 0.3f));
+  nvgStrokeWidth(vg, 1.0f);
+  nvgStroke(vg);
+
+  nvgFontFace(vg, "sans");
+  nvgFontSize(vg, g_fontSize - 1.0f);
+  nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+  const std::string& filterText = fm.filter();
+  float filterTextY = filterBoxY + kFilterBoxH * 0.5f;
+  nvgSave(vg);
+  nvgScissor(vg, filterBoxX + 2.0f, filterBoxY, kFilterBoxW - 4.0f, kFilterBoxH);
+  if (filterText.empty())
+  {
+    nvgFillColor(vg, nvgRGBf(0.5f, 0.5f, 0.5f));
+    nvgText(vg, filterBoxX + 8.0f, filterTextY, "Filter...", nullptr);
+  }
+  else
+  {
+    nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.95f));
+    nvgText(vg, filterBoxX + 8.0f, filterTextY, filterText.c_str(), nullptr);
+  }
+  nvgRestore(vg);
+
+  if (filterHover && g_mouseClicked)
+  {
+    app.textInput.open("Filter", app.fm.filter());
+    app.pendingInput = PendingInput::Filter;
   }
 
   if (!navTo.empty())
@@ -2522,7 +2565,7 @@ int main(int argc, char** argv)
     }
     handleTextInputResult(app);
 
-    drawTopBar(vg, app.fm, w);
+    drawTopBar(vg, app, w);
     resetOnPathChange(app);
     drawSidebar(vg, app.fm, app.sections, h);
     if (g_sidebarDirty)
