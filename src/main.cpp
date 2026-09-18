@@ -85,6 +85,7 @@ namespace
   {
     None,
     Open,
+    Restore,
     Copy,
     Cut,
     Paste,
@@ -92,6 +93,7 @@ namespace
     Delete,
     NewFolder,
     Refresh,
+    EmptyTrash,
     Properties,
     AddBookmark,
     RemoveBookmark,
@@ -104,29 +106,12 @@ namespace
     bool enabled;
   };
 
-  const MenuItem kRowMenu[] =
-  {
-    {"Open",   MenuAction::Open,   true},
-    {"Copy",   MenuAction::Copy,   true},
-    {"Cut",    MenuAction::Cut,    true},
-    {"Rename", MenuAction::Rename, true},
-    {"Delete", MenuAction::Delete, true},
-    {"Properties", MenuAction::Properties, true},
-    {"Add to Bookmarks", MenuAction::AddBookmark, true},
-    {"Remove from Bookmarks", MenuAction::RemoveBookmark, true},
-  };
-
-  const MenuItem kEmptyMenu[] =
-  {
-    {"Paste",      MenuAction::Paste,     true},
-    {"New Folder", MenuAction::NewFolder, true},
-    {"Refresh",    MenuAction::Refresh,   true},
-  };
-
   enum class PendingConfirm
   {
     None,
     DeleteEntry,
+    RestoreEntry,
+    EmptyTrash,
   };
 
   struct TabSnapshot
@@ -183,6 +168,7 @@ namespace
     PendingConfirm pendingConfirm = PendingConfirm::None;
   bool pendingDeleteIsTrash = true;
     std::vector<std::string> pendingDeleteNames;
+    std::vector<std::string> pendingRestoreNames;
     MenuKind menuKind = MenuKind::None;
     float menuX = 0.0f;
     float menuY = 0.0f;
@@ -535,6 +521,11 @@ static std::vector<Section> buildSections()
   places.items.push_back({"Pictures",  h + "/Pictures",  BND_ICON_FILE_IMAGE});
   places.items.push_back({"Music",     h + "/Music",     BND_ICON_FILE_SOUND});
   places.items.push_back({"Videos",    h + "/Videos",    BND_ICON_FILE_MOVIE});
+  std::string trashRoot = FileManager::trashRootDir();
+  if (!trashRoot.empty())
+  {
+    places.items.push_back({"Trash", trashRoot + "/files", BND_ICON_FILE_BACKUP});
+  }
 
   Section devices;
   devices.key = "devices";
@@ -2554,6 +2545,52 @@ static void handleModalResult(AppState& app)
   app.modal.result = ModalResult::None;
   PendingConfirm pending = app.pendingConfirm;
   app.pendingConfirm = PendingConfirm::None;
+
+  if (pending == PendingConfirm::RestoreEntry)
+  {
+    if (r == ModalResult::Yes)
+    {
+      bool anyFailed = false;
+      for (size_t i = 0; i < app.pendingRestoreNames.size(); i++)
+      {
+        if (!app.fm.restoreEntry(app.pendingRestoreNames[i], true))
+        {
+          anyFailed = true;
+        }
+      }
+      if (anyFailed)
+      {
+        app.modal.openInfo("Error", "Could not restore some items.");
+      }
+      else
+      {
+        app.toast.show("Restored");
+      }
+      clearSelection(app);
+      app.scrollOffset = 0.0f;
+    }
+    app.pendingRestoreNames.clear();
+    return;
+  }
+
+  if (pending == PendingConfirm::EmptyTrash)
+  {
+    if (r == ModalResult::Yes)
+    {
+      if (!app.fm.emptyTrash())
+      {
+        app.modal.openInfo("Error", "Could not empty trash.");
+      }
+      else
+      {
+        app.toast.show("Trash emptied");
+      }
+      clearSelection(app);
+      app.scrollOffset = 0.0f;
+    }
+    return;
+  }
+
   if (r != ModalResult::Yes)
   {
     app.pendingDeleteNames.clear();
@@ -2666,14 +2703,57 @@ static bool menuItemEnabled(const AppState& app, const MenuItem& item, int rowId
 }
 
 
+static bool isInsideTrash(const AppState& app)
+{
+  std::string root = FileManager::trashRootDir();
+  if (root.empty())
+  {
+    return false;
+  }
+  return app.fm.currentPath() == (root + "/files");
+}
+
+static std::vector<MenuItem> buildRowMenuItems(const AppState& app)
+{
+  std::vector<MenuItem> items;
+  items.push_back({"Open", MenuAction::Open, true});
+  if (isInsideTrash(app))
+  {
+    items.push_back({"Restore", MenuAction::Restore, true});
+  }
+  items.push_back({"Copy", MenuAction::Copy, true});
+  items.push_back({"Cut", MenuAction::Cut, true});
+  items.push_back({"Rename", MenuAction::Rename, true});
+  items.push_back({"Delete", MenuAction::Delete, true});
+  items.push_back({"Properties", MenuAction::Properties, true});
+  items.push_back({"Add to Bookmarks", MenuAction::AddBookmark, true});
+  items.push_back({"Remove from Bookmarks", MenuAction::RemoveBookmark, true});
+  return items;
+}
+
+static std::vector<MenuItem> buildEmptyMenuItems(const AppState& app)
+{
+  std::vector<MenuItem> items;
+  items.push_back({"Paste", MenuAction::Paste, true});
+  items.push_back({"New Folder", MenuAction::NewFolder, true});
+  if (isInsideTrash(app))
+  {
+    items.push_back({"Empty Trash", MenuAction::EmptyTrash, true});
+  }
+  items.push_back({"Refresh", MenuAction::Refresh, true});
+  return items;
+}
+
 static MenuAction handleMenuClick(const AppState& app, float w, float h)
 {
   if (app.menuKind == MenuKind::None)
   {
     return MenuAction::None;
   }
-  const MenuItem* items = (app.menuKind == MenuKind::Row) ? kRowMenu : kEmptyMenu;
-  const int count = (app.menuKind == MenuKind::Row) ? 8 : 3;
+  std::vector<MenuItem> items = (app.menuKind == MenuKind::Row)
+    ? buildRowMenuItems(app)
+    : buildEmptyMenuItems(app);
+  const int count = static_cast<int>(items.size());
   float menuH = kMenuPadY * 2.0f + kMenuItemHeight * static_cast<float>(count);
 
   float mx = app.menuX;
@@ -2792,6 +2872,70 @@ static void removeBookmark(AppState& app, const std::string& fullPath)
   }
 }
 
+static void beginRestore(AppState& app)
+{
+  const auto& entries = app.fm.entries();
+  std::vector<std::string> names;
+  if (!app.selectedIndices.empty())
+  {
+    for (size_t i = 0; i < app.selectedIndices.size(); i++)
+    {
+      int sel = app.selectedIndices[i];
+      if (sel >= 0 && sel < static_cast<int>(entries.size()))
+      {
+        names.push_back(entries[sel].name);
+      }
+    }
+  }
+  else if (app.selectedIndex >= 0 && app.selectedIndex < static_cast<int>(entries.size()))
+  {
+    names.push_back(entries[app.selectedIndex].name);
+  }
+  if (names.empty())
+  {
+    return;
+  }
+  bool anyConflict = false;
+  for (size_t i = 0; i < names.size(); i++)
+  {
+    if (app.fm.isRestoreConflict(names[i]))
+    {
+      anyConflict = true;
+      break;
+    }
+  }
+  if (anyConflict)
+  {
+    app.pendingRestoreNames = names;
+    std::string msg = "Some items already exist at their destinations. Overwrite?";
+    if (names.size() == 1)
+    {
+      msg = "\"" + names[0] + "\" already exists at its destination. Overwrite?";
+    }
+    app.modal.openConfirm("Restore", msg);
+    app.pendingConfirm = PendingConfirm::RestoreEntry;
+    return;
+  }
+  bool anyFailed = false;
+  for (size_t i = 0; i < names.size(); i++)
+  {
+    if (!app.fm.restoreEntry(names[i], false))
+    {
+      anyFailed = true;
+    }
+  }
+  if (anyFailed)
+  {
+    app.modal.openInfo("Error", "Could not restore some items.");
+  }
+  else
+  {
+    app.toast.show("Restored");
+  }
+  clearSelection(app);
+  app.scrollOffset = 0.0f;
+}
+
 static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
 {
   switch (action)
@@ -2801,6 +2945,9 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
       {
         openEntry(app, rowIdx);
       }
+      break;
+    case MenuAction::Restore:
+      beginRestore(app);
       break;
     case MenuAction::Copy:      g_copy = true; break;
     case MenuAction::Cut:       g_cut = true; break;
@@ -2814,6 +2961,10 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
       }
       break;
     case MenuAction::NewFolder: g_newFolder = true; break;
+    case MenuAction::EmptyTrash:
+      app.modal.openConfirm("Empty Trash", "Permanently delete all items in Trash?");
+      app.pendingConfirm = PendingConfirm::EmptyTrash;
+      break;
     case MenuAction::Refresh:
       if (!app.fm.refresh())
       {
@@ -2861,8 +3012,10 @@ static void drawContextMenu(
   {
     return;
   }
-  const MenuItem* items = (app.menuKind == MenuKind::Row) ? kRowMenu : kEmptyMenu;
-  const int count = (app.menuKind == MenuKind::Row) ? 8 : 3;
+  std::vector<MenuItem> items = (app.menuKind == MenuKind::Row)
+    ? buildRowMenuItems(app)
+    : buildEmptyMenuItems(app);
+  const int count = static_cast<int>(items.size());
   float menuH = kMenuPadY * 2.0f + kMenuItemHeight * static_cast<float>(count);
 
   float mx = app.menuX;

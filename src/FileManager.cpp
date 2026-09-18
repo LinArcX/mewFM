@@ -13,7 +13,7 @@
 
 namespace fs = std::filesystem;
 
-static std::string trashRootDir()
+std::string FileManager::trashRootDir()
 {
   const char* xdg = std::getenv("XDG_DATA_HOME");
   if (xdg != nullptr && xdg[0] != '\0')
@@ -320,6 +320,127 @@ bool FileManager::trashEntry(const std::string& name)
     out << "[Trash Info]\n";
     out << "Path=" << fs::absolute(src, ec).string() << "\n";
     out << "DeletionDate=" << currentIsoDateTime() << "\n";
+  }
+  return loadPath(m_currentPath);
+}
+
+static bool readTrashOriginalPath(const std::string& trashName, std::string& outPath)
+{
+  std::string root = FileManager::trashRootDir();
+  if (root.empty())
+  {
+    return false;
+  }
+  fs::path infoPath = fs::path(root) / "info" / (trashName + ".trashinfo");
+  std::ifstream in(infoPath.string());
+  if (!in)
+  {
+    return false;
+  }
+  std::string line;
+  while (std::getline(in, line))
+  {
+    if (line.size() >= 5 && line.compare(0, 5, "Path=") == 0)
+    {
+      outPath = line.substr(5);
+      return !outPath.empty();
+    }
+  }
+  return false;
+}
+
+bool FileManager::isRestoreConflict(const std::string& trashName) const
+{
+  if (trashName.empty() || trashName.find('/') != std::string::npos)
+  {
+    return false;
+  }
+  std::string originalPath;
+  if (!readTrashOriginalPath(trashName, originalPath))
+  {
+    return false;
+  }
+  std::error_code ec;
+  return fs::exists(originalPath, ec);
+}
+
+bool FileManager::restoreEntry(const std::string& trashName, bool overwrite)
+{
+  if (trashName.empty() || trashName.find('/') != std::string::npos)
+  {
+    return false;
+  }
+  std::string originalPath;
+  if (!readTrashOriginalPath(trashName, originalPath))
+  {
+    return false;
+  }
+  std::string root = trashRootDir();
+  if (root.empty())
+  {
+    return false;
+  }
+  std::error_code ec;
+  fs::path src = fs::path(root) / "files" / trashName;
+  if (!fs::exists(src, ec))
+  {
+    return false;
+  }
+  fs::path dst(originalPath);
+  if (fs::exists(dst, ec))
+  {
+    if (!overwrite)
+    {
+      return false;
+    }
+    fs::remove_all(dst, ec);
+    if (ec)
+    {
+      return false;
+    }
+  }
+  fs::path parent = dst.parent_path();
+  if (!parent.empty())
+  {
+    fs::create_directories(parent, ec);
+    if (ec)
+    {
+      return false;
+    }
+  }
+  fs::rename(src, dst, ec);
+  if (ec)
+  {
+    return false;
+  }
+  fs::path infoPath = fs::path(root) / "info" / (trashName + ".trashinfo");
+  fs::remove(infoPath, ec);
+  return loadPath(m_currentPath);
+}
+
+bool FileManager::emptyTrash()
+{
+  std::string root = trashRootDir();
+  if (root.empty())
+  {
+    return false;
+  }
+  std::error_code ec;
+  fs::path filesDir = fs::path(root) / "files";
+  fs::path infoDir = fs::path(root) / "info";
+  fs::remove_all(filesDir, ec);
+  ec.clear();
+  fs::remove_all(infoDir, ec);
+  ec.clear();
+  fs::create_directories(filesDir, ec);
+  if (ec)
+  {
+    return false;
+  }
+  fs::create_directories(infoDir, ec);
+  if (ec)
+  {
+    return false;
   }
   return loadPath(m_currentPath);
 }
