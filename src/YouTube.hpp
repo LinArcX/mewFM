@@ -43,11 +43,14 @@ public:
   const std::vector<YouTubeVideo>& videos() const;
 
   [[nodiscard]] bool startLoadChannel(int index, bool forceNetwork);
+  [[nodiscard]] bool startSearch(const std::string& query);
   [[nodiscard]] bool loadMore();
   YouTubeLoadStatus pollLoad();
   void cancelLoad();
   YouTubeLoadStatus loadStatus() const;
   const std::string& loadingName() const;
+  bool isSearch() const;
+  const std::string& searchQuery() const;
 
   static std::string cacheDir();
   static std::string cacheFileFor(const std::string& url);
@@ -70,4 +73,6 @@ private:
   int m_loadedCount = 0;
   bool m_hasMore = true;
   bool m_loadIsAppend = false;
+  bool m_isSearch = false;
+  std::string m_searchQuery;
 };

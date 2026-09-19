@@ -84,6 +84,7 @@ namespace
     GoToPath,
     Filter,
     YoutubeChannelUrl,
+    YoutubeSearch,
   };
 
   struct Editor
@@ -135,6 +136,7 @@ namespace
     AddBookmark,
     RemoveBookmark,
     AddYoutubeChannel,
+    SearchYoutube,
     MoveChannelUp,
     MoveChannelDown,
     RemoveYoutubeChannel,
@@ -2492,7 +2494,7 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
     std::string chName = app.youtube.activeChannelName();
     if (chName.empty())
     {
-      chName = "Channel";
+      chName = app.youtube.isSearch() ? "Search" : "Channel";
     }
     crumbs.push_back(std::make_pair(chName, std::string("!youtube_channel")));
   }
@@ -4297,6 +4299,31 @@ static void handleTextInputResult(AppState& app)
     }
   }
 
+  if (pending == PendingInput::YoutubeSearch)
+  {
+    std::string query = app.textInput.value;
+    if (query.empty())
+    {
+      return;
+    }
+    if (app.youtube.startSearch(query))
+    {
+      app.browserMode = BrowserMode::YoutubeVideos;
+      clearSelection(app);
+      app.scrollOffset = 0.0f;
+      app.youtubeLoadingName = "Search: " + query;
+      if (app.youtube.loadStatus() == YouTubeLoadStatus::Loading)
+      {
+        app.youtubeLoading = true;
+      }
+    }
+    else
+    {
+      app.modal.openInfo("Error", "Could not start search. Is yt-dlp installed?");
+    }
+    return;
+  }
+
   if (pending == PendingInput::YoutubeChannelUrl)
   {
     std::string url = app.textInput.value;
@@ -4644,6 +4671,7 @@ static std::vector<MenuItem> buildSidebarYoutubeMenuItems()
 {
   std::vector<MenuItem> items;
   items.push_back({"Add Channel", MenuAction::AddYoutubeChannel, true});
+  items.push_back({"Search", MenuAction::SearchYoutube, true});
   return items;
 }
 
@@ -4985,6 +5013,10 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
     case MenuAction::AddYoutubeChannel:
       app.textInput.open("Channel URL", "");
       app.pendingInput = PendingInput::YoutubeChannelUrl;
+      break;
+    case MenuAction::SearchYoutube:
+      app.textInput.open("Search YouTube", "");
+      app.pendingInput = PendingInput::YoutubeSearch;
       break;
     case MenuAction::MoveChannelUp:
       if (app.youtube.moveChannel(app.youtubeMenuChannelIndex, -1))
@@ -6494,7 +6526,14 @@ int main(int argc, char** argv)
         if (app.youtube.videos().empty())
         {
           app.browserMode = BrowserMode::Files;
-          app.modal.openInfo("Error", "Could not fetch channel. Is yt-dlp installed?");
+          if (app.youtube.isSearch())
+          {
+            app.modal.openInfo("Error", "Search failed. Is yt-dlp installed?");
+          }
+          else
+          {
+            app.modal.openInfo("Error", "Could not fetch channel. Is yt-dlp installed?");
+          }
         }
         else
         {

@@ -39,9 +39,9 @@
 ## Phase 3 — Context menu
 ☑ Right-click on a row opens a Blendish menu
 ☑ Menu items: Open, Edit Here, Extract, Copy, Cut, Rename, Delete, Properties, Add to Bookmarks, Remove from Bookmarks
-□ "Open With" menu item
 ☑ Right-click on empty space: Paste, New Folder, Refresh
 □ Submenu for "Open With"
+□ "Open With" menu item
 
 ## Phase 4 — Sorting
 ☑ Click column header to sort
@@ -76,10 +76,15 @@
 ☑ Preview panel (thumbnail for images, text preview)
 ☑ Integrated text editor (right-click, Edit Here)
 ☑ Built-in music player (libmpv): panel above status bar, play/pause/stop/prev/next, seek slider, volume slider, animated level bars
+□ Lyric fetcher
 ☑ Built-in video player (libmpv): right-click a video file and choose "View" to play it in the main panel (play/pause, stop, seek, volume, Esc closes)
 ☑ YouTube integration: add channels to the sidebar (right-click the Youtube header), browse a channel's videos in the main panel, double-click to play via libmpv's ytdl hook (requires yt-dlp)
-□ YouTube video thumbnails in the list view
+☑ YouTube video thumbnails in the list view
+□ Make every non-core functionality as plugin.
 □ List / grid view toggle
+□ diff plugin (it should look like meld)
+□ image viewer.
+□ pdf viewer.
 □ Drag and drop (internal move, external in / out)
 □ Symlink handling (broken-link marker, follow toggle)
 □ Permission editor in Properties
