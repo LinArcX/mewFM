@@ -238,12 +238,23 @@ bool VideoPlayer::open(const std::string& path)
     }
     resolvedPath = videoUrl;
   }
-  const char* setOpt[] = {"set", "audio-file", audioUrl.c_str(), nullptr};
-  mpv_command(m_pMpv, setOpt);
-  const char* cmd[] = {"loadfile", resolvedPath.c_str(), "replace", nullptr};
-  if (mpv_command(m_pMpv, cmd) < 0)
+  if (!audioUrl.empty())
   {
-    return false;
+    std::string audioOpt = "audio-file=" + audioUrl;
+    const char* cmd[] = {"loadfile", resolvedPath.c_str(), "replace", "-1",
+                         audioOpt.c_str(), nullptr};
+    if (mpv_command(m_pMpv, cmd) < 0)
+    {
+      return false;
+    }
+  }
+  else
+  {
+    const char* cmd[] = {"loadfile", resolvedPath.c_str(), "replace", nullptr};
+    if (mpv_command(m_pMpv, cmd) < 0)
+    {
+      return false;
+    }
   }
   m_currentFile = path;
   m_state = VideoPlayerState::Loading;
