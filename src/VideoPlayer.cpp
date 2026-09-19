@@ -42,6 +42,15 @@ bool VideoPlayer::init()
   mpv_set_option_string(m_pMpv, "osc", "no");
   mpv_set_option_string(m_pMpv, "terminal", "no");
   mpv_set_option_string(m_pMpv, "msg-level", "all=no");
+  if (!m_subFont.empty())
+  {
+    mpv_set_option_string(m_pMpv, "sub-font", m_subFont.c_str());
+  }
+  if (m_subFontSize > 0)
+  {
+    std::string s = std::to_string(m_subFontSize);
+    mpv_set_option_string(m_pMpv, "sub-font-size", s.c_str());
+  }
   if (mpv_initialize(m_pMpv) < 0)
   {
     mpv_terminate_destroy(m_pMpv);
@@ -191,7 +200,12 @@ bool VideoPlayer::play()
 
 void VideoPlayer::setSubtitleFont(const std::string& font)
 {
-  if (m_pMpv == nullptr || font.empty())
+  if (font.empty())
+  {
+    return;
+  }
+  m_subFont = font;
+  if (m_pMpv == nullptr)
   {
     return;
   }
@@ -200,12 +214,27 @@ void VideoPlayer::setSubtitleFont(const std::string& font)
 
 void VideoPlayer::setSubtitleFontSize(int size)
 {
-  if (m_pMpv == nullptr || size <= 0)
+  if (size <= 0)
+  {
+    return;
+  }
+  m_subFontSize = size;
+  if (m_pMpv == nullptr)
   {
     return;
   }
   int64_t s = static_cast<int64_t>(size);
   mpv_set_property(m_pMpv, "sub-font-size", MPV_FORMAT_INT64, &s);
+}
+
+const std::string& VideoPlayer::subtitleFont() const
+{
+  return m_subFont;
+}
+
+int VideoPlayer::subtitleFontSize() const
+{
+  return m_subFontSize;
 }
 
 void VideoPlayer::stop()

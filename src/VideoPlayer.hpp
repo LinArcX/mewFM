@@ -38,6 +38,8 @@ public:
   void seekAbsolute(double seconds);
   void setSubtitleFont(const std::string& font);
   void setSubtitleFontSize(int size);
+  const std::string& subtitleFont() const;
+  int subtitleFontSize() const;
 
   double position() const;
   double duration() const;
@@ -60,4 +62,6 @@ private:
   std::string m_currentFile;
   int m_volume = 100;
   bool m_renderUpdate = true;
+  std::string m_subFont;
+  int m_subFontSize = 0;
 };

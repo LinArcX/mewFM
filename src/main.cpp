@@ -236,6 +236,8 @@ namespace
     double videoControlsLastActive = 0.0;
     float videoLastMouseX = 0.0f;
     float videoLastMouseY = 0.0f;
+    std::string subFont;
+    int subFontSize = 0;
   };
 
   float g_mouseX = 0.0f;
@@ -353,7 +355,7 @@ static void loadConfig(AppState& app)
   int savedSortDir = -1;
   std::vector<std::string> savedBookmarks;
   std::string subFont;
-  int subFontSize = -1;
+  int subFontSize = 0;
   std::string line;
   while (std::getline(in, line))
   {
@@ -490,10 +492,12 @@ static void loadConfig(AppState& app)
 
   if (!subFont.empty())
   {
+    app.subFont = subFont;
     app.videoPlayer.setSubtitleFont(subFont);
   }
   if (subFontSize > 0)
   {
+    app.subFontSize = subFontSize;
     app.videoPlayer.setSubtitleFontSize(subFontSize);
   }
 
@@ -540,6 +544,14 @@ static void saveConfig(const AppState& app)
   out << "hidden=" << (app.fm.showHidden() ? "1" : "0") << "\n";
   out << "sortField=" << static_cast<int>(app.fm.sortField()) << "\n";
   out << "sortDir=" << (app.fm.sortAscending() ? "0" : "1") << "\n";
+  if (!app.subFont.empty())
+  {
+    out << "subFont=" << app.subFont << "\n";
+  }
+  if (app.subFontSize > 0)
+  {
+    out << "subFontSize=" << app.subFontSize << "\n";
+  }
   for (const auto& s : app.sections)
   {
     out << "collapsed_" << s.key << "=" << (s.collapsed ? "1" : "0") << "\n";
