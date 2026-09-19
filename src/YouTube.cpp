@@ -110,92 +110,6 @@ std::string YouTubeManager::cacheFileFor(const std::string& url)
   return cacheDir() + "/" + std::string(buf) + ".tsv";
 }
 
-static bool runCapture(const std::vector<std::string>& args, std::string& out)
-{
-  out.clear();
-  if (args.empty())
-  {
-    return false;
-  }
-
-  struct sigaction oldAction;
-  struct sigaction newAction;
-  std::memset(&newAction, 0, sizeof(newAction));
-  newAction.sa_handler = SIG_DFL;
-  sigemptyset(&newAction.sa_mask);
-  if (sigaction(SIGCHLD, &newAction, &oldAction) != 0)
-  {
-    return false;
-  }
-
-  int pipefd[2];
-  if (pipe(pipefd) != 0)
-  {
-    sigaction(SIGCHLD, &oldAction, nullptr);
-    return false;
-  }
-
-  pid_t pid = fork();
-  if (pid < 0)
-  {
-    close(pipefd[0]);
-    close(pipefd[1]);
-    sigaction(SIGCHLD, &oldAction, nullptr);
-    return false;
-  }
-
-  if (pid == 0)
-  {
-    close(pipefd[0]);
-    dup2(pipefd[1], STDOUT_FILENO);
-    close(pipefd[1]);
-    int devnull = open("/dev/null", O_WRONLY);
-    if (devnull >= 0)
-    {
-      dup2(devnull, STDERR_FILENO);
-      close(devnull);
-    }
-    std::vector<char*> argv;
-    argv.reserve(args.size() + 1);
-    for (size_t i = 0; i < args.size(); i++)
-    {
-      argv.push_back(const_cast<char*>(args[i].c_str()));
-    }
-    argv.push_back(nullptr);
-    execvp(argv[0], argv.data());
-    _exit(127);
-  }
-
-  close(pipefd[1]);
-  char buf[8192];
-  while (true)
-  {
-    ssize_t n = read(pipefd[0], buf, sizeof(buf));
-    if (n > 0)
-    {
-      out.append(buf, static_cast<size_t>(n));
-    }
-    else if (n < 0 && errno == EINTR)
-    {
-      continue;
-    }
-    else
-    {
-      break;
-    }
-  }
-  close(pipefd[0]);
-
-  int status = 0;
-  pid_t waited = waitpid(pid, &status, 0);
-  sigaction(SIGCHLD, &oldAction, nullptr);
-  if (waited != pid)
-  {
-    return false;
-  }
-  return WIFEXITED(status) && WEXITSTATUS(status) == 0;
-}
-
 static bool loadCacheFile(const std::string& path, std::string& out)
 {
   struct stat st;
@@ -301,52 +215,209 @@ static const char* printFormat()
   return "%(id)s\t%(title)s\t%(url)s\t%(duration)s\t%(upload_date)s\t%(channel)s";
 }
 
-bool YouTubeManager::loadChannel(int index, bool forceNetwork)
+bool YouTubeManager::finishLoadFromData(const std::string& data, int index)
 {
-  if (index < 0 || index >= static_cast<int>(m_channels.size()))
-  {
-    return false;
-  }
-  const std::string& url = m_channels[static_cast<size_t>(index)].url;
-  const std::string cachePath = cacheFileFor(url);
-
-  std::string data;
-  bool fromCache = false;
-  if (!forceNetwork && loadCacheFile(cachePath, data))
-  {
-    fromCache = true;
-  }
-
-  if (!fromCache)
-  {
-    std::vector<std::string> args;
-    args.push_back("yt-dlp");
-    args.push_back("--flat-playlist");
-    args.push_back("--no-warnings");
-    args.push_back("--ignore-errors");
-    args.push_back("--print");
-    args.push_back(printFormat());
-    args.push_back(url);
-    if (!runCapture(args, data))
-    {
-      return false;
-    }
-    saveCacheFile(cachePath, data);
-  }
-
   std::vector<YouTubeVideo> parsed;
   std::string channelName;
   parseVideoLines(data, parsed, channelName);
-
+  if (parsed.empty())
+  {
+    return false;
+  }
   m_activeChannel = index;
   m_videos = parsed;
   if (!channelName.empty())
   {
     m_activeChannelName = channelName;
+    if (index >= 0 && index < static_cast<int>(m_channels.size()))
+    {
+      m_channels[static_cast<size_t>(index)].name = channelName;
+    }
   }
   else
   {
     m_activeChannelName = m_channels[static_cast<size_t>(index)].name;
   }
   return true;
+}
+
+void YouTubeManager::cancelLoad()
+{
+  if (m_loadFd >= 0)
+  {
+    close(m_loadFd);
+    m_loadFd = -1;
+  }
+  m_loadPid = -1;
+  m_loadChannelIndex = -1;
+  m_loadBuffer.clear();
+  m_loadCachePath.clear();
+  m_loadStatus = YouTubeLoadStatus::Idle;
+}
+
+bool YouTubeManager::startLoadChannel(int index, bool forceNetwork)
+{
+  if (index < 0 || index >= static_cast<int>(m_channels.size()))
+  {
+    return false;
+  }
+  if (m_loadStatus == YouTubeLoadStatus::Loading)
+  {
+    cancelLoad();
+  }
+
+  const std::string& url = m_channels[static_cast<size_t>(index)].url;
+  const std::string cachePath = cacheFileFor(url);
+  m_loadChannelIndex = index;
+  m_loadCachePath = cachePath;
+  m_loadDisplayName = m_channels[static_cast<size_t>(index)].name;
+
+  if (!forceNetwork)
+  {
+    std::string data;
+    if (loadCacheFile(cachePath, data))
+    {
+      if (finishLoadFromData(data, index))
+      {
+        m_loadStatus = YouTubeLoadStatus::Done;
+      }
+      else
+      {
+        m_loadStatus = YouTubeLoadStatus::Failed;
+      }
+      return m_loadStatus == YouTubeLoadStatus::Done;
+    }
+  }
+
+  int pipefd[2];
+  if (pipe(pipefd) != 0)
+  {
+    m_loadStatus = YouTubeLoadStatus::Failed;
+    return false;
+  }
+
+  int flags = fcntl(pipefd[0], F_GETFL, 0);
+  if (flags >= 0)
+  {
+    fcntl(pipefd[0], F_SETFL, flags | O_NONBLOCK);
+  }
+
+  pid_t pid = fork();
+  if (pid < 0)
+  {
+    close(pipefd[0]);
+    close(pipefd[1]);
+    m_loadStatus = YouTubeLoadStatus::Failed;
+    return false;
+  }
+
+  if (pid == 0)
+  {
+    close(pipefd[0]);
+    dup2(pipefd[1], STDOUT_FILENO);
+    close(pipefd[1]);
+    int devnull = open("/dev/null", O_WRONLY);
+    if (devnull >= 0)
+    {
+      dup2(devnull, STDERR_FILENO);
+      close(devnull);
+    }
+    const char* argv[] = {
+      "yt-dlp",
+      "--flat-playlist",
+      "--no-warnings",
+      "--ignore-errors",
+      "--print",
+      printFormat(),
+      url.c_str(),
+      nullptr,
+    };
+    execvp("yt-dlp", const_cast<char* const*>(argv));
+    _exit(127);
+  }
+
+  close(pipefd[1]);
+  m_loadFd = pipefd[0];
+  m_loadPid = pid;
+  m_loadBuffer.clear();
+  m_loadStatus = YouTubeLoadStatus::Loading;
+  return true;
+}
+
+YouTubeLoadStatus YouTubeManager::pollLoad()
+{
+  if (m_loadStatus != YouTubeLoadStatus::Loading)
+  {
+    return m_loadStatus;
+  }
+  if (m_loadFd < 0)
+  {
+    m_loadStatus = YouTubeLoadStatus::Failed;
+    return m_loadStatus;
+  }
+
+  bool eof = false;
+  char buf[16384];
+  while (true)
+  {
+    ssize_t n = read(m_loadFd, buf, sizeof(buf));
+    if (n > 0)
+    {
+      m_loadBuffer.append(buf, static_cast<size_t>(n));
+    }
+    else if (n == 0)
+    {
+      eof = true;
+      break;
+    }
+    else if (errno == EINTR)
+    {
+      continue;
+    }
+    else if (errno == EAGAIN || errno == EWOULDBLOCK)
+    {
+      break;
+    }
+    else
+    {
+      eof = true;
+      break;
+    }
+  }
+
+  if (!eof)
+  {
+    return YouTubeLoadStatus::Loading;
+  }
+
+  close(m_loadFd);
+  m_loadFd = -1;
+  m_loadPid = -1;
+
+  if (m_loadBuffer.empty())
+  {
+    m_loadBuffer.clear();
+    m_loadStatus = YouTubeLoadStatus::Failed;
+    return m_loadStatus;
+  }
+
+  saveCacheFile(m_loadCachePath, m_loadBuffer);
+
+  const int idx = m_loadChannelIndex;
+  const bool ok = (idx >= 0 && idx < static_cast<int>(m_channels.size()))
+    ? finishLoadFromData(m_loadBuffer, idx)
+    : false;
+  m_loadBuffer.clear();
+  m_loadStatus = ok ? YouTubeLoadStatus::Done : YouTubeLoadStatus::Failed;
+  return m_loadStatus;
+}
+
+YouTubeLoadStatus YouTubeManager::loadStatus() const
+{
+  return m_loadStatus;
+}
+
+const std::string& YouTubeManager::loadingName() const
+{
+  return m_loadDisplayName;
 }

@@ -256,6 +256,8 @@ namespace
     BrowserMode browserMode = BrowserMode::Files;
     float youtubeHeaderY = -1.0f;
     float youtubeHeaderH = 0.0f;
+    bool youtubeLoading = false;
+    std::string youtubeLoadingName;
   };
 
   float g_mouseX = 0.0f;
@@ -2685,16 +2687,18 @@ static void drawSidebar(NVGcontext* vg, AppState& app, float h, float visibleW)
 
   if (youtubeChannelClicked >= 0)
   {
-    if (app.youtube.loadChannel(youtubeChannelClicked, false))
+    if (app.youtube.startLoadChannel(youtubeChannelClicked, false))
     {
       app.browserMode = BrowserMode::YoutubeVideos;
       clearSelection(app);
       app.scrollOffset = 0.0f;
-      const std::string& newName = app.youtube.activeChannelName();
-      if (!newName.empty() &&
-          newName != app.youtube.channels()[static_cast<size_t>(youtubeChannelClicked)].name)
+      if (app.youtube.loadStatus() == YouTubeLoadStatus::Loading)
       {
-        app.youtube.setChannelName(youtubeChannelClicked, newName);
+        app.youtubeLoading = true;
+        app.youtubeLoadingName = app.youtube.channels()[static_cast<size_t>(youtubeChannelClicked)].name;
+      }
+      else
+      {
         syncYoutubeChannelNames(app);
         saveConfig(app);
       }
@@ -3992,18 +3996,21 @@ static void handleTextInputResult(AppState& app)
       s.items.push_back(p);
       break;
     }
-    if (app.youtube.loadChannel(newIdx, true))
+    if (app.youtube.startLoadChannel(newIdx, true))
     {
-      const std::string& newName = app.youtube.activeChannelName();
-      if (!newName.empty())
-      {
-        app.youtube.setChannelName(newIdx, newName);
-        syncYoutubeChannelNames(app);
-      }
       app.browserMode = BrowserMode::YoutubeVideos;
       clearSelection(app);
       app.scrollOffset = 0.0f;
-      app.toast.show("Channel added");
+      app.youtubeLoadingName = url;
+      if (app.youtube.loadStatus() == YouTubeLoadStatus::Loading)
+      {
+        app.youtubeLoading = true;
+      }
+      else
+      {
+        syncYoutubeChannelNames(app);
+        app.toast.show("Channel added");
+      }
     }
     else
     {
@@ -4748,6 +4755,54 @@ static std::string humanSize(unsigned long long bytes)
   return std::string(buf);
 }
 
+
+static void drawYoutubeLoading(NVGcontext* vg, float w, float h, const std::string& name)
+{
+  nvgBeginPath(vg);
+  nvgRect(vg, 0.0f, 0.0f, w, h);
+  nvgFillColor(vg, nvgRGBAf(0.0f, 0.0f, 0.0f, 0.35f));
+  nvgFill(vg);
+
+  const float boxW = 340.0f;
+  const float boxH = 110.0f;
+  float x = (w - boxW) * 0.5f;
+  float y = (h - boxH) * 0.5f;
+
+  nvgBeginPath(vg);
+  nvgRoundedRect(vg, x, y, boxW, boxH, 6.0f);
+  nvgFillColor(vg, nvgRGBf(0.22f, 0.22f, 0.22f));
+  nvgFill(vg);
+  nvgStrokeColor(vg, nvgRGBf(0.10f, 0.10f, 0.10f));
+  nvgStrokeWidth(vg, 1.0f);
+  nvgStroke(vg);
+
+  const float cx = x + boxW * 0.5f;
+  const float cy = y + 40.0f;
+  const float r = 14.0f;
+  const double t = glfwGetTime();
+  const float a0 = static_cast<float>(std::fmod(t * 4.0, 6.2831853));
+  const float a1 = a0 + 3.9f;
+
+  nvgBeginPath(vg);
+  nvgArc(vg, cx, cy, r, a0, a1, NVG_CW);
+  nvgStrokeColor(vg, nvgRGBf(0.40f, 0.70f, 0.90f));
+  nvgStrokeWidth(vg, 3.0f);
+  nvgLineCap(vg, NVG_ROUND);
+  nvgStroke(vg);
+
+  nvgFontFace(vg, "sans");
+  nvgFontSize(vg, g_fontSize);
+  nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.95f));
+  nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+  nvgText(vg, cx, y + boxH - 44.0f, "Fetching channel...", nullptr);
+
+  if (!name.empty())
+  {
+    nvgFontSize(vg, g_fontSize - 2.0f);
+    nvgFillColor(vg, nvgRGBf(0.70f, 0.70f, 0.70f));
+    nvgText(vg, cx, y + boxH - 20.0f, name.c_str(), nullptr);
+  }
+}
 
 static void drawToast(NVGcontext* vg, const AppState& app, float w, float h)
 {
@@ -5793,6 +5848,23 @@ int main(int argc, char** argv)
     app.musicPlayer.update();
     app.videoPlayer.update();
 
+    if (app.youtubeLoading)
+    {
+      const YouTubeLoadStatus st = app.youtube.pollLoad();
+      if (st == YouTubeLoadStatus::Done)
+      {
+        app.youtubeLoading = false;
+        syncYoutubeChannelNames(app);
+        saveConfig(app);
+      }
+      else if (st == YouTubeLoadStatus::Failed)
+      {
+        app.youtubeLoading = false;
+        app.browserMode = BrowserMode::Files;
+        app.modal.openInfo("Error", "Could not fetch channel. Is yt-dlp installed?");
+      }
+    }
+
     const FileOpStatus opStatus = app.fm.pollFileOp();
     if (opStatus == FileOpStatus::FinishedCopy)
     {
@@ -5868,7 +5940,7 @@ int main(int argc, char** argv)
 
     resetOnPathChange(app);
     applyScroll(app, listH);
-    bool popupActive = app.modal.active || app.textInput.active;
+    bool popupActive = app.modal.active || app.textInput.active || app.youtubeLoading;
     bool clickBefore = g_mouseClicked;
     if (popupActive)
     {
@@ -5981,6 +6053,11 @@ int main(int argc, char** argv)
       app,
       w,
       h);
+
+    if (app.youtubeLoading)
+    {
+      drawYoutubeLoading(vg, w, h, app.youtubeLoadingName);
+    }
 
     bool resizeHover = (app.hoveredSep >= 0) || (app.dragColumn >= 0);
     if (app.modal.active || app.textInput.active)
