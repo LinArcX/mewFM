@@ -38,7 +38,8 @@
 
 ## Phase 3 — Context menu
 ☑ Right-click on a row opens a Blendish menu
-□ Menu items: Open, Open With, Copy, Cut, Rename, Delete, Properties
+☑ Menu items: Open, Edit Here, Extract, Copy, Cut, Rename, Delete, Properties, Add to Bookmarks, Remove from Bookmarks
+□ "Open With" menu item
 ☑ Right-click on empty space: Paste, New Folder, Refresh
 □ Submenu for "Open With"
 
