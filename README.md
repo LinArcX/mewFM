@@ -7,6 +7,7 @@ A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and ou
 - File listing with Name, Size, Type, Owner, and Permissions columns
 - Top navigation bar: Home, Back, Forward, Up, and clickable breadcrumb
 - Collapsible sidebar with Places, Devices, and Bookmarks sections
+- Hideable sidebar: toggle with the toolbar button, Ctrl+B, or F9 (slides in / out with animation)
 - Multiple tabs (Ctrl+T to open, Ctrl+W to close, Ctrl+Tab / Ctrl+Shift+Tab to switch)
 - Resizable columns (drag separator in the header row)
 - Sortable columns: click Name, Size, Type, Owner, or Permissions to sort; click again to toggle ascending/descending
@@ -115,6 +116,7 @@ fontSize	Base font size (8–48). Row height follows automatically
 sortField	Numeric sort column (0=Name, 1=Size, 2=Type, 3=Owner, 4=Permissions)
 sortDir	0 for ascending, 1 for descending
 collapsed_<key>	Collapse state for sidebar sections (places, devices, bookmarks)
+sidebarVisible	1 to show the sidebar, 0 to hide it (written on toggle)
 bookmark	Absolute path of a sidebar bookmark; one line per bookmark (written on add)
 theme.bg	Background color (R,G,B floats 0.0-1.0)
 theme.text	Text color (R,G,B floats)

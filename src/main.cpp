@@ -238,6 +238,8 @@ namespace
     float videoLastMouseY = 0.0f;
     std::string subFont;
     int subFontSize = 0;
+    bool sidebarVisible = true;
+    float sidebarAnim = 1.0f;
   };
 
   float g_mouseX = 0.0f;
@@ -263,6 +265,7 @@ namespace
   bool  g_filter = false;
   bool  g_refresh = false;
   bool  g_togglePreview = false;
+  bool  g_toggleSidebar = false;
   bool  g_newTab = false;
   bool  g_closeTab = false;
   bool  g_nextTab = false;
@@ -435,6 +438,11 @@ static void loadConfig(AppState& app)
     {
       subFontSize = std::atoi(val.c_str());
     }
+    else if (key == "sidebarVisible")
+    {
+      app.sidebarVisible = (val != "0");
+      app.sidebarAnim = app.sidebarVisible ? 1.0f : 0.0f;
+    }
     else if (key.compare(0, 10, "collapsed_") == 0)
     {
       std::string secKey = key.substr(10);
@@ -542,6 +550,7 @@ static void saveConfig(const AppState& app)
   out << "theme.rowStripe=" << colorBuf << "\n";
   out << "path=" << app.fm.currentPath() << "\n";
   out << "hidden=" << (app.fm.showHidden() ? "1" : "0") << "\n";
+  out << "sidebarVisible=" << (app.sidebarVisible ? "1" : "0") << "\n";
   out << "sortField=" << static_cast<int>(app.fm.sortField()) << "\n";
   out << "sortDir=" << (app.fm.sortAscending() ? "0" : "1") << "\n";
   if (!app.subFont.empty())
@@ -1163,6 +1172,8 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
 
   if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_L) g_gotoPath = true;
   if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_F) g_filter = true;
+  if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_B) g_toggleSidebar = true;
+  if (key == GLFW_KEY_F9) g_toggleSidebar = true;
   if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_T) g_newTab = true;
   if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_W) g_closeTab = true;
   if ((mods & GLFW_MOD_CONTROL) && (mods & GLFW_MOD_SHIFT) && key == GLFW_KEY_TAB) g_prevTab = true;
@@ -2157,6 +2168,40 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
   bndBackground(vg, 0.0f, kTabBarHeight, w, kToolBarHeight);
   float x = kPadX;
 
+  {
+    const bool toggleHover = inRect(g_mouseX, g_mouseY, x, kBtnY, kBtnSize, kBtnSize);
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, x, kBtnY, kBtnSize, kBtnSize, 4.0f);
+    nvgFillColor(vg, toggleHover ? nvgRGBf(0.30f, 0.30f, 0.30f)
+                                 : nvgRGBf(0.20f, 0.20f, 0.20f));
+    nvgFill(vg);
+    nvgStrokeColor(vg, nvgRGBf(0.10f, 0.10f, 0.10f));
+    nvgStrokeWidth(vg, 1.0f);
+    nvgStroke(vg);
+
+    const float cx = x + kBtnSize * 0.5f;
+    const float cy = kBtnY + kBtnSize * 0.5f;
+    const float lw = 14.0f;
+    const float lgap = 4.0f;
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, cx - lw * 0.5f, cy - lgap);
+    nvgLineTo(vg, cx + lw * 0.5f, cy - lgap);
+    nvgMoveTo(vg, cx - lw * 0.5f, cy);
+    nvgLineTo(vg, cx + lw * 0.5f, cy);
+    nvgMoveTo(vg, cx - lw * 0.5f, cy + lgap);
+    nvgLineTo(vg, cx + lw * 0.5f, cy + lgap);
+    nvgStrokeColor(vg, nvgRGBf(0.88f, 0.88f, 0.88f));
+    nvgStrokeWidth(vg, 2.0f);
+    nvgStroke(vg);
+
+    if (toggleHover && g_mouseClicked)
+    {
+      app.sidebarVisible = !app.sidebarVisible;
+      saveConfig(app);
+    }
+  }
+  x += kBtnSize + kBtnGap;
+
   bool homeHover = inRect(g_mouseX, g_mouseY, x, kBtnY, kBtnSize, kBtnSize);
   bndToolButton(vg, x, kBtnY, kBtnSize, kBtnSize, BND_CENTER,
                 homeHover ? BND_HOVER : BND_DEFAULT,
@@ -2349,8 +2394,21 @@ static void drawTriangle(NVGcontext* vg, float cx, float cy, float size, bool po
 static void drawSidebar(NVGcontext* vg,
                         FileManager& fm,
                         std::vector<Section>& sections,
-                        float h)
+                        float h,
+                        float visibleW)
 {
+  if (visibleW < 1.0f)
+  {
+    return;
+  }
+  const float shift = visibleW - kSidebarWidth;
+  const float savedMouseX = g_mouseX;
+  g_mouseX -= shift;
+
+  nvgSave(vg);
+  nvgTranslate(vg, shift, 0.0f);
+  nvgScissor(vg, -shift, kTopBarHeight, visibleW, h - kTopBarHeight);
+
   bndBackground(vg, 0.0f, kTopBarHeight, kSidebarWidth, h - kTopBarHeight);
 
   const float headerH = 24.0f;
@@ -2423,6 +2481,9 @@ static void drawSidebar(NVGcontext* vg,
   {
     fm.setPath(navTo);
   }
+
+  nvgRestore(vg);
+  g_mouseX = savedMouseX;
 }
 
 static float columnX(const AppState& app, float listX, int col)
@@ -3394,6 +3455,13 @@ static void handleKeyboardNav(AppState& app, float listH)
   {
     app.previewVisible = !app.previewVisible;
     g_togglePreview = false;
+  }
+
+  if (g_toggleSidebar)
+  {
+    app.sidebarVisible = !app.sidebarVisible;
+    saveConfig(app);
+    g_toggleSidebar = false;
   }
 
   if (g_selectAll)
@@ -5304,9 +5372,23 @@ int main(int argc, char** argv)
     float w = static_cast<float>(winW);
     float h = static_cast<float>(winH);
     float previewW = (app.previewVisible && !app.editor.active && !app.videoActive) ? kPreviewWidth : 0.0f;
-    float mainX = kSidebarWidth;
+
+    const float targetSidebar = app.sidebarVisible ? 1.0f : 0.0f;
+    if (app.sidebarAnim < targetSidebar)
+    {
+      app.sidebarAnim += 0.15f;
+      if (app.sidebarAnim > 1.0f) app.sidebarAnim = 1.0f;
+    }
+    else if (app.sidebarAnim > targetSidebar)
+    {
+      app.sidebarAnim -= 0.15f;
+      if (app.sidebarAnim < 0.0f) app.sidebarAnim = 0.0f;
+    }
+    const float sidebarW = kSidebarWidth * app.sidebarAnim;
+
+    float mainX = sidebarW;
     float mainY = kTopBarHeight;
-    float mainW = w - kSidebarWidth - previewW;
+    float mainW = w - sidebarW - previewW;
     float listTop = mainY + kHeaderHeight;
     const bool musicPanelVisible = !app.videoActive && shouldShowMusicPanel(app);
     const float musicPanelH = musicPanelVisible ? kMusicPanelHeight : 0.0f;
@@ -5377,7 +5459,7 @@ int main(int argc, char** argv)
     drawTabBar(vg, app, w);
     drawTopBar(vg, app, w);
     resetOnPathChange(app);
-    drawSidebar(vg, app.fm, app.sections, h - kStatusBarHeight);
+    drawSidebar(vg, app.fm, app.sections, h - kStatusBarHeight, sidebarW);
     if (g_sidebarDirty)
     {
       saveConfig(app);
@@ -5436,7 +5518,10 @@ int main(int argc, char** argv)
     glfwSetCursor(window, resizeHover ? resizeCursor : nullptr);
     drawSeparator(vg, 0.0f, kTabBarHeight, w, kTabBarHeight);
     drawSeparator(vg, 0.0f, kTopBarHeight, w, kTopBarHeight);
-    drawSeparator(vg, kSidebarWidth, kTopBarHeight, kSidebarWidth, h - kStatusBarHeight);
+    if (sidebarW > 1.0f)
+    {
+      drawSeparator(vg, sidebarW, kTopBarHeight, sidebarW, h - kStatusBarHeight);
+    }
     if (app.previewVisible && !app.editor.active && !app.videoActive)
     {
       drawSeparator(vg, mainX + mainW, kTopBarHeight, mainX + mainW, h - kStatusBarHeight);
