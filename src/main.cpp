@@ -5437,7 +5437,7 @@ int main(int argc, char** argv)
     }
     const float previewW = kPreviewWidth * app.previewAnim;
 
-    const float targetSidebar = app.sidebarVisible ? 1.0f : 0.0f;
+    const float targetSidebar = (app.sidebarVisible && !app.videoActive) ? 1.0f : 0.0f;
     if (app.sidebarAnim < targetSidebar)
     {
       app.sidebarAnim += 0.15f;
