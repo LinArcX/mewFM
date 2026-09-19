@@ -29,6 +29,8 @@
 #include <utility>
 #include <vector>
 #include <sys/statvfs.h>
+#include <sys/wait.h>
+#include <fcntl.h>
 
 namespace
 {
@@ -273,6 +275,7 @@ namespace
     int youtubeMenuChannelIndex = -1;
     int youtubeQuality = 720;
     VideoMenuKind videoMenu = VideoMenuKind::None;
+    float sidebarScrollY = 0.0f;
   };
 
   float g_mouseX = 0.0f;
@@ -2056,7 +2059,7 @@ static void drawModal(
   }
 }
 
-static constexpr float kInputWidth  = 380.0f;
+static constexpr float kInputWidth  = 520.0f;
 static constexpr float kInputHeight = 170.0f;
 
 static void drawTextInput(NVGcontext* vg, TextInput& t, float w, float h)
@@ -2105,21 +2108,34 @@ static void drawTextInput(NVGcontext* vg, TextInput& t, float w, float h)
   nvgFontSize(vg, g_fontSize);
   nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.95f));
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-  float textX = fx + 8.0f;
+  const float textPad = 8.0f;
+  const float textAreaX = fx + textPad;
+  const float textAreaW = fw - textPad * 2.0f;
   float textY = fy + fh * 0.5f;
-  nvgText(vg, textX, textY, t.value.c_str(), nullptr);
 
   float bounds[4];
   std::string upToCursor = t.value.substr(0, t.cursor);
   nvgTextBounds(vg, 0.0f, 0.0f, upToCursor.c_str(), nullptr, bounds);
-  float cursorX = textX + (bounds[2] - bounds[0]);
+  const float cursorOff = bounds[2] - bounds[0];
+  float scrollX = 0.0f;
+  if (cursorOff > textAreaW - 4.0f)
+  {
+    scrollX = cursorOff - (textAreaW - 4.0f);
+  }
 
+  nvgSave(vg);
+  nvgScissor(vg, fx + 2.0f, fy + 2.0f, fw - 4.0f, fh - 4.0f);
+  const float textX = textAreaX - scrollX;
+  nvgText(vg, textX, textY, t.value.c_str(), nullptr);
+
+  const float cursorX = textX + cursorOff;
   nvgBeginPath(vg);
   nvgMoveTo(vg, cursorX, fy + 5.0f);
   nvgLineTo(vg, cursorX, fy + fh - 5.0f);
   nvgStrokeColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
   nvgStrokeWidth(vg, 1.5f);
   nvgStroke(vg);
+  nvgRestore(vg);
 
   float by = py + kInputHeight - kModalBtnH - 16.0f;
   float total = kModalBtnW * 2.0f + kModalBtnGap;
@@ -2663,8 +2679,38 @@ static void drawSidebar(NVGcontext* vg, AppState& app, float h, float visibleW)
   const float itemGap = 2.0f;
   const float itemX   = 8.0f;
   const float itemW   = kSidebarWidth - 16.0f;
+  const float contentTop = kTopBarHeight + 6.0f;
+  const float contentBottom = h - 4.0f;
+  const float viewH = contentBottom - contentTop;
 
-  float y = kTopBarHeight + 6.0f;
+  float contentH = 0.0f;
+  for (const auto& sec : sections)
+  {
+    if (sec.items.empty() && sec.key != "youtube")
+    {
+      continue;
+    }
+    contentH += headerH + 2.0f;
+    if (!sec.collapsed)
+    {
+      contentH += static_cast<float>(sec.items.size()) * (itemH + itemGap) + 6.0f;
+    }
+    else
+    {
+      contentH += 4.0f;
+    }
+  }
+  float maxScroll = contentH - viewH;
+  if (maxScroll < 0.0f)
+  {
+    maxScroll = 0.0f;
+  }
+  if (app.sidebarScrollY > maxScroll)
+  {
+    app.sidebarScrollY = maxScroll;
+  }
+
+  float y = contentTop - app.sidebarScrollY;
   std::string navTo;
   int youtubeChannelClicked = -1;
 
@@ -2751,6 +2797,32 @@ static void drawSidebar(NVGcontext* vg, AppState& app, float h, float visibleW)
   if (!navTo.empty())
   {
     fm.setPath(navTo);
+  }
+
+  if (maxScroll > 1.0f)
+  {
+    const float trackX = kSidebarWidth - 6.0f;
+    const float trackW = 4.0f;
+    const float trackY = contentTop;
+    const float trackH = viewH;
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, trackX, trackY, trackW, trackH, 2.0f);
+    nvgFillColor(vg, nvgRGBf(0.18f, 0.18f, 0.18f));
+    nvgFill(vg);
+    float thumbH = trackH * (viewH / contentH);
+    if (thumbH < 20.0f)
+    {
+      thumbH = 20.0f;
+    }
+    float thumbY = trackY;
+    if (maxScroll > 0.0f)
+    {
+      thumbY = trackY + (trackH - thumbH) * (app.sidebarScrollY / maxScroll);
+    }
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, trackX, thumbY, trackW, thumbH, 2.0f);
+    nvgFillColor(vg, nvgRGBf(0.45f, 0.45f, 0.45f));
+    nvgFill(vg);
   }
 
   nvgRestore(vg);
@@ -3042,12 +3114,78 @@ static bool isVideoExtension(const std::string& ext)
 
 static std::string currentSelectionPath(const AppState& app)
 {
+  if (app.browserMode == BrowserMode::YoutubeVideos)
+  {
+    const auto& videos = app.youtube.videos();
+    if (app.selectedIndex < 0 ||
+        app.selectedIndex >= static_cast<int>(videos.size()))
+    {
+      return std::string();
+    }
+    return videos[static_cast<size_t>(app.selectedIndex)].url;
+  }
   const auto& entries = app.fm.entries();
   if (app.selectedIndex < 0 || app.selectedIndex >= static_cast<int>(entries.size()))
   {
     return std::string();
   }
   return joinPath(app.fm.currentPath(), entries[app.selectedIndex].name);
+}
+
+static bool downloadYoutubeThumbnail(const std::string& videoId,
+                                     std::string& outPath)
+{
+  if (videoId.empty())
+  {
+    return false;
+  }
+  const std::string dir = YouTubeManager::cacheDir() + "/thumbs";
+  std::error_code ec;
+  std::filesystem::create_directories(dir, ec);
+  outPath = dir + "/" + videoId + ".jpg";
+  if (std::filesystem::is_regular_file(outPath, ec))
+  {
+    return true;
+  }
+  const std::string url =
+    "https://i.ytimg.com/vi/" + videoId + "/hqdefault.jpg";
+  pid_t pid = fork();
+  if (pid < 0)
+  {
+    return false;
+  }
+  if (pid == 0)
+  {
+    int outFd = ::open(outPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (outFd < 0)
+    {
+      _exit(127);
+    }
+    dup2(outFd, STDOUT_FILENO);
+    ::close(outFd);
+    int devnull = ::open("/dev/null", O_WRONLY);
+    if (devnull >= 0)
+    {
+      dup2(devnull, STDERR_FILENO);
+      ::close(devnull);
+    }
+    const char* argv[] = {
+      "curl", "-fsSL", "--max-time", "8", url.c_str(), nullptr
+    };
+    execvp("curl", const_cast<char* const*>(argv));
+    _exit(127);
+  }
+  int status = 0;
+  if (waitpid(pid, &status, 0) != pid)
+  {
+    return false;
+  }
+  if (!(WIFEXITED(status) && WEXITSTATUS(status) == 0))
+  {
+    std::filesystem::remove(outPath, ec);
+    return false;
+  }
+  return std::filesystem::is_regular_file(outPath, ec);
 }
 
 static void updatePreview(AppState& app, NVGcontext* vg)
@@ -3090,6 +3228,27 @@ static void updatePreview(AppState& app, NVGcontext* vg)
   {
     return;
   }
+
+  if (app.browserMode == BrowserMode::YoutubeVideos)
+  {
+    const auto& videos = app.youtube.videos();
+    if (app.selectedIndex >= 0 &&
+        app.selectedIndex < static_cast<int>(videos.size()))
+    {
+      const std::string& id = videos[static_cast<size_t>(app.selectedIndex)].id;
+      std::string thumbPath;
+      if (downloadYoutubeThumbnail(id, thumbPath))
+      {
+        int img = nvgCreateImage(vg, thumbPath.c_str(), 0);
+        if (img >= 0)
+        {
+          app.previewImage = img;
+        }
+      }
+    }
+    return;
+  }
+
   std::error_code ec;
   if (!std::filesystem::is_regular_file(path, ec))
   {
@@ -3331,13 +3490,33 @@ static std::string formatYoutubeDuration(int seconds)
   return std::string(buf);
 }
 
-static std::string formatYoutubeDate(const std::string& yyyymmdd)
+static std::string formatYoutubeDate(const std::string& raw)
 {
-  if (yyyymmdd.size() != 8)
+  if (raw.empty() || raw == "NA" || raw == "None")
   {
     return "-";
   }
-  return yyyymmdd.substr(0, 4) + "-" + yyyymmdd.substr(4, 2) + "-" + yyyymmdd.substr(6, 2);
+  if (raw.size() == 8)
+  {
+    bool allDigit = true;
+    for (size_t i = 0; i < 8; i++)
+    {
+      if (raw[i] < '0' || raw[i] > '9')
+      {
+        allDigit = false;
+        break;
+      }
+    }
+    if (allDigit)
+    {
+      return raw.substr(0, 4) + "-" + raw.substr(4, 2) + "-" + raw.substr(6, 2);
+    }
+  }
+  if (raw.size() >= 10 && raw[4] == '-' && raw[7] == '-')
+  {
+    return raw.substr(0, 10);
+  }
+  return raw;
 }
 
 static void drawYoutubeHeader(NVGcontext* vg, float x, float y, float w)
@@ -4203,6 +4382,17 @@ static void handleModalResult(AppState& app)
 
 static void applyScroll(AppState& app, float listH)
 {
+  const float sidebarW = kSidebarWidth * app.sidebarAnim;
+  if (sidebarW > 1.0f && g_mouseX >= 0.0f && g_mouseX < sidebarW)
+  {
+    app.sidebarScrollY -= g_scrollY * 40.0f;
+    if (app.sidebarScrollY < 0.0f)
+    {
+      app.sidebarScrollY = 0.0f;
+    }
+    g_scrollY = 0.0f;
+  }
+
   const size_t itemCount = (app.browserMode == BrowserMode::YoutubeVideos)
     ? app.youtube.videos().size()
     : app.fm.entries().size();
