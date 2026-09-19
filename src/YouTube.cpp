@@ -190,6 +190,10 @@ static void parseVideoLines(const std::string& data,
     v.id = parts[0];
     v.title = parts[1];
     v.url = parts[2];
+    if (!v.id.empty() && (v.url.empty() || v.url.find("://") == std::string::npos))
+    {
+      v.url = "https://www.youtube.com/watch?v=" + v.id;
+    }
     v.duration = -1;
     if (parts.size() >= 4 && parts[3] != "NA" && !parts[3].empty())
     {

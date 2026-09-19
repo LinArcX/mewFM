@@ -49,6 +49,7 @@ bool VideoPlayer::init()
   mpv_set_option_string(m_pMpv, "osc", "no");
   mpv_set_option_string(m_pMpv, "terminal", "no");
   mpv_set_option_string(m_pMpv, "msg-level", "all=no");
+  mpv_set_option_string(m_pMpv, "ytdl", "yes");
   if (!m_subFont.empty())
   {
     mpv_set_option_string(m_pMpv, "sub-font", m_subFont.c_str());

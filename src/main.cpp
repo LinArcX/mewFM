@@ -363,6 +363,27 @@ static bool parseThemeColor(const std::string& s, NVGcolor& out)
   return true;
 }
 
+static std::string youtubeChannelShortName(const std::string& name)
+{
+  const std::string prefixes[] = {
+    "https://www.youtube.com/",
+    "https://youtube.com/",
+    "http://www.youtube.com/",
+    "http://youtube.com/",
+    "www.youtube.com/",
+    "youtube.com/",
+  };
+  for (size_t i = 0; i < sizeof(prefixes) / sizeof(prefixes[0]); i++)
+  {
+    const std::string& p = prefixes[i];
+    if (name.size() > p.size() && name.compare(0, p.size(), p) == 0)
+    {
+      return name.substr(p.size());
+    }
+  }
+  return name;
+}
+
 static void loadConfig(AppState& app)
 {
   std::ifstream in(configFilePath());
@@ -560,13 +581,13 @@ static void loadConfig(AppState& app)
       YouTubeChannel ch;
       ch.url = it->second;
       std::map<int, std::string>::const_iterator nit = youtubeNames.find(it->first);
-      if (nit != youtubeNames.end())
+      if (nit != youtubeNames.end() && !nit->second.empty())
       {
-        ch.name = nit->second;
+        ch.name = youtubeChannelShortName(nit->second);
       }
       else
       {
-        ch.name = it->second;
+        ch.name = youtubeChannelShortName(it->second);
       }
       channels.push_back(ch);
     }
@@ -1183,7 +1204,19 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
     {
       return;
     }
-    if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER)
+    if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_V)
+    {
+      const char* clip = glfwGetClipboardString(window);
+      if (clip != nullptr)
+      {
+        for (const char* cp = clip; *cp != '\0'; cp++)
+        {
+          textInputInsert(app->textInput,
+                          static_cast<unsigned int>(static_cast<unsigned char>(*cp)));
+        }
+      }
+    }
+    else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER)
     {
       app->textInput.result = TextInputResult::Ok;
       app->textInput.active = false;
@@ -3978,9 +4011,10 @@ static void handleTextInputResult(AppState& app)
     {
       return;
     }
+    const std::string shortName = youtubeChannelShortName(url);
     YouTubeChannel ch;
     ch.url = url;
-    ch.name = url;
+    ch.name = shortName;
     app.youtube.addChannel(ch);
     int newIdx = static_cast<int>(app.youtube.channels().size()) - 1;
     for (auto& s : app.sections)
@@ -3990,7 +4024,7 @@ static void handleTextInputResult(AppState& app)
         continue;
       }
       Place p;
-      p.label = url;
+      p.label = shortName;
       p.path = url;
       p.icon = BND_ICON_FILE_MOVIE;
       s.items.push_back(p);
@@ -4001,7 +4035,7 @@ static void handleTextInputResult(AppState& app)
       app.browserMode = BrowserMode::YoutubeVideos;
       clearSelection(app);
       app.scrollOffset = 0.0f;
-      app.youtubeLoadingName = url;
+      app.youtubeLoadingName = shortName;
       if (app.youtube.loadStatus() == YouTubeLoadStatus::Loading)
       {
         app.youtubeLoading = true;
