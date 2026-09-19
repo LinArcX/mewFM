@@ -32,6 +32,9 @@ bool VideoPlayer::init()
   {
     return false;
   }
+  mpv_set_option_string(m_pMpv, "vo", "libmpv");
+  mpv_set_option_string(m_pMpv, "gpu-api", "opengl");
+  mpv_set_option_string(m_pMpv, "force-window", "no");
   mpv_set_option_string(m_pMpv, "audio-display", "no");
   mpv_set_option_string(m_pMpv, "idle", "yes");
   mpv_set_option_string(m_pMpv, "input-default-bindings", "no");

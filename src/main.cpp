@@ -924,6 +924,50 @@ static void handleEditorKey(AppState& app, int key, int mods)
   }
 }
 
+static void handleVideoKey(AppState& app, int key, int mods)
+{
+  (void)mods;
+  VideoPlayer& vp = app.videoPlayer;
+  switch (key)
+  {
+    case GLFW_KEY_SPACE:
+    case GLFW_KEY_P:
+      vp.togglePause();
+      break;
+    case GLFW_KEY_ESCAPE:
+    case GLFW_KEY_Q:
+      vp.close();
+      app.videoActive = false;
+      break;
+    case GLFW_KEY_LEFT:
+      vp.seekAbsolute(vp.position() - 5.0);
+      break;
+    case GLFW_KEY_RIGHT:
+      vp.seekAbsolute(vp.position() + 5.0);
+      break;
+    case GLFW_KEY_HOME:
+      vp.seekAbsolute(0.0);
+      break;
+    case GLFW_KEY_END:
+    {
+      double d = vp.duration();
+      if (d > 0.0)
+      {
+        vp.seekAbsolute(d);
+      }
+      break;
+    }
+    case GLFW_KEY_UP:
+      vp.setVolume(vp.volume() + 5);
+      break;
+    case GLFW_KEY_DOWN:
+      vp.setVolume(vp.volume() - 5);
+      break;
+    default:
+      break;
+  }
+}
+
 static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
   (void)scancode;
@@ -938,6 +982,15 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
       return;
     }
     handleEditorKey(*app, key, mods);
+    return;
+  }
+  if (app != nullptr && app->videoActive && !modalActive)
+  {
+    if (action != GLFW_PRESS && action != GLFW_REPEAT)
+    {
+      return;
+    }
+    handleVideoKey(*app, key, mods);
     return;
   }
   if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS && app != nullptr &&
@@ -965,12 +1018,6 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
     if (modalActive)
     {
       app->modal.close();
-      return;
-    }
-    if (app != nullptr && app->videoActive)
-    {
-      app->videoPlayer.close();
-      app->videoActive = false;
       return;
     }
     glfwSetWindowShouldClose(window, GLFW_TRUE);
@@ -4660,13 +4707,23 @@ static void renderVideoFrame(AppState& app,
     return;
   }
 
+  GLint prevViewport[4];
+  glGetIntegerv(GL_VIEWPORT, prevViewport);
+
   if (app.videoPlayer.needsRender())
   {
+    glPushAttrib(GL_ALL_ATTRIB_BITS);
     glBindFramebuffer(GL_FRAMEBUFFER, app.videoFbo);
     glViewport(0, 0, fw, fh);
+    glDisable(GL_BLEND);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_STENCIL_TEST);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     app.videoPlayer.render(app.videoFbo, fw, fh);
+    glPopAttrib();
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
   }
 
@@ -4679,6 +4736,7 @@ static void renderVideoFrame(AppState& app,
   glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
   glBlitFramebuffer(0, 0, fw, fh, dx0, dy0, dx1, dy1, GL_COLOR_BUFFER_BIT, GL_LINEAR);
   glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
 }
 
 static void drawVideoControls(NVGcontext* vg, AppState& app,
@@ -5239,7 +5297,10 @@ int main(int argc, char** argv)
     {
       handleMusicPanel(app, mainX, mainW, h, musicPanelH);
     }
-    handleListClick(app, mainX, listTop, mainW, listH);
+    if (!app.videoActive)
+    {
+      handleListClick(app, mainX, listTop, mainW, listH);
+    }
     resetOnPathChange(app);
     if (!popupActive)
     {
