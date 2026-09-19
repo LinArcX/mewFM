@@ -11,6 +11,7 @@
 #include "MusicPlayer.hpp"
 #include "TextInput.hpp"
 #include "VideoPlayer.hpp"
+#include "YouTube.hpp"
 #include "HurmitFont.hpp"
 #include "BlenderIcons.hpp"
 
@@ -22,6 +23,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
+#include <map>
 #include <string>
 #include <unistd.h>
 #include <utility>
@@ -79,6 +81,7 @@ namespace
     Rename,
     GoToPath,
     Filter,
+    YoutubeChannelUrl,
   };
 
   struct Editor
@@ -98,6 +101,7 @@ namespace
     None,
     Row,
     Empty,
+    SidebarYoutube,
   };
 
   enum class MenuAction
@@ -120,6 +124,7 @@ namespace
     Properties,
     AddBookmark,
     RemoveBookmark,
+    AddYoutubeChannel,
   };
 
   struct MenuItem
@@ -179,6 +184,12 @@ namespace
       }
       return (glfwGetTime() - shownAt) < duration;
     }
+  };
+
+  enum class BrowserMode
+  {
+    Files,
+    YoutubeVideos,
   };
 
   struct AppState
@@ -241,6 +252,10 @@ namespace
     bool sidebarVisible = true;
     float sidebarAnim = 1.0f;
     float previewAnim = 1.0f;
+    YouTubeManager youtube;
+    BrowserMode browserMode = BrowserMode::Files;
+    float youtubeHeaderY = -1.0f;
+    float youtubeHeaderH = 0.0f;
   };
 
   float g_mouseX = 0.0f;
@@ -360,6 +375,8 @@ static void loadConfig(AppState& app)
   std::vector<std::string> savedBookmarks;
   std::string subFont;
   int subFontSize = 0;
+  std::map<int, std::string> youtubeUrls;
+  std::map<int, std::string> youtubeNames;
   std::string line;
   while (std::getline(in, line))
   {
@@ -439,6 +456,23 @@ static void loadConfig(AppState& app)
     {
       subFontSize = std::atoi(val.c_str());
     }
+    else if (key.compare(0, 14, "youtubeChannel") == 0 && key.size() > 14 &&
+             key[14] >= '0' && key[14] <= '9')
+    {
+      int idx = std::atoi(key.c_str() + 14);
+      if (idx >= 0)
+      {
+        youtubeUrls[idx] = val;
+      }
+    }
+    else if (key.compare(0, 18, "youtubeChannelName") == 0 && key.size() > 18)
+    {
+      int idx = std::atoi(key.c_str() + 18);
+      if (idx >= 0)
+      {
+        youtubeNames[idx] = val;
+      }
+    }
     else if (key == "sidebarVisible")
     {
       app.sidebarVisible = (val != "0");
@@ -515,6 +549,44 @@ static void loadConfig(AppState& app)
     app.videoPlayer.setSubtitleFontSize(subFontSize);
   }
 
+  if (!youtubeUrls.empty())
+  {
+    std::vector<YouTubeChannel> channels;
+    for (std::map<int, std::string>::const_iterator it = youtubeUrls.begin();
+         it != youtubeUrls.end(); ++it)
+    {
+      YouTubeChannel ch;
+      ch.url = it->second;
+      std::map<int, std::string>::const_iterator nit = youtubeNames.find(it->first);
+      if (nit != youtubeNames.end())
+      {
+        ch.name = nit->second;
+      }
+      else
+      {
+        ch.name = it->second;
+      }
+      channels.push_back(ch);
+    }
+    app.youtube.setChannels(channels);
+    for (auto& s : app.sections)
+    {
+      if (s.key != "youtube")
+      {
+        continue;
+      }
+      for (size_t ci = 0; ci < channels.size(); ci++)
+      {
+        Place p;
+        p.label = channels[ci].name;
+        p.path = channels[ci].url;
+        p.icon = BND_ICON_FILE_MOVIE;
+        s.items.push_back(p);
+      }
+      break;
+    }
+  }
+
   std::error_code ec;
   if (!savedPath.empty() && std::filesystem::is_directory(savedPath, ec))
   {
@@ -558,6 +630,11 @@ static void saveConfig(const AppState& app)
   out << "hidden=" << (app.fm.showHidden() ? "1" : "0") << "\n";
   out << "sidebarVisible=" << (app.sidebarVisible ? "1" : "0") << "\n";
   out << "previewVisible=" << (app.previewVisible ? "1" : "0") << "\n";
+  for (size_t yi = 0; yi < app.youtube.channels().size(); yi++)
+  {
+    out << "youtubeChannel" << yi << "=" << app.youtube.channels()[yi].url << "\n";
+    out << "youtubeChannelName" << yi << "=" << app.youtube.channels()[yi].name << "\n";
+  }
   out << "sortField=" << static_cast<int>(app.fm.sortField()) << "\n";
   out << "sortDir=" << (app.fm.sortAscending() ? "0" : "1") << "\n";
   if (!app.subFont.empty())
@@ -580,6 +657,25 @@ static void saveConfig(const AppState& app)
     }
   }
 }
+static void syncYoutubeChannelNames(AppState& app)
+{
+  for (auto& s : app.sections)
+  {
+    if (s.key != "youtube")
+    {
+      continue;
+    }
+    for (size_t i = 0; i < s.items.size(); i++)
+    {
+      if (i < app.youtube.channels().size())
+      {
+        s.items[i].label = app.youtube.channels()[i].name;
+      }
+    }
+    break;
+  }
+}
+
 static void applyTheme()
 {
   BNDwidgetTheme w = makeWidgetTheme();
@@ -646,6 +742,12 @@ static std::vector<Section> buildSections()
   bookmarks.key = "bookmarks";
   bookmarks.title = "Bookmarks";
   all.push_back(bookmarks);
+
+  Section youtube;
+  youtube.key = "youtube";
+  youtube.title = "Youtube";
+  all.push_back(youtube);
+
   return all;
 }
 
@@ -1064,6 +1166,11 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
     if (modalActive)
     {
       app->modal.close();
+      return;
+    }
+    if (app->browserMode == BrowserMode::YoutubeVideos)
+    {
+      app->browserMode = BrowserMode::Files;
       return;
     }
     return;
@@ -2296,25 +2403,39 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
     fm.goUp();
   }
 
-  std::string path = fm.currentPath();
   std::vector<std::pair<std::string, std::string>> crumbs;
-  crumbs.push_back(std::make_pair(std::string("/"), std::string("/")));
-  std::string acc;
-  size_t i = (!path.empty() && path[0] == '/') ? 1 : 0;
-  while (i < path.size())
+  const bool youtubeMode = (app.browserMode == BrowserMode::YoutubeVideos);
+  if (youtubeMode)
   {
-    size_t j = path.find('/', i);
-    if (j == std::string::npos)
+    crumbs.push_back(std::make_pair(std::string("Youtube"), std::string("!youtube_root")));
+    std::string chName = app.youtube.activeChannelName();
+    if (chName.empty())
     {
-      j = path.size();
+      chName = "Channel";
     }
-    std::string seg = path.substr(i, j - i);
-    if (!seg.empty())
+    crumbs.push_back(std::make_pair(chName, std::string("!youtube_channel")));
+  }
+  else
+  {
+    std::string path = fm.currentPath();
+    crumbs.push_back(std::make_pair(std::string("/"), std::string("/")));
+    std::string acc;
+    size_t i = (!path.empty() && path[0] == '/') ? 1 : 0;
+    while (i < path.size())
     {
-      acc = acc.empty() ? ("/" + seg) : (acc + "/" + seg);
-      crumbs.push_back(std::make_pair(seg, acc));
+      size_t j = path.find('/', i);
+      if (j == std::string::npos)
+      {
+        j = path.size();
+      }
+      std::string seg = path.substr(i, j - i);
+      if (!seg.empty())
+      {
+        acc = acc.empty() ? ("/" + seg) : (acc + "/" + seg);
+        crumbs.push_back(std::make_pair(seg, acc));
+      }
+      i = j + 1;
     }
-    i = j + 1;
   }
 
   nvgFontFace(vg, "sans");
@@ -2323,10 +2444,10 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
   float cy = kTabBarHeight + kToolBarHeight * 0.5f;
 
     std::string navTo;
-  const float filterBoxX = w - kFilterBoxW - kPadX;
+  const float filterBoxX = youtubeMode ? w : (w - kFilterBoxW - kPadX);
   for (size_t k = 0; k < crumbs.size(); k++)
   {
-    const bool isRoot = (k == 0);
+    const bool isRoot = !youtubeMode && (k == 0);
     float segW;
     if (isRoot)
     {
@@ -2375,44 +2496,56 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
     }
   }
 
-  const float filterBoxY = kTabBarHeight + (kToolBarHeight - kFilterBoxH) * 0.5f;
-  bool filterHover = inRect(g_mouseX, g_mouseY, filterBoxX, filterBoxY, kFilterBoxW, kFilterBoxH);
-  nvgBeginPath(vg);
-  nvgRoundedRect(vg, filterBoxX, filterBoxY, kFilterBoxW, kFilterBoxH, 3.0f);
-  nvgFillColor(vg, filterHover ? nvgRGBf(0.28f, 0.28f, 0.28f) : nvgRGBf(0.18f, 0.18f, 0.18f));
-  nvgFill(vg);
-  nvgStrokeColor(vg, nvgRGBf(0.3f, 0.3f, 0.3f));
-  nvgStrokeWidth(vg, 1.0f);
-  nvgStroke(vg);
+  if (!youtubeMode)
+  {
+    const float filterBoxY = kTabBarHeight + (kToolBarHeight - kFilterBoxH) * 0.5f;
+    bool filterHover = inRect(g_mouseX, g_mouseY, filterBoxX, filterBoxY, kFilterBoxW, kFilterBoxH);
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, filterBoxX, filterBoxY, kFilterBoxW, kFilterBoxH, 3.0f);
+    nvgFillColor(vg, filterHover ? nvgRGBf(0.28f, 0.28f, 0.28f) : nvgRGBf(0.18f, 0.18f, 0.18f));
+    nvgFill(vg);
+    nvgStrokeColor(vg, nvgRGBf(0.3f, 0.3f, 0.3f));
+    nvgStrokeWidth(vg, 1.0f);
+    nvgStroke(vg);
 
-  nvgFontFace(vg, "sans");
-  nvgFontSize(vg, g_fontSize - 1.0f);
-  nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-  const std::string& filterText = fm.filter();
-  float filterTextY = filterBoxY + kFilterBoxH * 0.5f;
-  nvgSave(vg);
-  nvgScissor(vg, filterBoxX + 2.0f, filterBoxY, kFilterBoxW - 4.0f, kFilterBoxH);
-  if (filterText.empty())
-  {
-    nvgFillColor(vg, nvgRGBf(0.5f, 0.5f, 0.5f));
-    nvgText(vg, filterBoxX + 8.0f, filterTextY, "Filter...", nullptr);
-  }
-  else
-  {
-    nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.95f));
-    nvgText(vg, filterBoxX + 8.0f, filterTextY, filterText.c_str(), nullptr);
-  }
-  nvgRestore(vg);
+    nvgFontFace(vg, "sans");
+    nvgFontSize(vg, g_fontSize - 1.0f);
+    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+    const std::string& filterText = fm.filter();
+    float filterTextY = filterBoxY + kFilterBoxH * 0.5f;
+    nvgSave(vg);
+    nvgScissor(vg, filterBoxX + 2.0f, filterBoxY, kFilterBoxW - 4.0f, kFilterBoxH);
+    if (filterText.empty())
+    {
+      nvgFillColor(vg, nvgRGBf(0.5f, 0.5f, 0.5f));
+      nvgText(vg, filterBoxX + 8.0f, filterTextY, "Filter...", nullptr);
+    }
+    else
+    {
+      nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.95f));
+      nvgText(vg, filterBoxX + 8.0f, filterTextY, filterText.c_str(), nullptr);
+    }
+    nvgRestore(vg);
 
-  if (filterHover && g_mouseClicked)
-  {
-    app.textInput.open("Filter", app.fm.filter());
-    app.pendingInput = PendingInput::Filter;
+    if (filterHover && g_mouseClicked)
+    {
+      app.textInput.open("Filter", app.fm.filter());
+      app.pendingInput = PendingInput::Filter;
+    }
   }
 
   if (!navTo.empty())
   {
-    fm.setPath(navTo);
+    if (navTo == "!youtube_root")
+    {
+      app.browserMode = BrowserMode::Files;
+      clearSelection(app);
+      app.scrollOffset = 0.0f;
+    }
+    else if (navTo != "!youtube_channel")
+    {
+      fm.setPath(navTo);
+    }
   }
 }
 
@@ -2437,12 +2570,11 @@ static void drawTriangle(NVGcontext* vg, float cx, float cy, float size, bool po
   nvgFill(vg);
 }
 
-static void drawSidebar(NVGcontext* vg,
-                        FileManager& fm,
-                        std::vector<Section>& sections,
-                        float h,
-                        float visibleW)
+static void drawSidebar(NVGcontext* vg, AppState& app, float h, float visibleW)
 {
+  app.youtubeHeaderY = -1.0f;
+  app.youtubeHeaderH = 0.0f;
+
   if (visibleW < 1.0f)
   {
     return;
@@ -2457,6 +2589,9 @@ static void drawSidebar(NVGcontext* vg,
 
   bndBackground(vg, 0.0f, kTopBarHeight, kSidebarWidth, h - kTopBarHeight);
 
+  FileManager& fm = app.fm;
+  std::vector<Section>& sections = app.sections;
+
   const float headerH = 24.0f;
   const float itemH   = 26.0f;
   const float itemGap = 2.0f;
@@ -2465,13 +2600,21 @@ static void drawSidebar(NVGcontext* vg,
 
   float y = kTopBarHeight + 6.0f;
   std::string navTo;
+  int youtubeChannelClicked = -1;
 
   for (auto& sec : sections)
   {
-    if (sec.items.empty())
+    if (sec.items.empty() && sec.key != "youtube")
     {
       continue;
     }
+    const bool isYoutube = (sec.key == "youtube");
+    if (isYoutube)
+    {
+      app.youtubeHeaderY = y;
+      app.youtubeHeaderH = headerH;
+    }
+
     bool headerHover = inRect(g_mouseX, g_mouseY, itemX, y, itemW, headerH);
     if (headerHover)
     {
@@ -2506,18 +2649,27 @@ static void drawSidebar(NVGcontext* vg,
       continue;
     }
 
+    int itemIndex = 0;
     for (const auto& p : sec.items)
     {
       bool hover   = inRect(g_mouseX, g_mouseY, itemX, y, itemW, itemH);
-      bool current = (fm.currentPath() == p.path);
+      bool current = !isYoutube && (fm.currentPath() == p.path);
       BNDwidgetState st = BND_DEFAULT;
       if (current) st = BND_ACTIVE;
       else if (hover) st = BND_HOVER;
       bndToolButton(vg, itemX, y, itemW, itemH, BND_LEFT, st, p.icon, p.label.c_str());
       if (hover && g_mouseClicked)
       {
-        navTo = p.path;
+        if (isYoutube)
+        {
+          youtubeChannelClicked = itemIndex;
+        }
+        else
+        {
+          navTo = p.path;
+        }
       }
+      itemIndex++;
       y += itemH + itemGap;
     }
     y += 6.0f;
@@ -2530,6 +2682,28 @@ static void drawSidebar(NVGcontext* vg,
 
   nvgRestore(vg);
   g_mouseX = savedMouseX;
+
+  if (youtubeChannelClicked >= 0)
+  {
+    if (app.youtube.loadChannel(youtubeChannelClicked, false))
+    {
+      app.browserMode = BrowserMode::YoutubeVideos;
+      clearSelection(app);
+      app.scrollOffset = 0.0f;
+      const std::string& newName = app.youtube.activeChannelName();
+      if (!newName.empty() &&
+          newName != app.youtube.channels()[static_cast<size_t>(youtubeChannelClicked)].name)
+      {
+        app.youtube.setChannelName(youtubeChannelClicked, newName);
+        syncYoutubeChannelNames(app);
+        saveConfig(app);
+      }
+    }
+    else
+    {
+      app.modal.openInfo("Error", "Could not fetch channel. Install yt-dlp.");
+    }
+  }
 }
 
 static float columnX(const AppState& app, float listX, int col)
@@ -3061,6 +3235,118 @@ static void drawRows(NVGcontext* vg,
   nvgRestore(vg);
 }
 
+static std::string formatYoutubeDuration(int seconds)
+{
+  if (seconds < 0)
+  {
+    return "-";
+  }
+  int h = seconds / 3600;
+  int m = (seconds % 3600) / 60;
+  int s = seconds % 60;
+  char buf[32];
+  if (h > 0)
+  {
+    std::snprintf(buf, sizeof(buf), "%d:%02d:%02d", h, m, s);
+  }
+  else
+  {
+    std::snprintf(buf, sizeof(buf), "%d:%02d", m, s);
+  }
+  return std::string(buf);
+}
+
+static std::string formatYoutubeDate(const std::string& yyyymmdd)
+{
+  if (yyyymmdd.size() != 8)
+  {
+    return "-";
+  }
+  return yyyymmdd.substr(0, 4) + "-" + yyyymmdd.substr(4, 2) + "-" + yyyymmdd.substr(6, 2);
+}
+
+static void drawYoutubeHeader(NVGcontext* vg, float x, float y, float w)
+{
+  bndBackground(vg, x, y, w, kHeaderHeight);
+
+  nvgFontFace(vg, "sans");
+  nvgFontSize(vg, g_fontSize - 1.0f);
+  nvgFillColor(vg, nvgRGBf(0.7f, 0.7f, 0.7f));
+  nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+  float cy = y + kHeaderHeight * 0.5f;
+
+  const float durW = 100.0f;
+  const float dateW = 120.0f;
+  const float titleW = w - kPadX * 2.0f - durW - dateW;
+
+  nvgText(vg, x + kPadX, cy, " Title", nullptr);
+  nvgText(vg, x + kPadX + titleW, cy, " Duration", nullptr);
+  nvgText(vg, x + kPadX + titleW + durW, cy, " Uploaded", nullptr);
+}
+
+static void drawYoutubeRows(NVGcontext* vg,
+                            const AppState& app,
+                            float x, float y, float w, float h)
+{
+  const auto& videos = app.youtube.videos();
+
+  nvgFontFace(vg, "sans");
+  nvgFontSize(vg, g_fontSize - 1.0f);
+  nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+
+  const float durW = 100.0f;
+  const float dateW = 120.0f;
+  const float titleW = w - kPadX * 2.0f - durW - dateW;
+
+  nvgSave(vg);
+  nvgScissor(vg, x, y, w, h);
+  for (size_t i = 0; i < videos.size(); i++)
+  {
+    float rowY = y + static_cast<float>(i) * g_rowHeight - app.scrollOffset;
+    if (rowY + g_rowHeight < y)
+    {
+      continue;
+    }
+    if (rowY > y + h)
+    {
+      break;
+    }
+    if ((i % 2) == 0)
+    {
+      nvgBeginPath(vg);
+      nvgRect(vg, x, rowY, w, g_rowHeight);
+      nvgFillColor(vg, app.theme.rowStripe);
+      nvgFill(vg);
+    }
+    bool selected = isEntrySelected(app, static_cast<int>(i));
+    bool hover = inRect(g_mouseX, g_mouseY, x, rowY, w, g_rowHeight);
+    if (selected)
+    {
+      nvgBeginPath(vg);
+      nvgRect(vg, x, rowY, w, g_rowHeight);
+      nvgFillColor(vg, app.theme.rowSelected);
+      nvgFill(vg);
+    }
+    else if (hover)
+    {
+      nvgBeginPath(vg);
+      nvgRect(vg, x, rowY, w, g_rowHeight);
+      nvgFillColor(vg, app.theme.rowHover);
+      nvgFill(vg);
+    }
+    const YouTubeVideo& v = videos[i];
+    float cy = rowY + g_rowHeight * 0.5f;
+    std::string titleText = truncateToWidth(vg, v.title, titleW - 8.0f);
+    std::string durText = formatYoutubeDuration(v.duration);
+    std::string dateText = formatYoutubeDate(v.uploadDate);
+    nvgFillColor(vg, app.theme.text);
+    nvgText(vg, x + kPadX, cy, titleText.c_str(), nullptr);
+    nvgText(vg, x + kPadX + titleW, cy, durText.c_str(), nullptr);
+    nvgText(vg, x + kPadX + titleW + durW, cy, dateText.c_str(), nullptr);
+  }
+  nvgRestore(vg);
+}
+
 static void drawEditor(NVGcontext* vg, AppState& app, float x, float y, float w, float h)
 {
   Editor& ed = app.editor;
@@ -3240,6 +3526,32 @@ static void resetOnPathChange(AppState& app)
   saveConfig(app);
 }
 
+static void openYoutubeVideo(AppState& app, int idx)
+{
+  const auto& videos = app.youtube.videos();
+  if (idx < 0 || idx >= static_cast<int>(videos.size()))
+  {
+    return;
+  }
+  if (!app.videoPlayer.init())
+  {
+    app.modal.openInfo("Error", "Could not initialize video player.");
+    return;
+  }
+  if (!app.videoPlayer.open(videos[static_cast<size_t>(idx)].url))
+  {
+    app.modal.openInfo("Error", "Could not open video.");
+    return;
+  }
+  app.videoActive = true;
+  app.videoSeekDrag = false;
+  app.videoSeekValue = 0.0f;
+  app.videoVolDrag = false;
+  app.videoControlsLastActive = glfwGetTime();
+  app.videoLastMouseX = g_mouseX;
+  app.videoLastMouseY = g_mouseY;
+}
+
 static void handleListClick(AppState& app, float listX, float listTop, float listW, float listH)
 {
   if (!g_mouseClicked || !inRect(g_mouseX, g_mouseY, listX, listTop, listW, listH))
@@ -3247,7 +3559,9 @@ static void handleListClick(AppState& app, float listX, float listTop, float lis
     return;
   }
   int idx = static_cast<int>((g_mouseY - listTop + app.scrollOffset) / g_rowHeight);
-  int count = static_cast<int>(app.fm.entries().size());
+  int count = (app.browserMode == BrowserMode::YoutubeVideos)
+    ? static_cast<int>(app.youtube.videos().size())
+    : static_cast<int>(app.fm.entries().size());
   if (idx < 0 || idx >= count)
   {
     return;
@@ -3277,7 +3591,14 @@ static void handleListClick(AppState& app, float listX, float listTop, float lis
 
   if (isDouble)
   {
-    openEntry(app, idx);
+    if (app.browserMode == BrowserMode::YoutubeVideos)
+    {
+      openYoutubeVideo(app, idx);
+    }
+    else
+    {
+      openEntry(app, idx);
+    }
     app.lastClickIndex = -1;
     return;
   }
@@ -3286,7 +3607,10 @@ static void handleListClick(AppState& app, float listX, float listTop, float lis
 
 static void handleKeyboardNav(AppState& app, float listH)
 {
-  int count = static_cast<int>(app.fm.entries().size());
+  const bool youtubeMode = (app.browserMode == BrowserMode::YoutubeVideos);
+  int count = youtubeMode
+    ? static_cast<int>(app.youtube.videos().size())
+    : static_cast<int>(app.fm.entries().size());
   if (g_navUp && count > 0)
   {
     int newIdx = (app.selectedIndex <= 0) ? 0 : app.selectedIndex - 1;
@@ -3307,7 +3631,14 @@ static void handleKeyboardNav(AppState& app, float listH)
   }
   if (g_navEnter && app.selectedIndex >= 0)
   {
-    openEntry(app, app.selectedIndex);
+    if (youtubeMode)
+    {
+      openYoutubeVideo(app, app.selectedIndex);
+    }
+    else
+    {
+      openEntry(app, app.selectedIndex);
+    }
   }
   if (g_navBack)
   {
@@ -3635,6 +3966,51 @@ static void handleTextInputResult(AppState& app)
       app.modal.openInfo("Error", "Could not open path.");
     }
   }
+
+  if (pending == PendingInput::YoutubeChannelUrl)
+  {
+    std::string url = app.textInput.value;
+    if (url.empty())
+    {
+      return;
+    }
+    YouTubeChannel ch;
+    ch.url = url;
+    ch.name = url;
+    app.youtube.addChannel(ch);
+    int newIdx = static_cast<int>(app.youtube.channels().size()) - 1;
+    for (auto& s : app.sections)
+    {
+      if (s.key != "youtube")
+      {
+        continue;
+      }
+      Place p;
+      p.label = url;
+      p.path = url;
+      p.icon = BND_ICON_FILE_MOVIE;
+      s.items.push_back(p);
+      break;
+    }
+    if (app.youtube.loadChannel(newIdx, true))
+    {
+      const std::string& newName = app.youtube.activeChannelName();
+      if (!newName.empty())
+      {
+        app.youtube.setChannelName(newIdx, newName);
+        syncYoutubeChannelNames(app);
+      }
+      app.browserMode = BrowserMode::YoutubeVideos;
+      clearSelection(app);
+      app.scrollOffset = 0.0f;
+      app.toast.show("Channel added");
+    }
+    else
+    {
+      app.toast.show("Could not fetch channel (need yt-dlp)");
+    }
+    saveConfig(app);
+  }
 }
 
 static void handleModalResult(AppState& app)
@@ -3751,7 +4127,10 @@ static void handleModalResult(AppState& app)
 
 static void applyScroll(AppState& app, float listH)
 {
-  float contentH = static_cast<float>(app.fm.entries().size()) * g_rowHeight;
+  const size_t itemCount = (app.browserMode == BrowserMode::YoutubeVideos)
+    ? app.youtube.videos().size()
+    : app.fm.entries().size();
+  float contentH = static_cast<float>(itemCount) * g_rowHeight;
   float maxScroll = contentH - listH;
   if (maxScroll < 0.0f)
   {
@@ -3912,15 +4291,33 @@ static std::vector<MenuItem> buildEmptyMenuItems(const AppState& app)
   return items;
 }
 
+static std::vector<MenuItem> buildSidebarYoutubeMenuItems()
+{
+  std::vector<MenuItem> items;
+  items.push_back({"Add Channel", MenuAction::AddYoutubeChannel, true});
+  return items;
+}
+
+static std::vector<MenuItem> menuItemsFor(const AppState& app, MenuKind kind)
+{
+  if (kind == MenuKind::Row)
+  {
+    return buildRowMenuItems(app);
+  }
+  if (kind == MenuKind::Empty)
+  {
+    return buildEmptyMenuItems(app);
+  }
+  return buildSidebarYoutubeMenuItems();
+}
+
 static MenuAction handleMenuClick(const AppState& app, float w, float h)
 {
   if (app.menuKind == MenuKind::None)
   {
     return MenuAction::None;
   }
-  std::vector<MenuItem> items = (app.menuKind == MenuKind::Row)
-    ? buildRowMenuItems(app)
-    : buildEmptyMenuItems(app);
+  std::vector<MenuItem> items = menuItemsFor(app, app.menuKind);
   const int count = static_cast<int>(items.size());
   float menuH = kMenuPadY * 2.0f + kMenuItemHeight * static_cast<float>(count);
 
@@ -4221,6 +4618,10 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
       break;
     case MenuAction::NewFolder: g_newFolder = true; break;
     case MenuAction::NewFile:   g_newFile = true; break;
+    case MenuAction::AddYoutubeChannel:
+      app.textInput.open("Channel URL", "");
+      app.pendingInput = PendingInput::YoutubeChannelUrl;
+      break;
     case MenuAction::EmptyTrash:
       app.modal.openConfirm("Empty Trash", "Permanently delete all items in Trash?");
       app.pendingConfirm = PendingConfirm::EmptyTrash;
@@ -4272,9 +4673,7 @@ static void drawContextMenu(
   {
     return;
   }
-  std::vector<MenuItem> items = (app.menuKind == MenuKind::Row)
-    ? buildRowMenuItems(app)
-    : buildEmptyMenuItems(app);
+  std::vector<MenuItem> items = menuItemsFor(app, app.menuKind);
   const int count = static_cast<int>(items.size());
   float menuH = kMenuPadY * 2.0f + kMenuItemHeight * static_cast<float>(count);
 
@@ -5480,12 +5879,24 @@ int main(int argc, char** argv)
     {
       if (g_rightClicked)
       {
-        openContextMenu(
-          app,
-          mainX,
-          listTop,
-          mainW,
-          listH);
+        if (g_mouseX < sidebarW && app.youtubeHeaderY >= 0.0f &&
+            g_mouseY >= app.youtubeHeaderY &&
+            g_mouseY <= app.youtubeHeaderY + app.youtubeHeaderH)
+        {
+          app.menuKind = MenuKind::SidebarYoutube;
+          app.menuX = g_mouseX;
+          app.menuY = g_mouseY;
+          app.menuRowIndex = -1;
+        }
+        else
+        {
+          openContextMenu(
+            app,
+            mainX,
+            listTop,
+            mainW,
+            listH);
+        }
         g_rightClicked = false;
       }
       else if (hadMenu && g_mouseClicked)
@@ -5519,7 +5930,7 @@ int main(int argc, char** argv)
     drawTabBar(vg, app, w);
     drawTopBar(vg, app, w);
     resetOnPathChange(app);
-    drawSidebar(vg, app.fm, app.sections, h - kStatusBarHeight, sidebarW);
+    drawSidebar(vg, app, h - kStatusBarHeight, sidebarW);
     if (g_sidebarDirty)
     {
       saveConfig(app);
@@ -5533,6 +5944,11 @@ int main(int argc, char** argv)
     else if (app.videoActive)
     {
       drawVideoControls(vg, app, mainX, mainY, mainW, h - mainY - kStatusBarHeight);
+    }
+    else if (app.browserMode == BrowserMode::YoutubeVideos)
+    {
+      drawYoutubeHeader(vg, mainX, mainY, mainW);
+      drawYoutubeRows(vg, app, mainX, listTop, mainW, listH);
     }
     else
     {

@@ -38,6 +38,7 @@ A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and ou
 - Command-line argument: `rah <path>` opens that directory (or the parent, if a file is given)
 - Font and icons embedded into the binary — no runtime asset files needed
 - Built-in music player (libmpv): when the current directory contains audio files, a panel appears above the status bar with prev / play-pause / stop / next, a draggable seek slider, a volume slider, and animated level bars. Double-clicking an audio file starts internal playback; the panel persists while something is playing even after navigating away
+- YouTube integration: right-click the "Youtube" sidebar header and choose "Add Channel" to paste a channel URL. Clicking a channel lists its videos (Title / Duration / Uploaded) in the main panel; double-click (or Enter) plays the video in the built-in player. Breadcrumb shows `Youtube / <channel>`; clicking `Youtube` returns to the file browser. Listing uses `yt-dlp` with a 15-minute on-disk cache under `~/.cache/rah/youtube/`
 
 ## Requirements
 
@@ -52,6 +53,8 @@ Other distributions: install the equivalent of GLFW 3, OpenGL development header
 Runtime dependencies: OpenGL 2.0 (works on Intel HD 3000 and older), GLFW's X11 backend, and libmpv (for the built-in music player).
 
 Optional: `unzip` (install with `sudo xbps-install -Su unzip`) enables extraction of `.zip` archives. `tar` handles tar-based archives and is part of the base system.
+
+Optional: `yt-dlp` (install with `sudo xbps-install -Su yt-dlp`) is required to list and play YouTube channels. Without it the Youtube section still appears but fetching a channel fails; playback itself relies on mpv's built-in ytdl hook.
 
 ## Build
 
@@ -123,6 +126,8 @@ theme.text	Text color (R,G,B floats)
 theme.rowSelected	Selected-row color (R,G,B floats)
 theme.rowHover	Hovered-row color (R,G,B floats)
 theme.rowStripe	Row stripe color (R,G,B floats; alpha fixed at 0.035)
+youtubeChannelN	Absolute URL of a YouTube channel; written when a channel is added via the sidebar menu
+	youtubeChannelNameN	Cached display name for the corresponding `youtubeChannelN` entry
 subFont	Subtitle font family used by the video player (libmpv `sub-font`); user-authored, written on save only if set
 subFontSize	Subtitle font size in pixels used by the video player (libmpv `sub-font-size`); user-authored, written on save only if set
 

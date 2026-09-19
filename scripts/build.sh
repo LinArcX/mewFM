@@ -82,9 +82,10 @@ g++ $CXXFLAGS -c src/main.cpp -o "$OUT/main.o"
 g++ $CXXFLAGS -c src/FileManager.cpp -o "$OUT/FileManager.o"
 g++ $CXXFLAGS -c src/MusicPlayer.cpp -o "$OUT/MusicPlayer.o"
 g++ $CXXFLAGS -c src/VideoPlayer.cpp -o "$OUT/VideoPlayer.o"
+g++ $CXXFLAGS -c src/YouTube.cpp -o "$OUT/YouTube.o"
 
 echo "${C_CYAN}>>> linking${C_RESET}"
-g++ "$OUT/impl.o" "$OUT/nanovg.o" "$OUT/main.o" "$OUT/FileManager.o" "$OUT/MusicPlayer.o" "$OUT/VideoPlayer.o" \
+g++ "$OUT/impl.o" "$OUT/nanovg.o" "$OUT/main.o" "$OUT/FileManager.o" "$OUT/MusicPlayer.o" "$OUT/VideoPlayer.o" "$OUT/YouTube.o" \
   $(pkg-config --cflags --libs glfw3 gl) \
   -lmpv \
   -lm -o "$OUT/rah"
