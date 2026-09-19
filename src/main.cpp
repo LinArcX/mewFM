@@ -53,7 +53,7 @@ namespace
   constexpr float kFilterBoxW     = 200.0f;
   constexpr float kFilterBoxH     =  24.0f;
   constexpr float kMusicPanelHeight = 44.0f;
-  constexpr int   kSpectrumBars    = 6;
+  constexpr int   kSpectrumBars    = 28;
 
   struct Place
   {
@@ -4106,19 +4106,6 @@ static void drawToast(NVGcontext* vg, const AppState& app, float w, float h)
   nvgText(vg, boxX + boxW * 0.5f, boxY + boxH * 0.5f, app.toast.message.c_str(), nullptr);
 }
 
-static NVGcolor spectrumColorAt(int index)
-{
-  switch (index)
-  {
-    case 0: return nvgRGBf(0.30f, 0.70f, 0.90f);
-    case 1: return nvgRGBf(0.30f, 0.85f, 0.45f);
-    case 2: return nvgRGBf(0.90f, 0.85f, 0.30f);
-    case 3: return nvgRGBf(0.95f, 0.65f, 0.25f);
-    case 4: return nvgRGBf(0.90f, 0.30f, 0.30f);
-    default: return nvgRGBf(0.65f, 0.35f, 0.85f);
-  }
-}
-
 static void drawPlayGlyph(NVGcontext* vg, float cx, float cy, float s)
 {
   nvgBeginPath(vg);
@@ -4245,7 +4232,7 @@ static void handleMusicPanel(AppState& app, float x, float w, float h, float pan
   const float timeW = 96.0f;
   const float volIconW = 20.0f;
   const float volW = 90.0f;
-  const float specW = 70.0f;
+  const float specW = 110.0f;
   const float gap1 = 10.0f;
   const float gap2 = 10.0f;
   const float gap3 = 8.0f;
@@ -4317,6 +4304,8 @@ static void handleMusicPanel(AppState& app, float x, float w, float h, float pan
 static void drawMusicPanel(NVGcontext* vg, AppState& app,
                            float x, float y, float w, float h)
 {
+  nvgSave(vg);
+  nvgScissor(vg, x, y, w, h);
   bndBackground(vg, x, y, w, h);
 
   const float pad = 8.0f;
@@ -4373,7 +4362,7 @@ static void drawMusicPanel(NVGcontext* vg, AppState& app,
   const float timeW = 96.0f;
   const float volIconW = 20.0f;
   const float volW = 90.0f;
-  const float specW = 70.0f;
+  const float specW = 110.0f;
   const float gap1 = 10.0f;
   const float gap2 = 10.0f;
   const float gap3 = 8.0f;
@@ -4471,31 +4460,63 @@ static void drawMusicPanel(NVGcontext* vg, AppState& app,
   nvgFillColor(vg, nvgRGBf(0.90f, 0.95f, 0.90f));
   nvgFill(vg);
 
-  const float barW = 4.0f;
-  const float barGap = 2.0f;
-  const float barsMaxH = h - 12.0f;
+  const float barW = 1.5f;
+  const float barGap = 2.5f;
+  const float barsMaxH = h - 10.0f;
   const float barsBaseY = cy + barsMaxH * 0.5f;
   const double t = glfwGetTime();
   for (int i = 0; i < kSpectrumBars; i++)
   {
-    float level = 0.15f;
+    unsigned int hash = static_cast<unsigned int>(i) * 2654435761u;
+    hash ^= hash >> 16;
+    const float colorRoll = static_cast<float>(hash & 0xFFu) / 255.0f;
+    NVGcolor barColor;
+    if (colorRoll < 0.72f)
+    {
+      barColor = nvgRGBf(0.30f, 0.65f, 0.85f);
+    }
+    else if (colorRoll < 0.90f)
+    {
+      barColor = nvgRGBf(0.85f, 0.80f, 0.30f);
+    }
+    else
+    {
+      barColor = nvgRGBf(0.90f, 0.32f, 0.32f);
+    }
+
+    float level = 0.08f;
     if (playing)
     {
-      const double phase = t * 6.0 + static_cast<double>(i) * 1.7;
-      level = 0.35f + 0.55f * static_cast<float>(0.5 + 0.5 * std::sin(phase));
+      const float phase = static_cast<float>(t) * 4.5f + static_cast<float>(i) * 0.9f;
+      const float v = std::sin(phase) * 0.5f
+                    + std::sin(phase * 1.7f) * 0.35f
+                    + std::sin(phase * 0.4f) * 0.15f;
+      level = 0.10f + 0.85f * (0.5f + 0.5f * v);
+      const float amp = 0.55f + 0.45f * (static_cast<float>((hash >> 8) & 0xFFu) / 255.0f);
+      level *= amp;
+      if (level > 1.0f)
+      {
+        level = 1.0f;
+      }
     }
     else if (active)
     {
-      level = 0.18f;
+      level = 0.10f;
     }
-    const float bh = barsMaxH * level;
+
+    float bh = barsMaxH * level;
+    if (bh < 3.0f)
+    {
+      bh = 3.0f;
+    }
     const float bxx = specX + static_cast<float>(i) * (barW + barGap);
     const float byy = barsBaseY - bh;
     nvgBeginPath(vg);
-    nvgRoundedRect(vg, bxx, byy, barW, bh, 1.5f);
-    nvgFillColor(vg, spectrumColorAt(i));
+    nvgRoundedRect(vg, bxx, byy, barW, bh, barW * 0.5f);
+    nvgFillColor(vg, barColor);
     nvgFill(vg);
   }
+  nvgRestore(vg);
 }
 
 static void drawStatusBar(NVGcontext* vg, AppState& app, float x, float y, float w)
