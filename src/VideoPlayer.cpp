@@ -23,12 +23,20 @@ static bool isYoutubeUrl(const std::string& url)
          url.find("youtu.be/") != std::string::npos;
 }
 
-static bool resolveYoutubeUrl(const std::string& ytUrl,
-                              std::string& videoUrl,
-                              std::string& audioUrl)
+void VideoPlayer::cancelResolve()
 {
-  videoUrl.clear();
-  audioUrl.clear();
+  if (m_resolveFd >= 0)
+  {
+    ::close(m_resolveFd);
+    m_resolveFd = -1;
+  }
+  m_resolvePid = -1;
+  m_resolveBuffer.clear();
+}
+
+bool VideoPlayer::startResolveYoutube(const std::string& ytUrl)
+{
+  cancelResolve();
 
   int pipefd[2];
   if (pipe(pipefd) != 0)
@@ -36,19 +44,31 @@ static bool resolveYoutubeUrl(const std::string& ytUrl,
     return false;
   }
 
+  int flags = fcntl(pipefd[0], F_GETFL, 0);
+  if (flags >= 0)
+  {
+    fcntl(pipefd[0], F_SETFL, flags | O_NONBLOCK);
+  }
+
   pid_t pid = fork();
   if (pid < 0)
   {
-    close(pipefd[0]);
-    close(pipefd[1]);
+    ::close(pipefd[0]);
+    ::close(pipefd[1]);
     return false;
   }
 
   if (pid == 0)
   {
-    close(pipefd[0]);
+    ::close(pipefd[0]);
     dup2(pipefd[1], STDOUT_FILENO);
-    close(pipefd[1]);
+    ::close(pipefd[1]);
+    int devnull = ::open("/dev/null", O_WRONLY);
+    if (devnull >= 0)
+    {
+      dup2(devnull, STDERR_FILENO);
+      ::close(devnull);
+    }
     const char* argv[] = {
       "yt-dlp",
       "-f", "bv*+ba/b",
@@ -61,65 +81,125 @@ static bool resolveYoutubeUrl(const std::string& ytUrl,
     _exit(127);
   }
 
-  close(pipefd[1]);
-  std::string output;
+  ::close(pipefd[1]);
+  m_resolveFd = pipefd[0];
+  m_resolvePid = pid;
+  m_resolveBuffer.clear();
+  return true;
+}
+
+bool VideoPlayer::loadResolved(const std::string& videoUrl, const std::string& audioUrl)
+{
+  if (m_pMpv == nullptr || videoUrl.empty())
+  {
+    return false;
+  }
+  if (!audioUrl.empty())
+  {
+    std::string audioOpt = "audio-file=" + audioUrl;
+    const char* cmd[] = {"loadfile", videoUrl.c_str(), "replace", "-1",
+                         audioOpt.c_str(), nullptr};
+    if (mpv_command(m_pMpv, cmd) < 0)
+    {
+      return false;
+    }
+  }
+  else
+  {
+    const char* cmd[] = {"loadfile", videoUrl.c_str(), "replace", nullptr};
+    if (mpv_command(m_pMpv, cmd) < 0)
+    {
+      return false;
+    }
+  }
+  m_renderUpdate = true;
+  return true;
+}
+
+void VideoPlayer::pollResolve()
+{
+  if (m_resolveFd < 0)
+  {
+    return;
+  }
+
+  bool eof = false;
   char buf[4096];
   while (true)
   {
-    ssize_t n = read(pipefd[0], buf, sizeof(buf));
+    ssize_t n = read(m_resolveFd, buf, sizeof(buf));
     if (n > 0)
     {
-      output.append(buf, static_cast<size_t>(n));
+      m_resolveBuffer.append(buf, static_cast<size_t>(n));
     }
     else if (n == 0)
     {
+      eof = true;
       break;
     }
     else if (errno == EINTR)
     {
       continue;
     }
-    else
+    else if (errno == EAGAIN || errno == EWOULDBLOCK)
     {
       break;
     }
-  }
-  close(pipefd[0]);
-
-  if (output.empty())
-  {
-    return false;
-  }
-
-  size_t nl1 = output.find('\n');
-  std::string line1 = (nl1 == std::string::npos) ? output : output.substr(0, nl1);
-  if (!line1.empty() && line1.back() == '\r')
-  {
-    line1.pop_back();
-  }
-  if (line1.empty())
-  {
-    return false;
-  }
-  videoUrl = line1;
-
-  if (nl1 != std::string::npos)
-  {
-    size_t start2 = nl1 + 1;
-    size_t nl2 = output.find('\n', start2);
-    std::string line2 = (nl2 == std::string::npos)
-      ? output.substr(start2)
-      : output.substr(start2, nl2 - start2);
-    if (!line2.empty() && line2.back() == '\r')
+    else
     {
-      line2.pop_back();
-    }
-    if (!line2.empty())
-    {
-      audioUrl = line2;
+      eof = true;
+      break;
     }
   }
-  return true;
+
+  if (!eof)
+  {
+    return;
+  }
+
+  ::close(m_resolveFd);
+  m_resolveFd = -1;
+  m_resolvePid = -1;
+
+  std::string videoUrl;
+  std::string audioUrl;
+  if (!m_resolveBuffer.empty())
+  {
+    size_t nl1 = m_resolveBuffer.find('\n');
+    std::string line1 = (nl1 == std::string::npos)
+      ? m_resolveBuffer
+      : m_resolveBuffer.substr(0, nl1);
+    if (!line1.empty() && line1.back() == '\r')
+    {
+      line1.pop_back();
+    }
+    if (!line1.empty())
+    {
+      videoUrl = line1;
+      if (nl1 != std::string::npos)
+      {
+        size_t start2 = nl1 + 1;
+        size_t nl2 = m_resolveBuffer.find('\n', start2);
+        std::string line2 = (nl2 == std::string::npos)
+          ? m_resolveBuffer.substr(start2)
+          : m_resolveBuffer.substr(start2, nl2 - start2);
+        if (!line2.empty() && line2.back() == '\r')
+        {
+          line2.pop_back();
+        }
+        if (!line2.empty())
+        {
+          audioUrl = line2;
+        }
+      }
+    }
+  }
+  m_resolveBuffer.clear();
+
+  if (videoUrl.empty() || !loadResolved(videoUrl, audioUrl))
+  {
+    m_state = VideoPlayerState::Failed;
+  }
 }
 
 VideoPlayer::VideoPlayer()
@@ -198,6 +278,7 @@ bool VideoPlayer::init()
 
 void VideoPlayer::shutdown()
 {
+  cancelResolve();
   if (m_pRender != nullptr)
   {
     mpv_render_context_free(m_pRender);
@@ -227,34 +308,22 @@ bool VideoPlayer::open(const std::string& path)
   {
     return false;
   }
-  std::string resolvedPath = path;
-  std::string audioUrl;
+  cancelResolve();
   if (isYoutubeUrl(path))
   {
-    std::string videoUrl;
-    if (!resolveYoutubeUrl(path, videoUrl, audioUrl))
+    if (!startResolveYoutube(path))
     {
       return false;
     }
-    resolvedPath = videoUrl;
+    m_currentFile = path;
+    m_state = VideoPlayerState::Loading;
+    m_renderUpdate = true;
+    return true;
   }
-  if (!audioUrl.empty())
+  const char* cmd[] = {"loadfile", path.c_str(), "replace", nullptr};
+  if (mpv_command(m_pMpv, cmd) < 0)
   {
-    std::string audioOpt = "audio-file=" + audioUrl;
-    const char* cmd[] = {"loadfile", resolvedPath.c_str(), "replace", "-1",
-                         audioOpt.c_str(), nullptr};
-    if (mpv_command(m_pMpv, cmd) < 0)
-    {
-      return false;
-    }
-  }
-  else
-  {
-    const char* cmd[] = {"loadfile", resolvedPath.c_str(), "replace", nullptr};
-    if (mpv_command(m_pMpv, cmd) < 0)
-    {
-      return false;
-    }
+    return false;
   }
   m_currentFile = path;
   m_state = VideoPlayerState::Loading;
@@ -264,6 +333,7 @@ bool VideoPlayer::open(const std::string& path)
 
 void VideoPlayer::close()
 {
+  cancelResolve();
   if (m_pMpv == nullptr)
   {
     return;
@@ -276,6 +346,10 @@ void VideoPlayer::close()
 
 void VideoPlayer::update()
 {
+  if (m_resolveFd >= 0)
+  {
+    pollResolve();
+  }
   if (m_pMpv == nullptr)
   {
     return;
@@ -323,7 +397,7 @@ void VideoPlayer::togglePause()
     m_state = (paused == 1) ? VideoPlayerState::Paused : VideoPlayerState::Playing;
     return;
   }
-  play();
+  (void)play();
 }
 
 bool VideoPlayer::play()

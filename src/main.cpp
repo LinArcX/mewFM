@@ -4195,7 +4195,7 @@ static void applyScroll(AppState& app, float listH)
       listH > 0.0f &&
       app.scrollOffset + listH >= contentH - 80.0f)
   {
-    app.youtube.loadMore();
+    (void)app.youtube.loadMore();
   }
 }
 
@@ -5668,6 +5668,8 @@ static void drawStatusBar(NVGcontext* vg, AppState& app, float x, float y, float
   nvgText(vg, x + kPadX, textY, left.c_str(), nullptr);
 
   const FileOpProgress& prog = app.fm.fileOpProgress();
+  const bool videoLoading = app.videoActive &&
+    (app.videoPlayer.state() == VideoPlayerState::Loading);
   if (prog.active)
   {
     float lb[4];
@@ -5755,6 +5757,49 @@ static void drawStatusBar(NVGcontext* vg, AppState& app, float x, float y, float
     if (pauseHover && g_mouseClicked)
     {
       app.fm.setFileOpPaused(!isPaused);
+    }
+  }
+  else if (videoLoading)
+  {
+    float lb[4];
+    nvgTextBounds(vg, 0.0f, 0.0f, left.c_str(), nullptr, lb);
+    float px = x + kPadX + (lb[2] - lb[0]) + 20.0f;
+
+    nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
+    nvgText(vg, px, textY, "Loading video...", nullptr);
+
+    float lb2[4];
+    nvgTextBounds(vg, 0.0f, 0.0f, "Loading video...", nullptr, lb2);
+    px += (lb2[2] - lb2[0]) + 10.0f;
+
+    const float barW = 140.0f;
+    const float barH = 8.0f;
+    const float barY = cy - barH * 0.5f;
+
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, px, barY, barW, barH, barH * 0.5f);
+    nvgFillColor(vg, nvgRGBf(0.18f, 0.18f, 0.18f));
+    nvgFill(vg);
+
+    const float t = static_cast<float>(glfwGetTime());
+    const float phase = t - static_cast<float>(static_cast<int>(t));
+    const float segW = barW * 0.35f;
+    float segX = px + (barW + segW) * phase - segW;
+    if (segX < px)
+    {
+      segX = px;
+    }
+    float segEnd = segX + segW;
+    if (segEnd > px + barW)
+    {
+      segEnd = px + barW;
+    }
+    if (segEnd > segX)
+    {
+      nvgBeginPath(vg);
+      nvgRoundedRect(vg, segX, barY, segEnd - segX, barH, barH * 0.5f);
+      nvgFillColor(vg, nvgRGBf(0.35f, 0.55f, 0.85f));
+      nvgFill(vg);
     }
   }
 
@@ -5891,6 +5936,14 @@ int main(int argc, char** argv)
     glfwPollEvents();
     app.musicPlayer.update();
     app.videoPlayer.update();
+
+    if (app.videoActive &&
+        app.videoPlayer.state() == VideoPlayerState::Failed)
+    {
+      app.videoPlayer.close();
+      app.videoActive = false;
+      app.toast.show("Could not open video");
+    }
 
     if (app.youtubeLoading)
     {

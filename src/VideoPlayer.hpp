@@ -3,6 +3,7 @@
 #include <mpv/client.h>
 #include <mpv/render_gl.h>
 #include <string>
+#include <sys/types.h>
 
 enum class VideoPlayerState
 {
@@ -55,6 +56,10 @@ public:
 
 private:
   static void onRenderUpdate(void* ctx);
+  void cancelResolve();
+  [[nodiscard]] bool startResolveYoutube(const std::string& ytUrl);
+  void pollResolve();
+  [[nodiscard]] bool loadResolved(const std::string& videoUrl, const std::string& audioUrl);
 
   struct mpv_handle* m_pMpv = nullptr;
   struct mpv_render_context* m_pRender = nullptr;
@@ -64,4 +69,8 @@ private:
   bool m_renderUpdate = true;
   std::string m_subFont;
   int m_subFontSize = 0;
+
+  pid_t m_resolvePid = -1;
+  int m_resolveFd = -1;
+  std::string m_resolveBuffer;
 };
