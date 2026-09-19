@@ -70,6 +70,9 @@ private:
   [[nodiscard]] bool startResolveYoutube(const std::string& ytUrl);
   void pollResolve();
   [[nodiscard]] bool loadResolved(const std::string& videoUrl, const std::string& audioUrl);
+  void cancelSubtitleFetch();
+  void startSubtitleFetch(const std::string& ytUrl);
+  void pollSubtitleFetch();
 
   struct mpv_handle* m_pMpv = nullptr;
   struct mpv_render_context* m_pRender = nullptr;
@@ -85,4 +88,6 @@ private:
   std::string m_resolveBuffer;
   std::string m_resolveFormat;
   int m_preferredHeight = 720;
+  pid_t m_subPid = -1;
+  std::string m_subDir;
 };

@@ -10,6 +10,10 @@
 #include <fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <dirent.h>
+#include <cctype>
+#include <cstdlib>
+#include <signal.h>
 
 static void* getGlProcAddress(void* ctx, const char* name)
 {
@@ -212,6 +216,10 @@ void VideoPlayer::pollResolve()
   {
     m_state = VideoPlayerState::Failed;
   }
+  else if (isYoutubeUrl(m_currentFile))
+  {
+    startSubtitleFetch(m_currentFile);
+  }
 }
 
 VideoPlayer::VideoPlayer()
@@ -291,6 +299,7 @@ bool VideoPlayer::init()
 void VideoPlayer::shutdown()
 {
   cancelResolve();
+  cancelSubtitleFetch();
   if (m_pRender != nullptr)
   {
     mpv_render_context_free(m_pRender);
@@ -346,6 +355,7 @@ bool VideoPlayer::open(const std::string& path)
 void VideoPlayer::close()
 {
   cancelResolve();
+  cancelSubtitleFetch();
   if (m_pMpv == nullptr)
   {
     return;
@@ -356,12 +366,172 @@ void VideoPlayer::close()
   m_currentFile.clear();
 }
 
+void VideoPlayer::cancelSubtitleFetch()
+{
+  if (m_subPid > 0)
+  {
+    kill(m_subPid, SIGTERM);
+  }
+  m_subPid = -1;
+  m_subDir.clear();
+}
+
+void VideoPlayer::startSubtitleFetch(const std::string& ytUrl)
+{
+  cancelSubtitleFetch();
+  if (m_pMpv == nullptr || ytUrl.empty())
+  {
+    return;
+  }
+
+  std::string id;
+  size_t pos = ytUrl.find("v=");
+  if (pos != std::string::npos)
+  {
+    id = ytUrl.substr(pos + 2);
+    size_t amp = id.find('&');
+    if (amp != std::string::npos)
+    {
+      id = id.substr(0, amp);
+    }
+  }
+  if (id.empty())
+  {
+    pos = ytUrl.find("youtu.be/");
+    if (pos != std::string::npos)
+    {
+      id = ytUrl.substr(pos + 9);
+      size_t q = id.find('?');
+      if (q != std::string::npos)
+      {
+        id = id.substr(0, q);
+      }
+    }
+  }
+  if (id.empty())
+  {
+    return;
+  }
+
+  const char* home = std::getenv("HOME");
+  const char* xdg = std::getenv("XDG_CACHE_HOME");
+  std::string base;
+  if (xdg != nullptr && xdg[0] != '\0')
+  {
+    base = xdg;
+  }
+  else if (home != nullptr)
+  {
+    base = std::string(home) + "/.cache";
+  }
+  else
+  {
+    return;
+  }
+  m_subDir = base + "/rah/youtube/subs/" + id;
+  std::string outTpl = m_subDir + "/%(lang)s.%(ext)s";
+
+  {
+    std::string cmd = "mkdir -p '" + m_subDir + "'";
+    (void)system(cmd.c_str());
+  }
+
+  pid_t pid = fork();
+  if (pid < 0)
+  {
+    m_subDir.clear();
+    return;
+  }
+  if (pid == 0)
+  {
+    int devnull = ::open("/dev/null", O_WRONLY);
+    if (devnull >= 0)
+    {
+      dup2(devnull, STDOUT_FILENO);
+      dup2(devnull, STDERR_FILENO);
+      ::close(devnull);
+    }
+    const char* argv[] = {
+      "yt-dlp",
+      "--skip-download",
+      "--write-subs",
+      "--write-auto-subs",
+      "--sub-langs", "all,-live_chat",
+      "--sub-format", "vtt/srt/best",
+      "--convert-subs", "srt",
+      "--no-warnings",
+      "-o", outTpl.c_str(),
+      ytUrl.c_str(),
+      nullptr,
+    };
+    execvp("yt-dlp", const_cast<char* const*>(argv));
+    _exit(127);
+  }
+  m_subPid = pid;
+}
+
+void VideoPlayer::pollSubtitleFetch()
+{
+  if (m_subPid <= 0 || m_subDir.empty() || m_pMpv == nullptr)
+  {
+    return;
+  }
+  if (kill(m_subPid, 0) == 0)
+  {
+    return;
+  }
+  m_subPid = -1;
+
+  DIR* dir = opendir(m_subDir.c_str());
+  if (dir == nullptr)
+  {
+    return;
+  }
+  struct dirent* ent;
+  while ((ent = readdir(dir)) != nullptr)
+  {
+    const char* name = ent->d_name;
+    if (name[0] == '.')
+    {
+      continue;
+    }
+    std::string lower = name;
+    for (size_t i = 0; i < lower.size(); i++)
+    {
+      lower[i] = static_cast<char>(std::tolower(static_cast<unsigned char>(lower[i])));
+    }
+    if (lower.size() < 4)
+    {
+      continue;
+    }
+    const bool isSrt = lower.size() >= 4 && lower.compare(lower.size() - 4, 4, ".srt") == 0;
+    const bool isVtt = lower.size() >= 4 && lower.compare(lower.size() - 4, 4, ".vtt") == 0;
+    if (!isSrt && !isVtt)
+    {
+      continue;
+    }
+    std::string full = m_subDir + "/" + name;
+    std::string lang = name;
+    size_t dot = lang.find('.');
+    if (dot != std::string::npos)
+    {
+      lang = lang.substr(0, dot);
+    }
+    const char* cmd[] = {
+      "sub-add", full.c_str(), "auto", lang.c_str(), lang.c_str(), nullptr
+    };
+    mpv_command(m_pMpv, cmd);
+  }
+  closedir(dir);
+}
+
 void VideoPlayer::update()
 {
   if (m_resolveFd >= 0)
   {
     pollResolve();
   }
+  pollSubtitleFetch();
   if (m_pMpv == nullptr)
   {
     return;

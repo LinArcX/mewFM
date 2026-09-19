@@ -4125,12 +4125,36 @@ static void handleKeyboardNav(AppState& app, float listH)
 
   if (g_refresh)
   {
-    if (!app.fm.refresh())
+    if (app.browserMode == BrowserMode::YoutubeVideos)
+    {
+      if (app.youtube.loadMore())
+      {
+        if (app.youtube.loadStatus() == YouTubeLoadStatus::Loading)
+        {
+          app.youtubeLoading = true;
+          app.youtubeLoadingName = app.youtube.activeChannelName();
+          if (app.youtubeLoadingName.empty())
+          {
+            app.youtubeLoadingName = "channel";
+          }
+        }
+      }
+      else
+      {
+        app.toast.show("No more videos");
+      }
+    }
+    else if (!app.fm.refresh())
     {
       app.modal.openInfo("Error", "Could not refresh.");
+      clearSelection(app);
+      app.scrollOffset = 0.0f;
     }
-    clearSelection(app);
-    app.scrollOffset = 0.0f;
+    else
+    {
+      clearSelection(app);
+      app.scrollOffset = 0.0f;
+    }
     g_refresh = false;
   }
 
@@ -4994,12 +5018,36 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
       app.pendingConfirm = PendingConfirm::EmptyTrash;
       break;
     case MenuAction::Refresh:
-      if (!app.fm.refresh())
+      if (app.browserMode == BrowserMode::YoutubeVideos)
+      {
+        if (app.youtube.loadMore())
+        {
+          if (app.youtube.loadStatus() == YouTubeLoadStatus::Loading)
+          {
+            app.youtubeLoading = true;
+            app.youtubeLoadingName = app.youtube.activeChannelName();
+            if (app.youtubeLoadingName.empty())
+            {
+              app.youtubeLoadingName = "channel";
+            }
+          }
+        }
+        else
+        {
+          app.toast.show("No more videos");
+        }
+      }
+      else if (!app.fm.refresh())
       {
         app.modal.openInfo("Error", "Could not refresh.");
+        clearSelection(app);
+        app.scrollOffset = 0.0f;
       }
-      clearSelection(app);
-      app.scrollOffset = 0.0f;
+      else
+      {
+        clearSelection(app);
+        app.scrollOffset = 0.0f;
+      }
       break;
     case MenuAction::AddBookmark:
       if (rowIdx >= 0)
@@ -6443,8 +6491,15 @@ int main(int argc, char** argv)
       else if (st == YouTubeLoadStatus::Failed)
       {
         app.youtubeLoading = false;
-        app.browserMode = BrowserMode::Files;
-        app.modal.openInfo("Error", "Could not fetch channel. Is yt-dlp installed?");
+        if (app.youtube.videos().empty())
+        {
+          app.browserMode = BrowserMode::Files;
+          app.modal.openInfo("Error", "Could not fetch channel. Is yt-dlp installed?");
+        }
+        else
+        {
+          app.toast.show("Could not load more videos");
+        }
       }
     }
     else if (app.youtube.loadStatus() == YouTubeLoadStatus::Loading)
