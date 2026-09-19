@@ -226,22 +226,36 @@ bool YouTubeManager::finishLoadFromData(const std::string& data, int index)
   parseVideoLines(data, parsed, channelName);
   if (parsed.empty())
   {
+    if (m_loadIsAppend)
+    {
+      m_hasMore = false;
+      return true;
+    }
     return false;
   }
   m_activeChannel = index;
-  m_videos = parsed;
-  if (!channelName.empty())
+  if (m_loadIsAppend)
   {
-    m_activeChannelName = channelName;
-    if (index >= 0 && index < static_cast<int>(m_channels.size()))
-    {
-      m_channels[static_cast<size_t>(index)].name = channelName;
-    }
+    m_videos.insert(m_videos.end(), parsed.begin(), parsed.end());
   }
   else
   {
-    m_activeChannelName = m_channels[static_cast<size_t>(index)].name;
+    m_videos = parsed;
+    if (!channelName.empty())
+    {
+      m_activeChannelName = channelName;
+      if (index >= 0 && index < static_cast<int>(m_channels.size()))
+      {
+        m_channels[static_cast<size_t>(index)].name = channelName;
+      }
+    }
+    else if (index >= 0 && index < static_cast<int>(m_channels.size()))
+    {
+      m_activeChannelName = m_channels[static_cast<size_t>(index)].name;
+    }
   }
+  m_loadedCount = static_cast<int>(m_videos.size());
+  m_hasMore = (static_cast<int>(parsed.size()) >= 10);
   return true;
 }
 
@@ -257,6 +271,96 @@ void YouTubeManager::cancelLoad()
   m_loadBuffer.clear();
   m_loadCachePath.clear();
   m_loadStatus = YouTubeLoadStatus::Idle;
+  m_loadIsAppend = false;
+}
+
+bool YouTubeManager::loadMore()
+{
+  if (m_loadStatus == YouTubeLoadStatus::Loading)
+  {
+    return false;
+  }
+  if (!m_hasMore)
+  {
+    return false;
+  }
+  if (m_activeChannel < 0 ||
+      m_activeChannel >= static_cast<int>(m_channels.size()))
+  {
+    return false;
+  }
+  if (m_loadFd >= 0)
+  {
+    return false;
+  }
+  const std::string& url = m_channels[static_cast<size_t>(m_activeChannel)].url;
+  m_loadChannelIndex = m_activeChannel;
+  m_loadCachePath.clear();
+  m_loadDisplayName = m_channels[static_cast<size_t>(m_activeChannel)].name;
+
+  int pipefd[2];
+  if (pipe(pipefd) != 0)
+  {
+    m_loadStatus = YouTubeLoadStatus::Failed;
+    return false;
+  }
+
+  int flags = fcntl(pipefd[0], F_GETFL, 0);
+  if (flags >= 0)
+  {
+    fcntl(pipefd[0], F_SETFL, flags | O_NONBLOCK);
+  }
+
+  char startBuf[16];
+  char endBuf[16];
+  std::snprintf(startBuf, sizeof(startBuf), "%d", m_loadedCount + 1);
+  std::snprintf(endBuf, sizeof(endBuf), "%d", m_loadedCount + 10);
+
+  pid_t pid = fork();
+  if (pid < 0)
+  {
+    close(pipefd[0]);
+    close(pipefd[1]);
+    m_loadStatus = YouTubeLoadStatus::Failed;
+    return false;
+  }
+
+  if (pid == 0)
+  {
+    close(pipefd[0]);
+    dup2(pipefd[1], STDOUT_FILENO);
+    close(pipefd[1]);
+    int devnull = open("/dev/null", O_WRONLY);
+    if (devnull >= 0)
+    {
+      dup2(devnull, STDERR_FILENO);
+      close(devnull);
+    }
+    const char* argv[] = {
+      "yt-dlp",
+      "--flat-playlist",
+      "--no-warnings",
+      "--ignore-errors",
+      "--playlist-start",
+      startBuf,
+      "--playlist-end",
+      endBuf,
+      "--print",
+      printFormat(),
+      url.c_str(),
+      nullptr,
+    };
+    execvp("yt-dlp", const_cast<char* const*>(argv));
+    _exit(127);
+  }
+
+  close(pipefd[1]);
+  m_loadFd = pipefd[0];
+  m_loadPid = pid;
+  m_loadBuffer.clear();
+  m_loadStatus = YouTubeLoadStatus::Loading;
+  m_loadIsAppend = true;
+  return true;
 }
 
 bool YouTubeManager::startLoadChannel(int index, bool forceNetwork)
@@ -275,6 +379,9 @@ bool YouTubeManager::startLoadChannel(int index, bool forceNetwork)
   m_loadChannelIndex = index;
   m_loadCachePath = cachePath;
   m_loadDisplayName = m_channels[static_cast<size_t>(index)].name;
+  m_loadedCount = 0;
+  m_hasMore = true;
+  m_loadIsAppend = false;
 
   if (!forceNetwork)
   {
@@ -331,6 +438,10 @@ bool YouTubeManager::startLoadChannel(int index, bool forceNetwork)
       "--flat-playlist",
       "--no-warnings",
       "--ignore-errors",
+      "--playlist-start",
+      "1",
+      "--playlist-end",
+      "10",
       "--print",
       printFormat(),
       url.c_str(),

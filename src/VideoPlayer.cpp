@@ -361,6 +361,12 @@ void VideoPlayer::render(unsigned int fbo, int width, int height)
   }
   m_renderUpdate = false;
 
+  uint64_t flags = mpv_render_context_update(m_pRender);
+  if (!(flags & MPV_RENDER_UPDATE_FRAME))
+  {
+    return;
+  }
+
   mpv_opengl_fbo fboParam{};
   fboParam.fbo = static_cast<int>(fbo);
   fboParam.w = width;

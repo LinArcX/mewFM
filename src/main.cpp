@@ -2692,7 +2692,10 @@ static void drawSidebar(NVGcontext* vg, AppState& app, float h, float visibleW)
       BNDwidgetState st = BND_DEFAULT;
       if (current) st = BND_ACTIVE;
       else if (hover) st = BND_HOVER;
-      bndToolButton(vg, itemX, y, itemW, itemH, BND_LEFT, st, p.icon, p.label.c_str());
+      nvgFontFace(vg, "sans");
+      nvgFontSize(vg, g_fontSize - 1.0f);
+      std::string shownLabel = truncateToWidth(vg, p.label, itemW - 40.0f);
+      bndToolButton(vg, itemX, y, itemW, itemH, BND_LEFT, st, p.icon, shownLabel.c_str());
       if (hover && g_mouseClicked)
       {
         if (isYoutube)
@@ -4187,6 +4190,13 @@ static void applyScroll(AppState& app, float listH)
     app.scrollOffset = maxScroll;
   }
   g_scrollY = 0.0f;
+
+  if (app.browserMode == BrowserMode::YoutubeVideos &&
+      listH > 0.0f &&
+      app.scrollOffset + listH >= contentH - 80.0f)
+  {
+    app.youtube.loadMore();
+  }
 }
 
 static bool isBookmarked(const AppState& app, const std::string& fullPath)
@@ -5897,6 +5907,10 @@ int main(int argc, char** argv)
         app.browserMode = BrowserMode::Files;
         app.modal.openInfo("Error", "Could not fetch channel. Is yt-dlp installed?");
       }
+    }
+    else if (app.youtube.loadStatus() == YouTubeLoadStatus::Loading)
+    {
+      app.youtube.pollLoad();
     }
 
     const FileOpStatus opStatus = app.fm.pollFileOp();

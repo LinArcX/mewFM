@@ -40,6 +40,7 @@ public:
   const std::vector<YouTubeVideo>& videos() const;
 
   [[nodiscard]] bool startLoadChannel(int index, bool forceNetwork);
+  [[nodiscard]] bool loadMore();
   YouTubeLoadStatus pollLoad();
   void cancelLoad();
   YouTubeLoadStatus loadStatus() const;
@@ -63,4 +64,7 @@ private:
   std::string m_loadBuffer;
   std::string m_loadCachePath;
   std::string m_loadDisplayName;
+  int m_loadedCount = 0;
+  bool m_hasMore = true;
+  bool m_loadIsAppend = false;
 };
