@@ -8,10 +8,7 @@
 #include "../third_party/oui-blendish/blendish.h"
 #include "FileManager.hpp"
 #include "Modal.hpp"
-#include "MusicPlayer.hpp"
 #include "TextInput.hpp"
-#include "VideoPlayer.hpp"
-#include "YouTube.hpp"
 #include "HurmitFont.hpp"
 #include "BlenderIcons.hpp"
 
@@ -57,8 +54,6 @@ namespace
   constexpr float kMenuPadY       =   4.0f;
   constexpr float kFilterBoxW     = 200.0f;
   constexpr float kFilterBoxH     =  24.0f;
-  constexpr float kMusicPanelHeight = 44.0f;
-  constexpr int   kSpectrumBars    = 28;
 
   struct Place
   {
@@ -83,8 +78,6 @@ namespace
     Rename,
     GoToPath,
     Filter,
-    YoutubeChannelUrl,
-    YoutubeSearch,
   };
 
   struct Editor
@@ -104,16 +97,6 @@ namespace
     None,
     Row,
     Empty,
-    SidebarYoutube,
-    SidebarYoutubeChannel,
-    YoutubeVideo,
-  };
-
-  enum class VideoMenuKind
-  {
-    None,
-    Quality,
-    Subs,
   };
 
   enum class MenuAction
@@ -121,7 +104,6 @@ namespace
     None,
     Open,
     EditHere,
-    View,
     Extract,
     Restore,
     Copy,
@@ -136,13 +118,6 @@ namespace
     Properties,
     AddBookmark,
     RemoveBookmark,
-    AddYoutubeChannel,
-    SearchYoutube,
-    MoveChannelUp,
-    MoveChannelDown,
-    RemoveYoutubeChannel,
-    SaveYoutubeChannel,
-    PeekYoutubeChannel,
   };
 
   struct MenuItem
@@ -204,12 +179,6 @@ namespace
     }
   };
 
-  enum class BrowserMode
-  {
-    Files,
-    YoutubeVideos,
-  };
-
   struct AppState
   {
     FileManager fm;
@@ -219,7 +188,7 @@ namespace
     PendingInput pendingInput = PendingInput::None;
     std::string renameOldName;
     PendingConfirm pendingConfirm = PendingConfirm::None;
-  bool pendingDeleteIsTrash = true;
+    bool pendingDeleteIsTrash = true;
     std::vector<std::string> pendingDeleteNames;
     std::vector<std::string> pendingRestoreNames;
     MenuKind menuKind = MenuKind::None;
@@ -244,42 +213,14 @@ namespace
     bool tabScrollToActive = true;
     Theme theme;
     Toast toast;
-    MusicPlayer musicPlayer;
-    bool musicSeekDrag = false;
-    bool musicVolDrag = false;
-    float musicSeekValue = 0.0f;
     bool previewVisible = true;
     int previewImage = -1;
     std::string previewPath;
     std::string previewText;
     Editor editor;
-    VideoPlayer videoPlayer;
-    bool videoActive = false;
-    unsigned int videoFbo = 0;
-    unsigned int videoTex = 0;
-    int videoTexW = 0;
-    int videoTexH = 0;
-    bool videoSeekDrag = false;
-    float videoSeekValue = 0.0f;
-    bool videoVolDrag = false;
-    double videoControlsLastActive = 0.0;
-    float videoLastMouseX = 0.0f;
-    float videoLastMouseY = 0.0f;
-    std::string subFont;
-    int subFontSize = 0;
     bool sidebarVisible = true;
     float sidebarAnim = 1.0f;
     float previewAnim = 1.0f;
-    YouTubeManager youtube;
-    BrowserMode browserMode = BrowserMode::Files;
-    float youtubeHeaderY = -1.0f;
-    float youtubeHeaderH = 0.0f;
-    bool youtubeLoading = false;
-    std::string youtubeLoadingName;
-    std::vector<float> youtubeItemYs;
-    int youtubeMenuChannelIndex = -1;
-    int youtubeQuality = 720;
-    VideoMenuKind videoMenu = VideoMenuKind::None;
     float sidebarScrollY = 0.0f;
   };
 
@@ -313,7 +254,7 @@ namespace
   bool  g_prevTab = false;
   int   g_mouseMods = 0;
   bool  g_rightClicked = false;
-  bool g_sidebarDirty = false;
+  bool  g_sidebarDirty = false;
 }
 
 static BNDwidgetTheme makeWidgetTheme()
@@ -343,7 +284,7 @@ static std::string configFilePath()
     const char* home = std::getenv("HOME");
     base = (home != nullptr) ? std::string(home) + "/.config" : ".";
   }
-  return base + "/rah/config";
+  return base + "/mewFM/config";
 }
 
 static bool parseThemeColor(const std::string& s, NVGcolor& out)
@@ -386,27 +327,6 @@ static bool parseThemeColor(const std::string& s, NVGcolor& out)
   return true;
 }
 
-static std::string youtubeChannelShortName(const std::string& name)
-{
-  const std::string prefixes[] = {
-    "https://www.youtube.com/",
-    "https://youtube.com/",
-    "http://www.youtube.com/",
-    "http://youtube.com/",
-    "www.youtube.com/",
-    "youtube.com/",
-  };
-  for (size_t i = 0; i < sizeof(prefixes) / sizeof(prefixes[0]); i++)
-  {
-    const std::string& p = prefixes[i];
-    if (name.size() > p.size() && name.compare(0, p.size(), p) == 0)
-    {
-      return name.substr(p.size());
-    }
-  }
-  return name;
-}
-
 static void loadConfig(AppState& app)
 {
   std::ifstream in(configFilePath());
@@ -419,10 +339,6 @@ static void loadConfig(AppState& app)
   int savedSortField = -1;
   int savedSortDir = -1;
   std::vector<std::string> savedBookmarks;
-  std::string subFont;
-  int subFontSize = 0;
-  std::map<int, std::string> youtubeUrls;
-  std::map<int, std::string> youtubeNames;
   std::string line;
   while (std::getline(in, line))
   {
@@ -494,39 +410,6 @@ static void loadConfig(AppState& app)
         app.theme.rowStripe = nvgRGBAf(c.r, c.g, c.b, 0.035f);
       }
     }
-    else if (key == "subFont")
-    {
-      subFont = val;
-    }
-    else if (key == "subFontSize")
-    {
-      subFontSize = std::atoi(val.c_str());
-    }
-    else if (key == "youtubeQuality")
-    {
-      int q = std::atoi(val.c_str());
-      if (q >= 0 && q <= 4320)
-      {
-        app.youtubeQuality = q;
-      }
-    }
-    else if (key.compare(0, 14, "youtubeChannel") == 0 && key.size() > 14 &&
-             key[14] >= '0' && key[14] <= '9')
-    {
-      int idx = std::atoi(key.c_str() + 14);
-      if (idx >= 0)
-      {
-        youtubeUrls[idx] = val;
-      }
-    }
-    else if (key.compare(0, 18, "youtubeChannelName") == 0 && key.size() > 18)
-    {
-      int idx = std::atoi(key.c_str() + 18);
-      if (idx >= 0)
-      {
-        youtubeNames[idx] = val;
-      }
-    }
     else if (key == "sidebarVisible")
     {
       app.sidebarVisible = (val != "0");
@@ -592,56 +475,6 @@ static void loadConfig(AppState& app)
     app.fm.setShowHidden(true);
   }
 
-  if (!subFont.empty())
-  {
-    app.subFont = subFont;
-    app.videoPlayer.setSubtitleFont(subFont);
-  }
-  if (subFontSize > 0)
-  {
-    app.subFontSize = subFontSize;
-    app.videoPlayer.setSubtitleFontSize(subFontSize);
-  }
-  app.videoPlayer.setPreferredHeight(app.youtubeQuality);
-
-  if (!youtubeUrls.empty())
-  {
-    std::vector<YouTubeChannel> channels;
-    for (std::map<int, std::string>::const_iterator it = youtubeUrls.begin();
-         it != youtubeUrls.end(); ++it)
-    {
-      YouTubeChannel ch;
-      ch.url = it->second;
-      std::map<int, std::string>::const_iterator nit = youtubeNames.find(it->first);
-      if (nit != youtubeNames.end() && !nit->second.empty())
-      {
-        ch.name = youtubeChannelShortName(nit->second);
-      }
-      else
-      {
-        ch.name = youtubeChannelShortName(it->second);
-      }
-      channels.push_back(ch);
-    }
-    app.youtube.setChannels(channels);
-    for (auto& s : app.sections)
-    {
-      if (s.key != "youtube")
-      {
-        continue;
-      }
-      for (size_t ci = 0; ci < channels.size(); ci++)
-      {
-        Place p;
-        p.label = channels[ci].name;
-        p.path = channels[ci].url;
-        p.icon = BND_ICON_FILE_MOVIE;
-        s.items.push_back(p);
-      }
-      break;
-    }
-  }
-
   std::error_code ec;
   if (!savedPath.empty() && std::filesystem::is_directory(savedPath, ec))
   {
@@ -685,22 +518,8 @@ static void saveConfig(const AppState& app)
   out << "hidden=" << (app.fm.showHidden() ? "1" : "0") << "\n";
   out << "sidebarVisible=" << (app.sidebarVisible ? "1" : "0") << "\n";
   out << "previewVisible=" << (app.previewVisible ? "1" : "0") << "\n";
-  for (size_t yi = 0; yi < app.youtube.channels().size(); yi++)
-  {
-    out << "youtubeChannel" << yi << "=" << app.youtube.channels()[yi].url << "\n";
-    out << "youtubeChannelName" << yi << "=" << app.youtube.channels()[yi].name << "\n";
-  }
   out << "sortField=" << static_cast<int>(app.fm.sortField()) << "\n";
   out << "sortDir=" << (app.fm.sortAscending() ? "0" : "1") << "\n";
-  out << "youtubeQuality=" << app.youtubeQuality << "\n";
-  if (!app.subFont.empty())
-  {
-    out << "subFont=" << app.subFont << "\n";
-  }
-  if (app.subFontSize > 0)
-  {
-    out << "subFontSize=" << app.subFontSize << "\n";
-  }
   for (const auto& s : app.sections)
   {
     out << "collapsed_" << s.key << "=" << (s.collapsed ? "1" : "0") << "\n";
@@ -711,29 +530,6 @@ static void saveConfig(const AppState& app)
         out << "bookmark=" << bm.path << "\n";
       }
     }
-  }
-}
-static void syncYoutubeChannelNames(AppState& app)
-{
-  for (auto& s : app.sections)
-  {
-    if (s.key != "youtube")
-    {
-      continue;
-    }
-    s.items.clear();
-    const auto& channels = app.youtube.channels();
-    for (size_t i = 0; i < channels.size(); i++)
-    {
-      Place p;
-      p.label = channels[i].name.empty()
-        ? youtubeChannelShortName(channels[i].url)
-        : channels[i].name;
-      p.path = channels[i].url;
-      p.icon = BND_ICON_FILE_MOVIE;
-      s.items.push_back(p);
-    }
-    break;
   }
 }
 
@@ -803,11 +599,6 @@ static std::vector<Section> buildSections()
   bookmarks.key = "bookmarks";
   bookmarks.title = "Bookmarks";
   all.push_back(bookmarks);
-
-  Section youtube;
-  youtube.key = "youtube";
-  youtube.title = "Youtube";
-  all.push_back(youtube);
 
   return all;
 }
@@ -1133,50 +924,6 @@ static void handleEditorKey(AppState& app, int key, int mods)
   }
 }
 
-static void handleVideoKey(AppState& app, int key, int mods)
-{
-  (void)mods;
-  VideoPlayer& vp = app.videoPlayer;
-  switch (key)
-  {
-    case GLFW_KEY_SPACE:
-    case GLFW_KEY_P:
-      vp.togglePause();
-      break;
-    case GLFW_KEY_ESCAPE:
-    case GLFW_KEY_Q:
-      vp.close();
-      app.videoActive = false;
-      break;
-    case GLFW_KEY_LEFT:
-      vp.seekAbsolute(vp.position() - 5.0);
-      break;
-    case GLFW_KEY_RIGHT:
-      vp.seekAbsolute(vp.position() + 5.0);
-      break;
-    case GLFW_KEY_HOME:
-      vp.seekAbsolute(0.0);
-      break;
-    case GLFW_KEY_END:
-    {
-      double d = vp.duration();
-      if (d > 0.0)
-      {
-        vp.seekAbsolute(d);
-      }
-      break;
-    }
-    case GLFW_KEY_UP:
-      vp.setVolume(vp.volume() + 5);
-      break;
-    case GLFW_KEY_DOWN:
-      vp.setVolume(vp.volume() - 5);
-      break;
-    default:
-      break;
-  }
-}
-
 static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
   (void)scancode;
@@ -1191,15 +938,6 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
       return;
     }
     handleEditorKey(*app, key, mods);
-    return;
-  }
-  if (app != nullptr && app->videoActive && !modalActive)
-  {
-    if (action != GLFW_PRESS && action != GLFW_REPEAT)
-    {
-      return;
-    }
-    handleVideoKey(*app, key, mods);
     return;
   }
   if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS && app != nullptr &&
@@ -1227,11 +965,6 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
     if (modalActive)
     {
       app->modal.close();
-      return;
-    }
-    if (app->browserMode == BrowserMode::YoutubeVideos)
-    {
-      app->browserMode = BrowserMode::Files;
       return;
     }
     return;
@@ -1759,70 +1492,6 @@ static int iconForEntry(const Entry& e)
   return BND_ICON_FILE_BLANK;
 }
 
-static bool isAudioExtension(const std::string& ext)
-{
-  return ext == "mp3"  || ext == "wav"  || ext == "flac" ||
-         ext == "ogg"  || ext == "opus" || ext == "m4a"  ||
-         ext == "aac"  || ext == "wma"  || ext == "alac" ||
-         ext == "aiff" || ext == "aif"  || ext == "ape"  ||
-         ext == "wv"   || ext == "mpc"  || ext == "tta";
-}
-
-static std::string extensionOfLower(const std::string& name)
-{
-  size_t dot = name.find_last_of('.');
-  if (dot == std::string::npos || dot + 1 >= name.size())
-  {
-    return std::string();
-  }
-  std::string ext = name.substr(dot + 1);
-  for (char& c : ext)
-  {
-    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-  }
-  return ext;
-}
-
-static std::vector<int> collectAudioIndices(const AppState& app)
-{
-  std::vector<int> out;
-  const auto& entries = app.fm.entries();
-  for (size_t i = 0; i < entries.size(); i++)
-  {
-    if (entries[i].isDirectory)
-    {
-      continue;
-    }
-    if (isAudioExtension(extensionOfLower(entries[i].name)))
-    {
-      out.push_back(static_cast<int>(i));
-    }
-  }
-  return out;
-}
-
-static std::vector<std::string> collectAudioPaths(const AppState& app)
-{
-  std::vector<std::string> out;
-  const auto& entries = app.fm.entries();
-  std::vector<int> idx = collectAudioIndices(app);
-  for (size_t i = 0; i < idx.size(); i++)
-  {
-    out.push_back(joinPath(app.fm.currentPath(), entries[idx[i]].name));
-  }
-  return out;
-}
-
-static bool shouldShowMusicPanel(const AppState& app)
-{
-  if (app.musicPlayer.isActive())
-  {
-    return true;
-  }
-  std::vector<int> idx = collectAudioIndices(app);
-  return !idx.empty();
-}
-
 static void openEntry(AppState& app, int index)
 {
   const auto& entries = app.fm.entries();
@@ -1839,30 +1508,6 @@ static void openEntry(AppState& app, int index)
     app.scrollOffset = 0.0f;
     return;
   }
-  if (isAudioExtension(extensionOfLower(e.name)))
-  {
-    std::vector<int> audioIdx = collectAudioIndices(app);
-    std::vector<std::string> paths;
-    paths.reserve(audioIdx.size());
-    int selPos = -1;
-    for (size_t i = 0; i < audioIdx.size(); i++)
-    {
-      const Entry& ae = entries[audioIdx[i]];
-      paths.push_back(joinPath(app.fm.currentPath(), ae.name));
-      if (audioIdx[i] == index)
-      {
-        selPos = static_cast<int>(i);
-      }
-    }
-    if (selPos >= 0)
-    {
-      if (!app.musicPlayer.playPlaylist(paths, selPos))
-      {
-        app.toast.show("Could not play audio");
-      }
-    }
-    return;
-  }
   if (e.isExecutable)
   {
     runExecutable(full);
@@ -1870,7 +1515,6 @@ static void openEntry(AppState& app, int index)
   }
   openWithDefaultApp(full);
 }
-
 
 static void showProperties(AppState& app, int index)
 {
@@ -2490,38 +2134,24 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
   }
 
   std::vector<std::pair<std::string, std::string>> crumbs;
-  const bool youtubeMode = (app.browserMode == BrowserMode::YoutubeVideos);
-  if (youtubeMode)
+  std::string path = fm.currentPath();
+  crumbs.push_back(std::make_pair(std::string("/"), std::string("/")));
+  std::string acc;
+  size_t i = (!path.empty() && path[0] == '/') ? 1 : 0;
+  while (i < path.size())
   {
-    crumbs.push_back(std::make_pair(std::string("Youtube"), std::string("!youtube_root")));
-    std::string chName = app.youtube.activeChannelName();
-    if (chName.empty())
+    size_t j = path.find('/', i);
+    if (j == std::string::npos)
     {
-      chName = app.youtube.isSearch() ? "Search" : "Channel";
+      j = path.size();
     }
-    crumbs.push_back(std::make_pair(chName, std::string("!youtube_channel")));
-  }
-  else
-  {
-    std::string path = fm.currentPath();
-    crumbs.push_back(std::make_pair(std::string("/"), std::string("/")));
-    std::string acc;
-    size_t i = (!path.empty() && path[0] == '/') ? 1 : 0;
-    while (i < path.size())
+    std::string seg = path.substr(i, j - i);
+    if (!seg.empty())
     {
-      size_t j = path.find('/', i);
-      if (j == std::string::npos)
-      {
-        j = path.size();
-      }
-      std::string seg = path.substr(i, j - i);
-      if (!seg.empty())
-      {
-        acc = acc.empty() ? ("/" + seg) : (acc + "/" + seg);
-        crumbs.push_back(std::make_pair(seg, acc));
-      }
-      i = j + 1;
+      acc = acc.empty() ? ("/" + seg) : (acc + "/" + seg);
+      crumbs.push_back(std::make_pair(seg, acc));
     }
+    i = j + 1;
   }
 
   nvgFontFace(vg, "sans");
@@ -2529,11 +2159,11 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
   float cy = kTabBarHeight + kToolBarHeight * 0.5f;
 
-    std::string navTo;
-  const float filterBoxX = youtubeMode ? w : (w - kFilterBoxW - kPadX);
+  std::string navTo;
+  const float filterBoxX = w - kFilterBoxW - kPadX;
   for (size_t k = 0; k < crumbs.size(); k++)
   {
-    const bool isRoot = !youtubeMode && (k == 0);
+    const bool isRoot = (k == 0);
     float segW;
     if (isRoot)
     {
@@ -2582,7 +2212,6 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
     }
   }
 
-  if (!youtubeMode)
   {
     const float filterBoxY = kTabBarHeight + (kToolBarHeight - kFilterBoxH) * 0.5f;
     bool filterHover = inRect(g_mouseX, g_mouseY, filterBoxX, filterBoxY, kFilterBoxW, kFilterBoxH);
@@ -2622,16 +2251,7 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
 
   if (!navTo.empty())
   {
-    if (navTo == "!youtube_root")
-    {
-      app.browserMode = BrowserMode::Files;
-      clearSelection(app);
-      app.scrollOffset = 0.0f;
-    }
-    else if (navTo != "!youtube_channel")
-    {
-      fm.setPath(navTo);
-    }
+    fm.setPath(navTo);
   }
 }
 
@@ -2658,10 +2278,6 @@ static void drawTriangle(NVGcontext* vg, float cx, float cy, float size, bool po
 
 static void drawSidebar(NVGcontext* vg, AppState& app, float h, float visibleW)
 {
-  app.youtubeHeaderY = -1.0f;
-  app.youtubeHeaderH = 0.0f;
-  app.youtubeItemYs.clear();
-
   if (visibleW < 1.0f)
   {
     return;
@@ -2691,7 +2307,7 @@ static void drawSidebar(NVGcontext* vg, AppState& app, float h, float visibleW)
   float contentH = 0.0f;
   for (const auto& sec : sections)
   {
-    if (sec.items.empty() && sec.key != "youtube")
+    if (sec.items.empty())
     {
       continue;
     }
@@ -2717,19 +2333,12 @@ static void drawSidebar(NVGcontext* vg, AppState& app, float h, float visibleW)
 
   float y = contentTop - app.sidebarScrollY;
   std::string navTo;
-  int youtubeChannelClicked = -1;
 
   for (auto& sec : sections)
   {
-    if (sec.items.empty() && sec.key != "youtube")
+    if (sec.items.empty())
     {
       continue;
-    }
-    const bool isYoutube = (sec.key == "youtube");
-    if (isYoutube)
-    {
-      app.youtubeHeaderY = y;
-      app.youtubeHeaderH = headerH;
     }
 
     bool headerHover = inRect(g_mouseX, g_mouseY, itemX, y, itemW, headerH);
@@ -2766,11 +2375,10 @@ static void drawSidebar(NVGcontext* vg, AppState& app, float h, float visibleW)
       continue;
     }
 
-    int itemIndex = 0;
     for (const auto& p : sec.items)
     {
       bool hover   = inRect(g_mouseX, g_mouseY, itemX, y, itemW, itemH);
-      bool current = !isYoutube && (fm.currentPath() == p.path);
+      bool current = (fm.currentPath() == p.path);
       BNDwidgetState st = BND_DEFAULT;
       if (current) st = BND_ACTIVE;
       else if (hover) st = BND_HOVER;
@@ -2778,22 +2386,10 @@ static void drawSidebar(NVGcontext* vg, AppState& app, float h, float visibleW)
       nvgFontSize(vg, g_fontSize - 1.0f);
       std::string shownLabel = truncateToWidth(vg, p.label, itemW - 40.0f);
       bndToolButton(vg, itemX, y, itemW, itemH, BND_LEFT, st, p.icon, shownLabel.c_str());
-      if (isYoutube)
-      {
-        app.youtubeItemYs.push_back(y);
-      }
       if (hover && g_mouseClicked)
       {
-        if (isYoutube)
-        {
-          youtubeChannelClicked = itemIndex;
-        }
-        else
-        {
-          navTo = p.path;
-        }
+        navTo = p.path;
       }
-      itemIndex++;
       y += itemH + itemGap;
     }
     y += 6.0f;
@@ -2832,30 +2428,6 @@ static void drawSidebar(NVGcontext* vg, AppState& app, float h, float visibleW)
 
   nvgRestore(vg);
   g_mouseX = savedMouseX;
-
-  if (youtubeChannelClicked >= 0)
-  {
-    if (app.youtube.startLoadChannel(youtubeChannelClicked, false))
-    {
-      app.browserMode = BrowserMode::YoutubeVideos;
-      clearSelection(app);
-      app.scrollOffset = 0.0f;
-      if (app.youtube.loadStatus() == YouTubeLoadStatus::Loading)
-      {
-        app.youtubeLoading = true;
-        app.youtubeLoadingName = app.youtube.channels()[static_cast<size_t>(youtubeChannelClicked)].name;
-      }
-      else
-      {
-        syncYoutubeChannelNames(app);
-        saveConfig(app);
-      }
-    }
-    else
-    {
-      app.modal.openInfo("Error", "Could not fetch channel. Install yt-dlp.");
-    }
-  }
 }
 
 static float columnX(const AppState& app, float listX, int col)
@@ -3108,117 +2680,14 @@ static bool isTextExtension(const std::string& ext)
          ext == "css";
 }
 
-static bool isVideoExtension(const std::string& ext)
-{
-  return ext == "mp4"  || ext == "mkv"  || ext == "avi"  ||
-         ext == "mov"  || ext == "webm" || ext == "flv"  ||
-         ext == "wmv"  || ext == "m4v"  || ext == "mpg"  ||
-         ext == "mpeg" || ext == "mpv"  || ext == "3gp"  ||
-         ext == "ogv"  || ext == "vob"  || ext == "m2ts";
-}
-
 static std::string currentSelectionPath(const AppState& app)
 {
-  if (app.browserMode == BrowserMode::YoutubeVideos)
-  {
-    const auto& videos = app.youtube.videos();
-    if (app.selectedIndex < 0 ||
-        app.selectedIndex >= static_cast<int>(videos.size()))
-    {
-      return std::string();
-    }
-    return videos[static_cast<size_t>(app.selectedIndex)].url;
-  }
   const auto& entries = app.fm.entries();
   if (app.selectedIndex < 0 || app.selectedIndex >= static_cast<int>(entries.size()))
   {
     return std::string();
   }
   return joinPath(app.fm.currentPath(), entries[app.selectedIndex].name);
-}
-
-static bool downloadYoutubeThumbnail(const std::string& videoId,
-                                     std::string& outPath)
-{
-  if (videoId.empty())
-  {
-    return false;
-  }
-  const std::string dir = YouTubeManager::cacheDir() + "/thumbs";
-  std::error_code ec;
-  std::filesystem::create_directories(dir, ec);
-  outPath = dir + "/" + videoId + ".jpg";
-  if (std::filesystem::is_regular_file(outPath, ec))
-  {
-    const auto sz = std::filesystem::file_size(outPath, ec);
-    if (!ec && sz > 500)
-    {
-      return true;
-    }
-  }
-  const std::string url =
-    "https://i.ytimg.com/vi/" + videoId + "/hqdefault.jpg";
-  pid_t pid = fork();
-  if (pid < 0)
-  {
-    return false;
-  }
-  if (pid == 0)
-  {
-    int outFd = ::open(outPath.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
-    if (outFd < 0)
-    {
-      _exit(127);
-    }
-    dup2(outFd, STDOUT_FILENO);
-    ::close(outFd);
-    int devnull = ::open("/dev/null", O_WRONLY);
-    if (devnull >= 0)
-    {
-      dup2(devnull, STDERR_FILENO);
-      ::close(devnull);
-    }
-    const char* argvCurl[] = {
-      "curl", "-fsSL", "--max-time", "8", url.c_str(), nullptr
-    };
-    execvp("curl", const_cast<char* const*>(argvCurl));
-    const char* argvWget[] = {
-      "wget", "-q", "-O", "-", "--timeout=8", url.c_str(), nullptr
-    };
-    execvp("wget", const_cast<char* const*>(argvWget));
-    _exit(127);
-  }
-  // SIGCHLD is SIG_IGN in main, so waitpid is unreliable; poll the file.
-  for (int i = 0; i < 50; i++)
-  {
-    usleep(100000);
-    if (std::filesystem::is_regular_file(outPath, ec))
-    {
-      const auto sz = std::filesystem::file_size(outPath, ec);
-      if (!ec && sz > 500)
-      {
-        return true;
-      }
-    }
-    if (kill(pid, 0) != 0)
-    {
-      break;
-    }
-  }
-  if (kill(pid, 0) == 0)
-  {
-    kill(pid, SIGTERM);
-  }
-  if (std::filesystem::is_regular_file(outPath, ec))
-  {
-    const auto sz = std::filesystem::file_size(outPath, ec);
-    if (!ec && sz > 500)
-    {
-      return true;
-    }
-  }
-  std::filesystem::remove(outPath, ec);
-  return false;
 }
 
 static void updatePreview(AppState& app, NVGcontext* vg)
@@ -3259,40 +2728,6 @@ static void updatePreview(AppState& app, NVGcontext* vg)
   app.previewPath = path;
   if (path.empty())
   {
-    return;
-  }
-
-  if (app.browserMode == BrowserMode::YoutubeVideos)
-  {
-    const auto& videos = app.youtube.videos();
-    if (app.selectedIndex >= 0 &&
-        app.selectedIndex < static_cast<int>(videos.size()))
-    {
-      std::string id = videos[static_cast<size_t>(app.selectedIndex)].id;
-      if (id.empty())
-      {
-        const std::string& u = videos[static_cast<size_t>(app.selectedIndex)].url;
-        const size_t pos = u.find("v=");
-        if (pos != std::string::npos)
-        {
-          id = u.substr(pos + 2);
-          const size_t amp = id.find('&');
-          if (amp != std::string::npos)
-          {
-            id = id.substr(0, amp);
-          }
-        }
-      }
-      std::string thumbPath;
-      if (!id.empty() && downloadYoutubeThumbnail(id, thumbPath))
-      {
-        int img = nvgCreateImage(vg, thumbPath.c_str(), 0);
-        if (img >= 0)
-        {
-          app.previewImage = img;
-        }
-      }
-    }
     return;
   }
 
@@ -3357,17 +2792,7 @@ static void drawPreviewPanel(
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
 
   std::string title = "Preview";
-  if (app.browserMode == BrowserMode::YoutubeVideos &&
-      app.selectedIndex >= 0 &&
-      app.selectedIndex < static_cast<int>(app.youtube.videos().size()))
-  {
-    title = app.youtube.videos()[static_cast<size_t>(app.selectedIndex)].title;
-    if (title.empty())
-    {
-      title = app.youtube.videos()[static_cast<size_t>(app.selectedIndex)].id;
-    }
-  }
-  else if (!app.previewPath.empty())
+  if (!app.previewPath.empty())
   {
     std::filesystem::path fp(app.previewPath);
     std::string name = fp.filename().string();
@@ -3522,143 +2947,6 @@ static void drawRows(NVGcontext* vg,
     nvgText(vg, columnX(app, x, 2), cy, typeText.c_str(), nullptr);
     nvgText(vg, columnX(app, x, 3), cy, ownerText.c_str(), nullptr);
     nvgText(vg, columnX(app, x, 4), cy, e.permText.c_str(), nullptr);
-  }
-  nvgRestore(vg);
-}
-
-static std::string formatYoutubeDuration(int seconds)
-{
-  if (seconds < 0)
-  {
-    return "-";
-  }
-  int h = seconds / 3600;
-  int m = (seconds % 3600) / 60;
-  int s = seconds % 60;
-  char buf[32];
-  if (h > 0)
-  {
-    std::snprintf(buf, sizeof(buf), "%d:%02d:%02d", h, m, s);
-  }
-  else
-  {
-    std::snprintf(buf, sizeof(buf), "%d:%02d", m, s);
-  }
-  return std::string(buf);
-}
-
-static std::string formatYoutubeDate(const std::string& raw)
-{
-  if (raw.empty() || raw == "NA" || raw == "None")
-  {
-    return "-";
-  }
-  if (raw.size() == 8)
-  {
-    bool allDigit = true;
-    for (size_t i = 0; i < 8; i++)
-    {
-      if (raw[i] < '0' || raw[i] > '9')
-      {
-        allDigit = false;
-        break;
-      }
-    }
-    if (allDigit)
-    {
-      return raw.substr(0, 4) + "-" + raw.substr(4, 2) + "-" + raw.substr(6, 2);
-    }
-  }
-  if (raw.size() >= 10 && raw[4] == '-' && raw[7] == '-')
-  {
-    return raw.substr(0, 10);
-  }
-  return raw;
-}
-
-static void drawYoutubeHeader(NVGcontext* vg, float x, float y, float w)
-{
-  bndBackground(vg, x, y, w, kHeaderHeight);
-
-  nvgFontFace(vg, "sans");
-  nvgFontSize(vg, g_fontSize - 1.0f);
-  nvgFillColor(vg, nvgRGBf(0.7f, 0.7f, 0.7f));
-  nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-  float cy = y + kHeaderHeight * 0.5f;
-
-  const float chanW = 140.0f;
-  const float durW = 90.0f;
-  const float dateW = 110.0f;
-  const float titleW = w - kPadX * 2.0f - chanW - durW - dateW;
-
-  nvgText(vg, x + kPadX, cy, " Title", nullptr);
-  nvgText(vg, x + kPadX + titleW, cy, " Channel", nullptr);
-  nvgText(vg, x + kPadX + titleW + chanW, cy, " Duration", nullptr);
-  nvgText(vg, x + kPadX + titleW + chanW + durW, cy, " Uploaded", nullptr);
-}
-
-static void drawYoutubeRows(NVGcontext* vg,
-                            const AppState& app,
-                            float x, float y, float w, float h)
-{
-  const auto& videos = app.youtube.videos();
-
-  nvgFontFace(vg, "sans");
-  nvgFontSize(vg, g_fontSize - 1.0f);
-  nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-
-  const float chanW = 140.0f;
-  const float durW = 90.0f;
-  const float dateW = 110.0f;
-  const float titleW = w - kPadX * 2.0f - chanW - durW - dateW;
-
-  nvgSave(vg);
-  nvgScissor(vg, x, y, w, h);
-  for (size_t i = 0; i < videos.size(); i++)
-  {
-    float rowY = y + static_cast<float>(i) * g_rowHeight - app.scrollOffset;
-    if (rowY + g_rowHeight < y)
-    {
-      continue;
-    }
-    if (rowY > y + h)
-    {
-      break;
-    }
-    if ((i % 2) == 0)
-    {
-      nvgBeginPath(vg);
-      nvgRect(vg, x, rowY, w, g_rowHeight);
-      nvgFillColor(vg, app.theme.rowStripe);
-      nvgFill(vg);
-    }
-    bool selected = isEntrySelected(app, static_cast<int>(i));
-    bool hover = inRect(g_mouseX, g_mouseY, x, rowY, w, g_rowHeight);
-    if (selected)
-    {
-      nvgBeginPath(vg);
-      nvgRect(vg, x, rowY, w, g_rowHeight);
-      nvgFillColor(vg, app.theme.rowSelected);
-      nvgFill(vg);
-    }
-    else if (hover)
-    {
-      nvgBeginPath(vg);
-      nvgRect(vg, x, rowY, w, g_rowHeight);
-      nvgFillColor(vg, app.theme.rowHover);
-      nvgFill(vg);
-    }
-    const YouTubeVideo& v = videos[i];
-    float cy = rowY + g_rowHeight * 0.5f;
-    std::string titleText = truncateToWidth(vg, v.title, titleW - 8.0f);
-    std::string chanText = truncateToWidth(vg, v.channel, chanW - 8.0f);
-    std::string durText = formatYoutubeDuration(v.duration);
-    std::string dateText = formatYoutubeDate(v.uploadDate);
-    nvgFillColor(vg, app.theme.text);
-    nvgText(vg, x + kPadX, cy, titleText.c_str(), nullptr);
-    nvgText(vg, x + kPadX + titleW, cy, chanText.c_str(), nullptr);
-    nvgText(vg, x + kPadX + titleW + chanW, cy, durText.c_str(), nullptr);
-    nvgText(vg, x + kPadX + titleW + chanW + durW, cy, dateText.c_str(), nullptr);
   }
   nvgRestore(vg);
 }
@@ -3842,32 +3130,6 @@ static void resetOnPathChange(AppState& app)
   saveConfig(app);
 }
 
-static void openYoutubeVideo(AppState& app, int idx)
-{
-  const auto& videos = app.youtube.videos();
-  if (idx < 0 || idx >= static_cast<int>(videos.size()))
-  {
-    return;
-  }
-  if (!app.videoPlayer.init())
-  {
-    app.modal.openInfo("Error", "Could not initialize video player.");
-    return;
-  }
-  if (!app.videoPlayer.open(videos[static_cast<size_t>(idx)].url))
-  {
-    app.modal.openInfo("Error", "Could not open video.");
-    return;
-  }
-  app.videoActive = true;
-  app.videoSeekDrag = false;
-  app.videoSeekValue = 0.0f;
-  app.videoVolDrag = false;
-  app.videoControlsLastActive = glfwGetTime();
-  app.videoLastMouseX = g_mouseX;
-  app.videoLastMouseY = g_mouseY;
-}
-
 static void handleListClick(AppState& app, float listX, float listTop, float listW, float listH)
 {
   if (!g_mouseClicked || !inRect(g_mouseX, g_mouseY, listX, listTop, listW, listH))
@@ -3875,9 +3137,7 @@ static void handleListClick(AppState& app, float listX, float listTop, float lis
     return;
   }
   int idx = static_cast<int>((g_mouseY - listTop + app.scrollOffset) / g_rowHeight);
-  int count = (app.browserMode == BrowserMode::YoutubeVideos)
-    ? static_cast<int>(app.youtube.videos().size())
-    : static_cast<int>(app.fm.entries().size());
+  int count = static_cast<int>(app.fm.entries().size());
   if (idx < 0 || idx >= count)
   {
     return;
@@ -3907,14 +3167,7 @@ static void handleListClick(AppState& app, float listX, float listTop, float lis
 
   if (isDouble)
   {
-    if (app.browserMode == BrowserMode::YoutubeVideos)
-    {
-      openYoutubeVideo(app, idx);
-    }
-    else
-    {
-      openEntry(app, idx);
-    }
+    openEntry(app, idx);
     app.lastClickIndex = -1;
     return;
   }
@@ -3923,10 +3176,7 @@ static void handleListClick(AppState& app, float listX, float listTop, float lis
 
 static void handleKeyboardNav(AppState& app, float listH)
 {
-  const bool youtubeMode = (app.browserMode == BrowserMode::YoutubeVideos);
-  int count = youtubeMode
-    ? static_cast<int>(app.youtube.videos().size())
-    : static_cast<int>(app.fm.entries().size());
+  int count = static_cast<int>(app.fm.entries().size());
   if (g_navUp && count > 0)
   {
     int newIdx = (app.selectedIndex <= 0) ? 0 : app.selectedIndex - 1;
@@ -3947,14 +3197,7 @@ static void handleKeyboardNav(AppState& app, float listH)
   }
   if (g_navEnter && app.selectedIndex >= 0)
   {
-    if (youtubeMode)
-    {
-      openYoutubeVideo(app, app.selectedIndex);
-    }
-    else
-    {
-      openEntry(app, app.selectedIndex);
-    }
+    openEntry(app, app.selectedIndex);
   }
   if (g_navBack)
   {
@@ -4135,26 +3378,7 @@ static void handleKeyboardNav(AppState& app, float listH)
 
   if (g_refresh)
   {
-    if (app.browserMode == BrowserMode::YoutubeVideos)
-    {
-      if (app.youtube.loadMore())
-      {
-        if (app.youtube.loadStatus() == YouTubeLoadStatus::Loading)
-        {
-          app.youtubeLoading = true;
-          app.youtubeLoadingName = app.youtube.activeChannelName();
-          if (app.youtubeLoadingName.empty())
-          {
-            app.youtubeLoadingName = "channel";
-          }
-        }
-      }
-      else
-      {
-        app.toast.show("No more videos");
-      }
-    }
-    else if (!app.fm.refresh())
+    if (!app.fm.refresh())
     {
       app.modal.openInfo("Error", "Could not refresh.");
       clearSelection(app);
@@ -4306,77 +3530,6 @@ static void handleTextInputResult(AppState& app)
       app.modal.openInfo("Error", "Could not open path.");
     }
   }
-
-  if (pending == PendingInput::YoutubeSearch)
-  {
-    std::string query = app.textInput.value;
-    if (query.empty())
-    {
-      return;
-    }
-    if (app.youtube.startSearch(query))
-    {
-      app.browserMode = BrowserMode::YoutubeVideos;
-      clearSelection(app);
-      app.scrollOffset = 0.0f;
-      app.youtubeLoadingName = "Search: " + query;
-      if (app.youtube.loadStatus() == YouTubeLoadStatus::Loading)
-      {
-        app.youtubeLoading = true;
-      }
-    }
-    else
-    {
-      app.modal.openInfo("Error", "Could not start search. Is yt-dlp installed?");
-    }
-    return;
-  }
-
-  if (pending == PendingInput::YoutubeChannelUrl)
-  {
-    std::string url = app.textInput.value;
-    if (url.empty())
-    {
-      return;
-    }
-    if (app.youtube.hasChannelUrl(url))
-    {
-      app.modal.openInfo("Channel already added", "This channel is already in the list.");
-      return;
-    }
-    const std::string shortName = youtubeChannelShortName(url);
-    YouTubeChannel ch;
-    ch.url = url;
-    ch.name = shortName;
-    if (!app.youtube.addChannel(ch))
-    {
-      app.modal.openInfo("Channel already added", "This channel is already in the list.");
-      return;
-    }
-    int newIdx = static_cast<int>(app.youtube.channels().size()) - 1;
-    syncYoutubeChannelNames(app);
-    if (app.youtube.startLoadChannel(newIdx, true))
-    {
-      app.browserMode = BrowserMode::YoutubeVideos;
-      clearSelection(app);
-      app.scrollOffset = 0.0f;
-      app.youtubeLoadingName = shortName;
-      if (app.youtube.loadStatus() == YouTubeLoadStatus::Loading)
-      {
-        app.youtubeLoading = true;
-      }
-      else
-      {
-        syncYoutubeChannelNames(app);
-        app.toast.show("Channel added");
-      }
-    }
-    else
-    {
-      app.toast.show("Could not fetch channel (need yt-dlp)");
-    }
-    saveConfig(app);
-  }
 }
 
 static void handleModalResult(AppState& app)
@@ -4504,9 +3657,7 @@ static void applyScroll(AppState& app, float listH)
     g_scrollY = 0.0f;
   }
 
-  const size_t itemCount = (app.browserMode == BrowserMode::YoutubeVideos)
-    ? app.youtube.videos().size()
-    : app.fm.entries().size();
+  const size_t itemCount = app.fm.entries().size();
   float contentH = static_cast<float>(itemCount) * g_rowHeight;
   float maxScroll = contentH - listH;
   if (maxScroll < 0.0f)
@@ -4523,13 +3674,6 @@ static void applyScroll(AppState& app, float listH)
     app.scrollOffset = maxScroll;
   }
   g_scrollY = 0.0f;
-
-  if (app.browserMode == BrowserMode::YoutubeVideos &&
-      listH > 0.0f &&
-      app.scrollOffset + listH >= contentH - 80.0f)
-  {
-    (void)app.youtube.loadMore();
-  }
 }
 
 static bool isBookmarked(const AppState& app, const std::string& fullPath)
@@ -4560,20 +3704,6 @@ static bool menuItemEnabled(const AppState& app, const MenuItem& item, int rowId
   if (!item.enabled)
   {
     return false;
-  }
-  if (item.action == MenuAction::View)
-  {
-    const auto& entries = app.fm.entries();
-    if (rowIdx < 0 || rowIdx >= static_cast<int>(entries.size()))
-    {
-      return false;
-    }
-    if (entries[rowIdx].isDirectory)
-    {
-      return false;
-    }
-    std::string ext = lowercaseExtension(entries[rowIdx].name);
-    return isVideoExtension(ext);
   }
   if (item.action == MenuAction::AddBookmark)
   {
@@ -4626,28 +3756,8 @@ static bool menuItemEnabled(const AppState& app, const MenuItem& item, int rowId
     }
     return FileManager::isArchive(entries[rowIdx].name);
   }
-  if (item.action == MenuAction::SaveYoutubeChannel ||
-      item.action == MenuAction::PeekYoutubeChannel)
-  {
-    const auto& videos = app.youtube.videos();
-    if (rowIdx < 0 || rowIdx >= static_cast<int>(videos.size()))
-    {
-      return false;
-    }
-    const std::string& curl = videos[static_cast<size_t>(rowIdx)].channelUrl;
-    if (curl.empty())
-    {
-      return false;
-    }
-    if (item.action == MenuAction::SaveYoutubeChannel)
-    {
-      return !app.youtube.hasChannelUrl(curl);
-    }
-    return true;
-  }
   return true;
 }
-
 
 static bool isInsideTrash(const AppState& app)
 {
@@ -4664,7 +3774,6 @@ static std::vector<MenuItem> buildRowMenuItems(const AppState& app)
   std::vector<MenuItem> items;
   items.push_back({"Open", MenuAction::Open, true});
   items.push_back({"Edit Here", MenuAction::EditHere, true});
-  items.push_back({"View", MenuAction::View, true});
   items.push_back({"Extract", MenuAction::Extract, true});
   if (isInsideTrash(app))
   {
@@ -4694,35 +3803,6 @@ static std::vector<MenuItem> buildEmptyMenuItems(const AppState& app)
   return items;
 }
 
-static std::vector<MenuItem> buildSidebarYoutubeMenuItems()
-{
-  std::vector<MenuItem> items;
-  items.push_back({"Add Channel", MenuAction::AddYoutubeChannel, true});
-  items.push_back({"Search", MenuAction::SearchYoutube, true});
-  return items;
-}
-
-static std::vector<MenuItem> buildSidebarYoutubeChannelMenuItems(const AppState& app)
-{
-  std::vector<MenuItem> items;
-  const int idx = app.youtubeMenuChannelIndex;
-  const int n = static_cast<int>(app.youtube.channels().size());
-  items.push_back({"Move Up", MenuAction::MoveChannelUp, idx > 0});
-  items.push_back({"Move Down", MenuAction::MoveChannelDown, idx >= 0 && idx < n - 1});
-  items.push_back({"Remove Channel", MenuAction::RemoveYoutubeChannel, idx >= 0});
-  return items;
-}
-
-static std::vector<MenuItem> buildYoutubeVideoMenuItems(const AppState& app)
-{
-  std::vector<MenuItem> items;
-  items.push_back({"Open", MenuAction::Open, true});
-  items.push_back({"Save channel", MenuAction::SaveYoutubeChannel, true});
-  items.push_back({"Peek channel", MenuAction::PeekYoutubeChannel, true});
-  (void)app;
-  return items;
-}
-
 static std::vector<MenuItem> menuItemsFor(const AppState& app, MenuKind kind)
 {
   if (kind == MenuKind::Row)
@@ -4733,15 +3813,7 @@ static std::vector<MenuItem> menuItemsFor(const AppState& app, MenuKind kind)
   {
     return buildEmptyMenuItems(app);
   }
-  if (kind == MenuKind::SidebarYoutubeChannel)
-  {
-    return buildSidebarYoutubeChannelMenuItems(app);
-  }
-  if (kind == MenuKind::YoutubeVideo)
-  {
-    return buildYoutubeVideoMenuItems(app);
-  }
-  return buildSidebarYoutubeMenuItems();
+  return std::vector<MenuItem>();
 }
 
 static MenuAction handleMenuClick(const AppState& app, float w, float h)
@@ -4789,26 +3861,6 @@ static void openContextMenu(
   if (inRect(g_mouseX, g_mouseY, listX, listTop, listW, listH))
   {
     int idx = static_cast<int>((g_mouseY - listTop + app.scrollOffset) / g_rowHeight);
-    if (app.browserMode == BrowserMode::YoutubeVideos)
-    {
-      int count = static_cast<int>(app.youtube.videos().size());
-      if (idx >= 0 && idx < count)
-      {
-        if (!isEntrySelected(app, idx))
-        {
-          setSingleSelection(app, idx);
-        }
-        else
-        {
-          app.selectedIndex = idx;
-        }
-        app.menuKind = MenuKind::YoutubeVideo;
-        app.menuRowIndex = idx;
-        return;
-      }
-      app.menuKind = MenuKind::Empty;
-      return;
-    }
     int count = static_cast<int>(app.fm.entries().size());
     if (idx >= 0 && idx < count)
     {
@@ -4865,7 +3917,6 @@ static void addBookmark(AppState& app, const std::string& fullPath)
   p.icon = BND_ICON_FILE_FOLDER;
   pBookmarks->items.push_back(p);
 }
-
 
 static void removeBookmark(AppState& app, const std::string& fullPath)
 {
@@ -4984,42 +4035,6 @@ static void beginEdit(AppState& app, int rowIdx)
   app.editor.dirty = false;
 }
 
-static void beginView(AppState& app, int rowIdx)
-{
-  const auto& entries = app.fm.entries();
-  if (rowIdx < 0 || rowIdx >= static_cast<int>(entries.size()))
-  {
-    return;
-  }
-  if (entries[rowIdx].isDirectory)
-  {
-    return;
-  }
-  std::string ext = lowercaseExtension(entries[rowIdx].name);
-  if (!isVideoExtension(ext))
-  {
-    return;
-  }
-  std::string full = joinPath(app.fm.currentPath(), entries[rowIdx].name);
-  if (!app.videoPlayer.init())
-  {
-    app.modal.openInfo("Error", "Could not initialize video player.");
-    return;
-  }
-  if (!app.videoPlayer.open(full))
-  {
-    app.modal.openInfo("Error", "Could not open video.");
-    return;
-  }
-  app.videoActive = true;
-  app.videoSeekDrag = false;
-  app.videoSeekValue = 0.0f;
-  app.videoVolDrag = false;
-  app.videoControlsLastActive = glfwGetTime();
-  app.videoLastMouseX = g_mouseX;
-  app.videoLastMouseY = g_mouseY;
-}
-
 static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
 {
   switch (action)
@@ -5032,9 +4047,6 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
       break;
     case MenuAction::EditHere:
       beginEdit(app, rowIdx);
-      break;
-    case MenuAction::View:
-      beginView(app, rowIdx);
       break;
     case MenuAction::Extract:
       if (rowIdx >= 0)
@@ -5071,127 +4083,12 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
       break;
     case MenuAction::NewFolder: g_newFolder = true; break;
     case MenuAction::NewFile:   g_newFile = true; break;
-    case MenuAction::AddYoutubeChannel:
-      app.textInput.open("Channel URL", "");
-      app.pendingInput = PendingInput::YoutubeChannelUrl;
-      break;
-    case MenuAction::SearchYoutube:
-      app.textInput.open("Search YouTube", "");
-      app.pendingInput = PendingInput::YoutubeSearch;
-      break;
-    case MenuAction::MoveChannelUp:
-      if (app.youtube.moveChannel(app.youtubeMenuChannelIndex, -1))
-      {
-        syncYoutubeChannelNames(app);
-        saveConfig(app);
-      }
-      break;
-    case MenuAction::MoveChannelDown:
-      if (app.youtube.moveChannel(app.youtubeMenuChannelIndex, 1))
-      {
-        syncYoutubeChannelNames(app);
-        saveConfig(app);
-      }
-      break;
-    case MenuAction::RemoveYoutubeChannel:
-      if (app.youtube.removeChannel(app.youtubeMenuChannelIndex))
-      {
-        if (app.browserMode == BrowserMode::YoutubeVideos &&
-            app.youtube.activeChannel() < 0)
-        {
-          app.browserMode = BrowserMode::Files;
-        }
-        syncYoutubeChannelNames(app);
-        saveConfig(app);
-        app.toast.show("Channel removed");
-      }
-      break;
-    case MenuAction::SaveYoutubeChannel:
-      if (rowIdx >= 0)
-      {
-        const auto& videos = app.youtube.videos();
-        if (rowIdx < static_cast<int>(videos.size()))
-        {
-          const YouTubeVideo& v = videos[static_cast<size_t>(rowIdx)];
-          if (!v.channelUrl.empty())
-          {
-            YouTubeChannel ch;
-            ch.url = v.channelUrl;
-            ch.name = v.channel.empty() ? youtubeChannelShortName(v.channelUrl) : v.channel;
-            if (app.youtube.addChannel(ch))
-            {
-              syncYoutubeChannelNames(app);
-              saveConfig(app);
-              app.toast.show("Channel saved");
-            }
-            else
-            {
-              app.toast.show("Channel already saved");
-            }
-          }
-        }
-      }
-      break;
-    case MenuAction::PeekYoutubeChannel:
-      if (rowIdx >= 0)
-      {
-        const auto& videos = app.youtube.videos();
-        if (rowIdx < static_cast<int>(videos.size()))
-        {
-          const YouTubeVideo& v = videos[static_cast<size_t>(rowIdx)];
-          if (!v.channelUrl.empty())
-          {
-            const std::string displayName = v.channel.empty()
-              ? youtubeChannelShortName(v.channelUrl)
-              : v.channel;
-            if (app.youtube.startLoadUrl(v.channelUrl, displayName))
-            {
-              app.browserMode = BrowserMode::YoutubeVideos;
-              clearSelection(app);
-              app.scrollOffset = 0.0f;
-              app.youtubeLoadingName = displayName;
-              if (app.youtube.loadStatus() == YouTubeLoadStatus::Loading)
-              {
-                app.youtubeLoading = true;
-              }
-              else
-              {
-                app.toast.show("Channel opened");
-              }
-            }
-            else
-            {
-              app.modal.openInfo("Error", "Could not open channel. Is yt-dlp installed?");
-            }
-          }
-        }
-      }
-      break;
     case MenuAction::EmptyTrash:
       app.modal.openConfirm("Empty Trash", "Permanently delete all items in Trash?");
       app.pendingConfirm = PendingConfirm::EmptyTrash;
       break;
     case MenuAction::Refresh:
-      if (app.browserMode == BrowserMode::YoutubeVideos)
-      {
-        if (app.youtube.loadMore())
-        {
-          if (app.youtube.loadStatus() == YouTubeLoadStatus::Loading)
-          {
-            app.youtubeLoading = true;
-            app.youtubeLoadingName = app.youtube.activeChannelName();
-            if (app.youtubeLoadingName.empty())
-            {
-              app.youtubeLoadingName = "channel";
-            }
-          }
-        }
-        else
-        {
-          app.toast.show("No more videos");
-        }
-      }
-      else if (!app.fm.refresh())
+      if (!app.fm.refresh())
       {
         app.modal.openInfo("Error", "Could not refresh.");
         clearSelection(app);
@@ -5317,55 +4214,6 @@ static std::string humanSize(unsigned long long bytes)
   return std::string(buf);
 }
 
-
-static void drawYoutubeLoading(NVGcontext* vg, float w, float h, const std::string& name)
-{
-  nvgBeginPath(vg);
-  nvgRect(vg, 0.0f, 0.0f, w, h);
-  nvgFillColor(vg, nvgRGBAf(0.0f, 0.0f, 0.0f, 0.35f));
-  nvgFill(vg);
-
-  const float boxW = 340.0f;
-  const float boxH = 110.0f;
-  float x = (w - boxW) * 0.5f;
-  float y = (h - boxH) * 0.5f;
-
-  nvgBeginPath(vg);
-  nvgRoundedRect(vg, x, y, boxW, boxH, 6.0f);
-  nvgFillColor(vg, nvgRGBf(0.22f, 0.22f, 0.22f));
-  nvgFill(vg);
-  nvgStrokeColor(vg, nvgRGBf(0.10f, 0.10f, 0.10f));
-  nvgStrokeWidth(vg, 1.0f);
-  nvgStroke(vg);
-
-  const float cx = x + boxW * 0.5f;
-  const float cy = y + 40.0f;
-  const float r = 14.0f;
-  const double t = glfwGetTime();
-  const float a0 = static_cast<float>(std::fmod(t * 4.0, 6.2831853));
-  const float a1 = a0 + 3.9f;
-
-  nvgBeginPath(vg);
-  nvgArc(vg, cx, cy, r, a0, a1, NVG_CW);
-  nvgStrokeColor(vg, nvgRGBf(0.40f, 0.70f, 0.90f));
-  nvgStrokeWidth(vg, 3.0f);
-  nvgLineCap(vg, NVG_ROUND);
-  nvgStroke(vg);
-
-  nvgFontFace(vg, "sans");
-  nvgFontSize(vg, g_fontSize);
-  nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.95f));
-  nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-  nvgText(vg, cx, y + boxH - 44.0f, "Fetching channel...", nullptr);
-
-  if (!name.empty())
-  {
-    nvgFontSize(vg, g_fontSize - 2.0f);
-    nvgFillColor(vg, nvgRGBf(0.70f, 0.70f, 0.70f));
-    nvgText(vg, cx, y + boxH - 20.0f, name.c_str(), nullptr);
-  }
-}
-
 static void drawToast(NVGcontext* vg, const AppState& app, float w, float h)
 {
   if (!app.toast.active())
@@ -5395,922 +4243,6 @@ static void drawToast(NVGcontext* vg, const AppState& app, float w, float h)
   nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.95f));
   nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
   nvgText(vg, boxX + boxW * 0.5f, boxY + boxH * 0.5f, app.toast.message.c_str(), nullptr);
-}
-
-static void drawPlayGlyph(NVGcontext* vg, float cx, float cy, float s)
-{
-  nvgBeginPath(vg);
-  nvgMoveTo(vg, cx - s * 0.45f, cy - s * 0.65f);
-  nvgLineTo(vg, cx + s * 0.65f, cy);
-  nvgLineTo(vg, cx - s * 0.45f, cy + s * 0.65f);
-  nvgClosePath(vg);
-  nvgFillColor(vg, nvgRGBf(0.92f, 0.92f, 0.92f));
-  nvgFill(vg);
-}
-
-static void drawPauseGlyph(NVGcontext* vg, float cx, float cy, float s)
-{
-  const float bw = s * 0.28f;
-  const float bh = s * 1.25f;
-  nvgBeginPath(vg);
-  nvgRect(vg, cx - s * 0.45f, cy - bh * 0.5f, bw, bh);
-  nvgRect(vg, cx + s * 0.45f - bw, cy - bh * 0.5f, bw, bh);
-  nvgFillColor(vg, nvgRGBf(0.92f, 0.92f, 0.92f));
-  nvgFill(vg);
-}
-
-static void drawStopGlyph(NVGcontext* vg, float cx, float cy, float s)
-{
-  const float sw = s * 0.85f;
-  nvgBeginPath(vg);
-  nvgRect(vg, cx - sw * 0.5f, cy - sw * 0.5f, sw, sw);
-  nvgFillColor(vg, nvgRGBf(0.92f, 0.92f, 0.92f));
-  nvgFill(vg);
-}
-
-static void drawPrevGlyph(NVGcontext* vg, float cx, float cy, float s)
-{
-  const float bw = s * 0.16f;
-  const float bh = s * 1.1f;
-  nvgBeginPath(vg);
-  nvgRect(vg, cx - s * 0.65f, cy - bh * 0.5f, bw, bh);
-  nvgFillColor(vg, nvgRGBf(0.92f, 0.92f, 0.92f));
-  nvgFill(vg);
-  nvgBeginPath(vg);
-  nvgMoveTo(vg, cx + s * 0.6f, cy - s * 0.55f);
-  nvgLineTo(vg, cx + s * 0.6f, cy + s * 0.55f);
-  nvgLineTo(vg, cx - s * 0.4f + bw, cy);
-  nvgClosePath(vg);
-  nvgFill(vg);
-}
-
-static void drawNextGlyph(NVGcontext* vg, float cx, float cy, float s)
-{
-  const float bw = s * 0.16f;
-  const float bh = s * 1.1f;
-  nvgBeginPath(vg);
-  nvgRect(vg, cx + s * 0.65f - bw, cy - bh * 0.5f, bw, bh);
-  nvgFillColor(vg, nvgRGBf(0.92f, 0.92f, 0.92f));
-  nvgFill(vg);
-  nvgBeginPath(vg);
-  nvgMoveTo(vg, cx - s * 0.6f, cy - s * 0.55f);
-  nvgLineTo(vg, cx - s * 0.6f, cy + s * 0.55f);
-  nvgLineTo(vg, cx + s * 0.4f - bw, cy);
-  nvgClosePath(vg);
-  nvgFill(vg);
-}
-
-static void handleMusicPanel(AppState& app, float x, float w, float h, float panelH)
-{
-  if (panelH <= 0.0f)
-  {
-    return;
-  }
-  const float panelY = h - kStatusBarHeight - panelH;
-  const float pad = 8.0f;
-  const float btnSize = 26.0f;
-  const float btnGap = 6.0f;
-  const float cy = panelY + panelH * 0.5f;
-  const float btnY = cy - btnSize * 0.5f;
-
-  float bx = x + pad;
-
-  if (inRect(g_mouseX, g_mouseY, bx, btnY, btnSize, btnSize) && g_mouseClicked)
-  {
-    if (!app.musicPlayer.previous())
-    {
-      app.toast.show("Nothing to play");
-    }
-  }
-  bx += btnSize + btnGap;
-
-  if (inRect(g_mouseX, g_mouseY, bx, btnY, btnSize, btnSize) && g_mouseClicked)
-  {
-    const MusicPlayerState st = app.musicPlayer.state();
-    if (st == MusicPlayerState::Idle)
-    {
-      std::vector<std::string> paths = collectAudioPaths(app);
-      if (!paths.empty())
-      {
-        if (!app.musicPlayer.playPlaylist(paths, 0))
-        {
-          app.toast.show("Could not play audio");
-        }
-      }
-    }
-    else
-    {
-      app.musicPlayer.togglePause();
-    }
-  }
-  bx += btnSize + btnGap;
-
-  if (inRect(g_mouseX, g_mouseY, bx, btnY, btnSize, btnSize) && g_mouseClicked)
-  {
-    app.musicPlayer.stop();
-  }
-  bx += btnSize + btnGap;
-
-  if (inRect(g_mouseX, g_mouseY, bx, btnY, btnSize, btnSize) && g_mouseClicked)
-  {
-    if (!app.musicPlayer.next())
-    {
-      app.toast.show("Nothing to play");
-    }
-  }
-  bx += btnSize + btnGap + 14.0f;
-
-  const float timeW = 96.0f;
-  const float volIconW = 20.0f;
-  const float volW = 90.0f;
-  const float specW = 110.0f;
-  const float gap1 = 10.0f;
-  const float gap2 = 10.0f;
-  const float gap3 = 8.0f;
-  const float rightEdge = x + w - pad;
-  float seekW = rightEdge - bx - (gap1 + timeW + gap2 + volIconW + 4.0f + volW + gap3 + specW);
-  if (seekW < 60.0f)
-  {
-    seekW = 60.0f;
-  }
-  const float seekX = bx;
-  const float volIconX = seekX + seekW + gap1 + timeW + gap2;
-  const float volX = volIconX + volIconW + 4.0f;
-
-  const float trackH = 6.0f;
-  const float hitH = 16.0f;
-  const float sliderY = cy - hitH * 0.5f;
-
-  const bool overSeek = inRect(g_mouseX, g_mouseY, seekX, sliderY, seekW, hitH);
-  if (g_mouseClicked && overSeek)
-  {
-    app.musicSeekDrag = true;
-    const double dur = app.musicPlayer.duration();
-    if (dur > 0.0)
-    {
-      app.musicSeekValue = static_cast<float>(app.musicPlayer.position() / dur);
-    }
-    else
-    {
-      app.musicSeekValue = 0.0f;
-    }
-  }
-  if (app.musicSeekDrag && g_mouseDown)
-  {
-    float frac = (g_mouseX - seekX) / seekW;
-    if (frac < 0.0f) frac = 0.0f;
-    if (frac > 1.0f) frac = 1.0f;
-    app.musicSeekValue = frac;
-  }
-  if (app.musicSeekDrag && !g_mouseDown)
-  {
-    app.musicSeekDrag = false;
-    const double dur = app.musicPlayer.duration();
-    if (dur > 0.0)
-    {
-      app.musicPlayer.setPosition(static_cast<double>(app.musicSeekValue) * dur);
-    }
-  }
-
-  const bool overVol = inRect(g_mouseX, g_mouseY, volX, sliderY, volW, hitH);
-  if (g_mouseClicked && overVol)
-  {
-    app.musicVolDrag = true;
-  }
-  if (app.musicVolDrag && g_mouseDown)
-  {
-    float frac = (g_mouseX - volX) / volW;
-    if (frac < 0.0f) frac = 0.0f;
-    if (frac > 1.0f) frac = 1.0f;
-    app.musicPlayer.setVolume(static_cast<int>(frac * 100.0f + 0.5f));
-  }
-  if (app.musicVolDrag && !g_mouseDown)
-  {
-    app.musicVolDrag = false;
-  }
-
-  (void)trackH;
-}
-
-static void drawMusicPanel(NVGcontext* vg, AppState& app,
-                           float x, float y, float w, float h)
-{
-  nvgSave(vg);
-  nvgScissor(vg, x, y, w, h);
-  bndBackground(vg, x, y, w, h);
-
-  const float pad = 8.0f;
-  const float btnSize = 26.0f;
-  const float btnGap = 6.0f;
-  const float cy = y + h * 0.5f;
-  const float btnY = cy - btnSize * 0.5f;
-
-  const MusicPlayerState st = app.musicPlayer.state();
-  const bool playing = (st == MusicPlayerState::Playing);
-  const bool active = (st != MusicPlayerState::Idle);
-
-  float bx = x + pad;
-
-  const bool prevHover = inRect(g_mouseX, g_mouseY, bx, btnY, btnSize, btnSize);
-  nvgBeginPath(vg);
-  nvgRoundedRect(vg, bx, btnY, btnSize, btnSize, 4.0f);
-  nvgFillColor(vg, prevHover ? nvgRGBf(0.32f, 0.32f, 0.32f) : nvgRGBf(0.22f, 0.22f, 0.22f));
-  nvgFill(vg);
-  drawPrevGlyph(vg, bx + btnSize * 0.5f, cy, 12.0f);
-  bx += btnSize + btnGap;
-
-  const bool playHover = inRect(g_mouseX, g_mouseY, bx, btnY, btnSize, btnSize);
-  nvgBeginPath(vg);
-  nvgRoundedRect(vg, bx, btnY, btnSize, btnSize, 4.0f);
-  nvgFillColor(vg, playHover ? nvgRGBf(0.32f, 0.32f, 0.32f) : nvgRGBf(0.22f, 0.22f, 0.22f));
-  nvgFill(vg);
-  if (playing)
-  {
-    drawPauseGlyph(vg, bx + btnSize * 0.5f, cy, 12.0f);
-  }
-  else
-  {
-    drawPlayGlyph(vg, bx + btnSize * 0.5f, cy, 12.0f);
-  }
-  bx += btnSize + btnGap;
-
-  const bool stopHover = inRect(g_mouseX, g_mouseY, bx, btnY, btnSize, btnSize);
-  nvgBeginPath(vg);
-  nvgRoundedRect(vg, bx, btnY, btnSize, btnSize, 4.0f);
-  nvgFillColor(vg, stopHover ? nvgRGBf(0.32f, 0.32f, 0.32f) : nvgRGBf(0.22f, 0.22f, 0.22f));
-  nvgFill(vg);
-  drawStopGlyph(vg, bx + btnSize * 0.5f, cy, 12.0f);
-  bx += btnSize + btnGap;
-
-  const bool nextHover = inRect(g_mouseX, g_mouseY, bx, btnY, btnSize, btnSize);
-  nvgBeginPath(vg);
-  nvgRoundedRect(vg, bx, btnY, btnSize, btnSize, 4.0f);
-  nvgFillColor(vg, nextHover ? nvgRGBf(0.32f, 0.32f, 0.32f) : nvgRGBf(0.22f, 0.22f, 0.22f));
-  nvgFill(vg);
-  drawNextGlyph(vg, bx + btnSize * 0.5f, cy, 12.0f);
-  bx += btnSize + btnGap + 14.0f;
-
-  const float timeW = 96.0f;
-  const float volIconW = 20.0f;
-  const float volW = 90.0f;
-  const float specW = 110.0f;
-  const float gap1 = 10.0f;
-  const float gap2 = 10.0f;
-  const float gap3 = 8.0f;
-  const float rightEdge = x + w - pad;
-  float seekW = rightEdge - bx - (gap1 + timeW + gap2 + volIconW + 4.0f + volW + gap3 + specW);
-  if (seekW < 60.0f)
-  {
-    seekW = 60.0f;
-  }
-  const float seekX = bx;
-  const float timeX = seekX + seekW + gap1;
-  const float volIconX = timeX + timeW + gap2;
-  const float volX = volIconX + volIconW + 4.0f;
-  const float specX = volX + volW + gap3;
-
-  const double dur = app.musicPlayer.duration();
-  const double pos = app.musicPlayer.position();
-  double shownPos = pos;
-  if (app.musicSeekDrag)
-  {
-    shownPos = static_cast<double>(app.musicSeekValue) * dur;
-  }
-
-  const float trackH = 6.0f;
-  const float trackY = cy - trackH * 0.5f;
-  const float trackW = seekW;
-
-  nvgBeginPath(vg);
-  nvgRoundedRect(vg, seekX, trackY, trackW, trackH, trackH * 0.5f);
-  nvgFillColor(vg, nvgRGBf(0.18f, 0.18f, 0.18f));
-  nvgFill(vg);
-
-  float progress = 0.0f;
-  if (dur > 0.0)
-  {
-    progress = static_cast<float>(shownPos / dur);
-    if (progress < 0.0f) progress = 0.0f;
-    if (progress > 1.0f) progress = 1.0f;
-  }
-  if (progress > 0.0f)
-  {
-    nvgBeginPath(vg);
-    nvgRoundedRect(vg, seekX, trackY, trackW * progress, trackH, trackH * 0.5f);
-    nvgFillColor(vg, nvgRGBf(0.35f, 0.55f, 0.85f));
-    nvgFill(vg);
-  }
-
-  const float handleR = 5.0f;
-  nvgBeginPath(vg);
-  nvgCircle(vg, seekX + trackW * progress, cy, handleR);
-  nvgFillColor(vg, nvgRGBf(0.85f, 0.90f, 1.00f));
-  nvgFill(vg);
-
-  char timeBuf[40];
-  int curSec = static_cast<int>(shownPos);
-  int durSec = static_cast<int>(dur);
-  if (curSec < 0) curSec = 0;
-  if (durSec < 0) durSec = 0;
-  std::snprintf(timeBuf, sizeof(timeBuf), "%d:%02d / %d:%02d",
-                curSec / 60, curSec % 60, durSec / 60, durSec % 60);
-  nvgFontFace(vg, "sans");
-  nvgFontSize(vg, g_fontSize - 3.0f);
-  nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
-  nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-  nvgText(vg, timeX, cy + 1.0f, timeBuf, nullptr);
-
-  nvgBeginPath(vg);
-  nvgMoveTo(vg, volIconX + 2.0f, cy - 4.0f);
-  nvgLineTo(vg, volIconX + 6.0f, cy - 4.0f);
-  nvgLineTo(vg, volIconX + 10.0f, cy - 8.0f);
-  nvgLineTo(vg, volIconX + 10.0f, cy + 8.0f);
-  nvgLineTo(vg, volIconX + 6.0f, cy + 4.0f);
-  nvgLineTo(vg, volIconX + 2.0f, cy + 4.0f);
-  nvgClosePath(vg);
-  nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
-  nvgFill(vg);
-
-  const int vol = app.musicPlayer.volume();
-  nvgBeginPath(vg);
-  nvgRoundedRect(vg, volX, trackY, volW, trackH, trackH * 0.5f);
-  nvgFillColor(vg, nvgRGBf(0.18f, 0.18f, 0.18f));
-  nvgFill(vg);
-  float volFrac = static_cast<float>(vol) / 100.0f;
-  if (volFrac < 0.0f) volFrac = 0.0f;
-  if (volFrac > 1.0f) volFrac = 1.0f;
-  if (volFrac > 0.0f)
-  {
-    nvgBeginPath(vg);
-    nvgRoundedRect(vg, volX, trackY, volW * volFrac, trackH, trackH * 0.5f);
-    nvgFillColor(vg, nvgRGBf(0.55f, 0.75f, 0.55f));
-    nvgFill(vg);
-  }
-  nvgBeginPath(vg);
-  nvgCircle(vg, volX + volW * volFrac, cy, handleR);
-  nvgFillColor(vg, nvgRGBf(0.90f, 0.95f, 0.90f));
-  nvgFill(vg);
-
-  const float barW = 1.5f;
-  const float barGap = 2.5f;
-  const float barsMaxH = h - 10.0f;
-  const float barsBaseY = cy + barsMaxH * 0.5f;
-  const double t = glfwGetTime();
-  for (int i = 0; i < kSpectrumBars; i++)
-  {
-    unsigned int hash = static_cast<unsigned int>(i) * 2654435761u;
-    hash ^= hash >> 16;
-    const float colorRoll = static_cast<float>(hash & 0xFFu) / 255.0f;
-    NVGcolor barColor;
-    if (colorRoll < 0.72f)
-    {
-      barColor = nvgRGBf(0.30f, 0.65f, 0.85f);
-    }
-    else if (colorRoll < 0.90f)
-    {
-      barColor = nvgRGBf(0.85f, 0.80f, 0.30f);
-    }
-    else
-    {
-      barColor = nvgRGBf(0.90f, 0.32f, 0.32f);
-    }
-
-    float level = 0.08f;
-    if (playing)
-    {
-      const float phase = static_cast<float>(t) * 4.5f + static_cast<float>(i) * 0.9f;
-      const float v = std::sin(phase) * 0.5f
-                    + std::sin(phase * 1.7f) * 0.35f
-                    + std::sin(phase * 0.4f) * 0.15f;
-      level = 0.10f + 0.85f * (0.5f + 0.5f * v);
-      const float amp = 0.55f + 0.45f * (static_cast<float>((hash >> 8) & 0xFFu) / 255.0f);
-      level *= amp;
-      if (level > 1.0f)
-      {
-        level = 1.0f;
-      }
-    }
-    else if (active)
-    {
-      level = 0.10f;
-    }
-
-    float bh = barsMaxH * level;
-    if (bh < 3.0f)
-    {
-      bh = 3.0f;
-    }
-    const float bxx = specX + static_cast<float>(i) * (barW + barGap);
-    const float byy = barsBaseY - bh;
-    nvgBeginPath(vg);
-    nvgRoundedRect(vg, bxx, byy, barW, bh, barW * 0.5f);
-    nvgFillColor(vg, barColor);
-    nvgFill(vg);
-  }
-  nvgRestore(vg);
-}
-
-static void ensureVideoFbo(AppState& app, int fw, int fh)
-{
-  if (app.videoFbo != 0 && app.videoTexW == fw && app.videoTexH == fh)
-  {
-    return;
-  }
-  if (app.videoFbo != 0)
-  {
-    glDeleteFramebuffers(1, &app.videoFbo);
-    app.videoFbo = 0;
-  }
-  if (app.videoTex != 0)
-  {
-    glDeleteTextures(1, &app.videoTex);
-    app.videoTex = 0;
-  }
-
-  glGenTextures(1, &app.videoTex);
-  glBindTexture(GL_TEXTURE_2D, app.videoTex);
-  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, fw, fh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-  glGenFramebuffers(1, &app.videoFbo);
-  glBindFramebuffer(GL_FRAMEBUFFER, app.videoFbo);
-  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, app.videoTex, 0);
-  GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
-  if (status != GL_FRAMEBUFFER_COMPLETE)
-  {
-    glDeleteFramebuffers(1, &app.videoFbo);
-    app.videoFbo = 0;
-    glDeleteTextures(1, &app.videoTex);
-    app.videoTex = 0;
-    app.videoTexW = 0;
-    app.videoTexH = 0;
-    return;
-  }
-  app.videoTexW = fw;
-  app.videoTexH = fh;
-}
-
-static void renderVideoFrame(AppState& app,
-                             float x, float y, float w, float h,
-                             float pxRatio, float fbH)
-{
-  if (!app.videoActive)
-  {
-    return;
-  }
-  int fw = static_cast<int>(w * pxRatio);
-  int fh = static_cast<int>(h * pxRatio);
-  if (fw < 2 || fh < 2)
-  {
-    return;
-  }
-  ensureVideoFbo(app, fw, fh);
-  if (app.videoFbo == 0)
-  {
-    return;
-  }
-
-  GLint prevViewport[4];
-  glGetIntegerv(GL_VIEWPORT, prevViewport);
-
-  if (app.videoPlayer.needsRender())
-  {
-    glBindFramebuffer(GL_FRAMEBUFFER, app.videoFbo);
-    glViewport(0, 0, fw, fh);
-    glDisable(GL_BLEND);
-    glDisable(GL_DEPTH_TEST);
-    glDisable(GL_SCISSOR_TEST);
-    glDisable(GL_STENCIL_TEST);
-    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
-    app.videoPlayer.render(app.videoFbo, fw, fh);
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-  }
-
-  int dx0 = static_cast<int>(x * pxRatio);
-  int dy0 = static_cast<int>(fbH - (y + h) * pxRatio);
-  int dx1 = static_cast<int>((x + w) * pxRatio);
-  int dy1 = static_cast<int>(fbH - y * pxRatio);
-
-  glBindFramebuffer(GL_READ_FRAMEBUFFER, app.videoFbo);
-  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
-  glBlitFramebuffer(0, 0, fw, fh, dx0, dy0, dx1, dy1, GL_COLOR_BUFFER_BIT, GL_LINEAR);
-  glBindFramebuffer(GL_FRAMEBUFFER, 0);
-  glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
-}
-
-static void drawVideoControls(NVGcontext* vg, AppState& app,
-                              float x, float y, float w, float h)
-{
-  VideoPlayer& vp = app.videoPlayer;
-
-  const float ctrlH = 56.0f;
-  const float ctrlY = y + h - ctrlH;
-
-  const bool mouseMoved = (g_mouseX != app.videoLastMouseX) ||
-                          (g_mouseY != app.videoLastMouseY);
-  app.videoLastMouseX = g_mouseX;
-  app.videoLastMouseY = g_mouseY;
-
-  const bool inCtrlArea = (g_mouseY >= ctrlY - 24.0f) && (g_mouseY <= y + h);
-  if ((mouseMoved && inCtrlArea) || app.videoSeekDrag || app.videoVolDrag)
-  {
-    app.videoControlsLastActive = glfwGetTime();
-  }
-
-  const double elapsed = glfwGetTime() - app.videoControlsLastActive;
-  float alpha = 1.0f;
-  if (elapsed >= 3.0)
-  {
-    alpha = 0.0f;
-  }
-  else if (elapsed > 2.5)
-  {
-    alpha = static_cast<float>(1.0 - (elapsed - 2.5) / 0.5);
-  }
-
-  if (alpha > 0.0f)
-  {
-    nvgSave(vg);
-    nvgGlobalAlpha(vg, alpha);
-
-  nvgBeginPath(vg);
-  nvgRect(vg, x, ctrlY, w, ctrlH);
-  nvgFillColor(vg, nvgRGBAf(0.0f, 0.0f, 0.0f, 0.65f));
-  nvgFill(vg);
-
-  const float pad = 12.0f;
-  const float btnSize = 32.0f;
-  const float btnGap = 8.0f;
-  const float cy = ctrlY + ctrlH * 0.5f;
-  const float btnY = cy - btnSize * 0.5f;
-  float bx = x + pad;
-
-  {
-    bool hover = inRect(g_mouseX, g_mouseY, bx, btnY, btnSize, btnSize);
-    nvgBeginPath(vg);
-    nvgRoundedRect(vg, bx, btnY, btnSize, btnSize, 4.0f);
-    nvgFillColor(vg, hover ? nvgRGBf(0.35f, 0.35f, 0.35f) : nvgRGBf(0.22f, 0.22f, 0.22f));
-    nvgFill(vg);
-    if (vp.isPlaying())
-    {
-      drawPauseGlyph(vg, bx + btnSize * 0.5f, cy, 14.0f);
-    }
-    else
-    {
-      drawPlayGlyph(vg, bx + btnSize * 0.5f, cy, 14.0f);
-    }
-    if (hover && g_mouseClicked)
-    {
-      vp.togglePause();
-    }
-    bx += btnSize + btnGap;
-  }
-
-  {
-    bool hover = inRect(g_mouseX, g_mouseY, bx, btnY, btnSize, btnSize);
-    nvgBeginPath(vg);
-    nvgRoundedRect(vg, bx, btnY, btnSize, btnSize, 4.0f);
-    nvgFillColor(vg, hover ? nvgRGBf(0.35f, 0.35f, 0.35f) : nvgRGBf(0.22f, 0.22f, 0.22f));
-    nvgFill(vg);
-    drawStopGlyph(vg, bx + btnSize * 0.5f, cy, 14.0f);
-    if (hover && g_mouseClicked)
-    {
-      vp.stop();
-      app.videoMenu = VideoMenuKind::None;
-    }
-    bx += btnSize + btnGap;
-  }
-
-  {
-    const float qW = 52.0f;
-    bool hover = inRect(g_mouseX, g_mouseY, bx, btnY, qW, btnSize);
-    nvgBeginPath(vg);
-    nvgRoundedRect(vg, bx, btnY, qW, btnSize, 4.0f);
-    nvgFillColor(vg, hover ? nvgRGBf(0.35f, 0.35f, 0.35f) : nvgRGBf(0.22f, 0.22f, 0.22f));
-    nvgFill(vg);
-    nvgFontFace(vg, "sans");
-    nvgFontSize(vg, g_fontSize - 4.0f);
-    nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
-    nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-    char qBuf[16];
-    if (vp.preferredHeight() > 0)
-    {
-      std::snprintf(qBuf, sizeof(qBuf), "%dp", vp.preferredHeight());
-    }
-    else
-    {
-      std::snprintf(qBuf, sizeof(qBuf), "Best");
-    }
-    nvgText(vg, bx + qW * 0.5f, cy + 1.0f, qBuf, nullptr);
-    if (hover && g_mouseClicked)
-    {
-      app.videoMenu = (app.videoMenu == VideoMenuKind::Quality)
-        ? VideoMenuKind::None
-        : VideoMenuKind::Quality;
-      app.videoControlsLastActive = glfwGetTime();
-    }
-    bx += qW + btnGap;
-  }
-
-  {
-    const float sW = 48.0f;
-    bool hover = inRect(g_mouseX, g_mouseY, bx, btnY, sW, btnSize);
-    nvgBeginPath(vg);
-    nvgRoundedRect(vg, bx, btnY, sW, btnSize, 4.0f);
-    nvgFillColor(vg, hover ? nvgRGBf(0.35f, 0.35f, 0.35f) : nvgRGBf(0.22f, 0.22f, 0.22f));
-    nvgFill(vg);
-    nvgFontFace(vg, "sans");
-    nvgFontSize(vg, g_fontSize - 4.0f);
-    nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
-    nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-    nvgText(vg, bx + sW * 0.5f, cy + 1.0f, "Subs", nullptr);
-    if (hover && g_mouseClicked)
-    {
-      app.videoMenu = (app.videoMenu == VideoMenuKind::Subs)
-        ? VideoMenuKind::None
-        : VideoMenuKind::Subs;
-      app.videoControlsLastActive = glfwGetTime();
-    }
-    bx += sW + btnGap;
-  }
-
-  const float timeW = 110.0f;
-  const float volW = 90.0f;
-  const float volIconW = 20.0f;
-  const float gap = 12.0f;
-  const float rightEdge = x + w - pad;
-  float seekW = rightEdge - bx - gap - timeW - gap - volIconW - 4.0f - volW - 8.0f;
-  if (seekW < 80.0f)
-  {
-    seekW = 80.0f;
-  }
-  const float seekX = bx;
-  const float timeX = seekX + seekW + gap;
-  const float volIconX = timeX + timeW + gap;
-  const float volX = volIconX + volIconW + 4.0f;
-
-  const double dur = vp.duration();
-  const double pos = vp.position();
-  double shownPos = pos;
-  if (app.videoSeekDrag && dur > 0.0)
-  {
-    shownPos = static_cast<double>(app.videoSeekValue) * dur;
-  }
-
-  const float trackH = 6.0f;
-  const float hitH = 18.0f;
-  const float trackY = cy - trackH * 0.5f;
-  const float hitY = cy - hitH * 0.5f;
-
-  const bool overSeek = inRect(g_mouseX, g_mouseY, seekX, hitY, seekW, hitH);
-  if (g_mouseClicked && overSeek)
-  {
-    app.videoSeekDrag = true;
-    app.videoSeekValue = (dur > 0.0) ? static_cast<float>(pos / dur) : 0.0f;
-  }
-  if (app.videoSeekDrag && g_mouseDown)
-  {
-    float frac = (g_mouseX - seekX) / seekW;
-    if (frac < 0.0f) frac = 0.0f;
-    if (frac > 1.0f) frac = 1.0f;
-    app.videoSeekValue = frac;
-  }
-  if (app.videoSeekDrag && !g_mouseDown)
-  {
-    app.videoSeekDrag = false;
-    if (dur > 0.0)
-    {
-      vp.seekAbsolute(static_cast<double>(app.videoSeekValue) * dur);
-    }
-  }
-
-  nvgBeginPath(vg);
-  nvgRoundedRect(vg, seekX, trackY, seekW, trackH, trackH * 0.5f);
-  nvgFillColor(vg, nvgRGBf(0.15f, 0.15f, 0.15f));
-  nvgFill(vg);
-
-  float progress = 0.0f;
-  if (dur > 0.0)
-  {
-    progress = static_cast<float>(shownPos / dur);
-    if (progress < 0.0f) progress = 0.0f;
-    if (progress > 1.0f) progress = 1.0f;
-  }
-  if (progress > 0.0f)
-  {
-    nvgBeginPath(vg);
-    nvgRoundedRect(vg, seekX, trackY, seekW * progress, trackH, trackH * 0.5f);
-    nvgFillColor(vg, nvgRGBf(0.35f, 0.55f, 0.85f));
-    nvgFill(vg);
-  }
-  nvgBeginPath(vg);
-  nvgCircle(vg, seekX + seekW * progress, cy, 5.0f);
-  nvgFillColor(vg, nvgRGBf(0.85f, 0.90f, 1.00f));
-  nvgFill(vg);
-
-  char timeBuf[48];
-  int curSec = static_cast<int>(shownPos);
-  int durSec = static_cast<int>(dur);
-  if (curSec < 0) curSec = 0;
-  if (durSec < 0) durSec = 0;
-  std::snprintf(timeBuf, sizeof(timeBuf), "%d:%02d / %d:%02d",
-                curSec / 60, curSec % 60, durSec / 60, durSec % 60);
-  nvgFontFace(vg, "sans");
-  nvgFontSize(vg, g_fontSize - 2.0f);
-  nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
-  nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-  nvgText(vg, timeX, cy + 1.0f, timeBuf, nullptr);
-
-  nvgBeginPath(vg);
-  nvgMoveTo(vg, volIconX + 2.0f, cy - 4.0f);
-  nvgLineTo(vg, volIconX + 6.0f, cy - 4.0f);
-  nvgLineTo(vg, volIconX + 10.0f, cy - 8.0f);
-  nvgLineTo(vg, volIconX + 10.0f, cy + 8.0f);
-  nvgLineTo(vg, volIconX + 6.0f, cy + 4.0f);
-  nvgLineTo(vg, volIconX + 2.0f, cy + 4.0f);
-  nvgClosePath(vg);
-  nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
-  nvgFill(vg);
-
-  const int vol = vp.volume();
-  const bool overVol = inRect(g_mouseX, g_mouseY, volX, hitY, volW, hitH);
-  if (g_mouseClicked && overVol)
-  {
-    app.videoVolDrag = true;
-  }
-  if (app.videoVolDrag && g_mouseDown)
-  {
-    float frac = (g_mouseX - volX) / volW;
-    if (frac < 0.0f) frac = 0.0f;
-    if (frac > 1.0f) frac = 1.0f;
-    vp.setVolume(static_cast<int>(frac * 100.0f + 0.5f));
-  }
-  if (app.videoVolDrag && !g_mouseDown)
-  {
-    app.videoVolDrag = false;
-  }
-  nvgBeginPath(vg);
-  nvgRoundedRect(vg, volX, trackY, volW, trackH, trackH * 0.5f);
-  nvgFillColor(vg, nvgRGBf(0.15f, 0.15f, 0.15f));
-  nvgFill(vg);
-  float volFrac = static_cast<float>(vol) / 100.0f;
-  if (volFrac < 0.0f) volFrac = 0.0f;
-  if (volFrac > 1.0f) volFrac = 1.0f;
-  if (volFrac > 0.0f)
-  {
-    nvgBeginPath(vg);
-    nvgRoundedRect(vg, volX, trackY, volW * volFrac, trackH, trackH * 0.5f);
-    nvgFillColor(vg, nvgRGBf(0.55f, 0.75f, 0.55f));
-    nvgFill(vg);
-  }
-  nvgBeginPath(vg);
-  nvgCircle(vg, volX + volW * volFrac, cy, 5.0f);
-  nvgFillColor(vg, nvgRGBf(0.90f, 0.95f, 0.90f));
-  nvgFill(vg);
-
-    nvgRestore(vg);
-  }
-
-  if (app.videoMenu == VideoMenuKind::Quality || app.videoMenu == VideoMenuKind::Subs)
-  {
-    app.videoControlsLastActive = glfwGetTime();
-    const float menuW = 160.0f;
-    const float rowH = 26.0f;
-    const float menuPad = 6.0f;
-    int rows = 0;
-    if (app.videoMenu == VideoMenuKind::Quality)
-    {
-      rows = 5;
-    }
-    else
-    {
-      rows = 1 + vp.subtitleTrackCount();
-      if (rows < 1)
-      {
-        rows = 1;
-      }
-    }
-    const float menuH = menuPad * 2.0f + static_cast<float>(rows) * rowH;
-    const float menuX = x + 12.0f;
-    const float menuY = ctrlY - menuH - 8.0f;
-
-    nvgBeginPath(vg);
-    nvgRoundedRect(vg, menuX, menuY, menuW, menuH, 4.0f);
-    nvgFillColor(vg, nvgRGBAf(0.12f, 0.12f, 0.12f, 0.95f));
-    nvgFill(vg);
-    nvgStrokeColor(vg, nvgRGBf(0.3f, 0.3f, 0.3f));
-    nvgStrokeWidth(vg, 1.0f);
-    nvgStroke(vg);
-
-    nvgFontFace(vg, "sans");
-    nvgFontSize(vg, g_fontSize - 3.0f);
-    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-
-    if (app.videoMenu == VideoMenuKind::Quality)
-    {
-      const int heights[] = {360, 480, 720, 1080, 0};
-      const char* labels[] = {"360p", "480p", "720p", "1080p", "Best"};
-      for (int i = 0; i < 5; i++)
-      {
-        const float ry = menuY + menuPad + static_cast<float>(i) * rowH;
-        const bool hover = inRect(g_mouseX, g_mouseY, menuX, ry, menuW, rowH);
-        const bool selected = (vp.preferredHeight() == heights[i]);
-        if (hover || selected)
-        {
-          nvgBeginPath(vg);
-          nvgRoundedRect(vg, menuX + 2.0f, ry, menuW - 4.0f, rowH, 3.0f);
-          nvgFillColor(vg, selected ? nvgRGBf(0.25f, 0.4f, 0.55f)
-                                    : nvgRGBf(0.22f, 0.22f, 0.22f));
-          nvgFill(vg);
-        }
-        nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
-        nvgText(vg, menuX + 12.0f, ry + rowH * 0.5f, labels[i], nullptr);
-        if (hover && g_mouseClicked)
-        {
-          app.youtubeQuality = heights[i];
-          app.videoPlayer.setPreferredHeight(heights[i]);
-          if (!app.videoPlayer.reopenWithHeight(heights[i]))
-          {
-            app.toast.show("Could not change quality");
-          }
-          else
-          {
-            saveConfig(app);
-          }
-          app.videoMenu = VideoMenuKind::None;
-        }
-      }
-    }
-    else
-    {
-      const int subCount = vp.subtitleTrackCount();
-      const int curSid = vp.currentSubtitleId();
-      for (int i = 0; i < rows; i++)
-      {
-        const float ry = menuY + menuPad + static_cast<float>(i) * rowH;
-        const bool hover = inRect(g_mouseX, g_mouseY, menuX, ry, menuW, rowH);
-        const int trackId = (i == 0) ? -1 : vp.subtitleTrackIdAt(i - 1);
-        const bool selected = (i == 0) ? (curSid < 0) : (curSid == trackId);
-        if (hover || selected)
-        {
-          nvgBeginPath(vg);
-          nvgRoundedRect(vg, menuX + 2.0f, ry, menuW - 4.0f, rowH, 3.0f);
-          nvgFillColor(vg, selected ? nvgRGBf(0.25f, 0.4f, 0.55f)
-                                    : nvgRGBf(0.22f, 0.22f, 0.22f));
-          nvgFill(vg);
-        }
-        nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
-        if (i == 0)
-        {
-          nvgText(vg, menuX + 12.0f, ry + rowH * 0.5f, "Off", nullptr);
-        }
-        else
-        {
-          std::string lab = vp.subtitleTrackLabelAt(i - 1);
-          if (lab.empty())
-          {
-            lab = "Track " + std::to_string(i);
-          }
-          nvgText(vg, menuX + 12.0f, ry + rowH * 0.5f, lab.c_str(), nullptr);
-        }
-        if (hover && g_mouseClicked)
-        {
-          vp.setSubtitleId(trackId);
-          app.videoMenu = VideoMenuKind::None;
-        }
-      }
-      if (subCount == 0 && rows == 1)
-      {
-        // only Off shown when no tracks
-      }
-    }
-  }
-
-  const float closeSize = 28.0f;
-  const float closeX = x + w - closeSize - 8.0f;
-  const float closeY = y + 8.0f;
-  const bool closeHover = inRect(g_mouseX, g_mouseY, closeX, closeY, closeSize, closeSize);
-  nvgBeginPath(vg);
-  nvgRoundedRect(vg, closeX, closeY, closeSize, closeSize, 4.0f);
-  nvgFillColor(vg, closeHover ? nvgRGBAf(0.7f, 0.2f, 0.2f, 0.85f) : nvgRGBAf(0.0f, 0.0f, 0.0f, 0.55f));
-  nvgFill(vg);
-  nvgFontFace(vg, "sans");
-  nvgFontSize(vg, g_fontSize);
-  nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.95f));
-  nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-  nvgText(vg, closeX + closeSize * 0.5f, closeY + closeSize * 0.5f, "X", nullptr);
-  if (closeHover && g_mouseClicked)
-  {
-    app.videoPlayer.close();
-    app.videoActive = false;
-    app.videoMenu = VideoMenuKind::None;
-  }
 }
 
 static void drawStatusBar(NVGcontext* vg, AppState& app, float x, float y, float w)
@@ -6356,8 +4288,6 @@ static void drawStatusBar(NVGcontext* vg, AppState& app, float x, float y, float
   nvgText(vg, x + kPadX, textY, left.c_str(), nullptr);
 
   const FileOpProgress& prog = app.fm.fileOpProgress();
-  const bool videoLoading = app.videoActive &&
-    (app.videoPlayer.state() == VideoPlayerState::Loading);
   if (prog.active)
   {
     float lb[4];
@@ -6447,49 +4377,6 @@ static void drawStatusBar(NVGcontext* vg, AppState& app, float x, float y, float
       app.fm.setFileOpPaused(!isPaused);
     }
   }
-  else if (videoLoading)
-  {
-    float lb[4];
-    nvgTextBounds(vg, 0.0f, 0.0f, left.c_str(), nullptr, lb);
-    float px = x + kPadX + (lb[2] - lb[0]) + 20.0f;
-
-    nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
-    nvgText(vg, px, textY, "Loading video...", nullptr);
-
-    float lb2[4];
-    nvgTextBounds(vg, 0.0f, 0.0f, "Loading video...", nullptr, lb2);
-    px += (lb2[2] - lb2[0]) + 10.0f;
-
-    const float barW = 140.0f;
-    const float barH = 8.0f;
-    const float barY = cy - barH * 0.5f;
-
-    nvgBeginPath(vg);
-    nvgRoundedRect(vg, px, barY, barW, barH, barH * 0.5f);
-    nvgFillColor(vg, nvgRGBf(0.18f, 0.18f, 0.18f));
-    nvgFill(vg);
-
-    const float t = static_cast<float>(glfwGetTime());
-    const float phase = t - static_cast<float>(static_cast<int>(t));
-    const float segW = barW * 0.35f;
-    float segX = px + (barW + segW) * phase - segW;
-    if (segX < px)
-    {
-      segX = px;
-    }
-    float segEnd = segX + segW;
-    if (segEnd > px + barW)
-    {
-      segEnd = px + barW;
-    }
-    if (segEnd > segX)
-    {
-      nvgBeginPath(vg);
-      nvgRoundedRect(vg, segX, barY, segEnd - segX, barH, barH * 0.5f);
-      nvgFillColor(vg, nvgRGBf(0.35f, 0.55f, 0.85f));
-      nvgFill(vg);
-    }
-  }
 
   nvgFillColor(vg, nvgRGBf(0.7f, 0.7f, 0.7f));
 
@@ -6503,7 +4390,6 @@ static void drawStatusBar(NVGcontext* vg, AppState& app, float x, float y, float
     nvgText(vg, x + w - kPadX, textY, right.c_str(), nullptr);
   }
 }
-
 
 static std::string expandTilde(const std::string& p)
 {
@@ -6543,7 +4429,7 @@ int main(int argc, char** argv)
   glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_ANY_PROFILE);
   glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_FALSE);
 
-  GLFWwindow* window = glfwCreateWindow(1024, 640, "rah", nullptr, nullptr);
+  GLFWwindow* window = glfwCreateWindow(1024, 640, "mewFM", nullptr, nullptr);
   if (!window)
   {
     glfwTerminate();
@@ -6583,14 +4469,6 @@ int main(int argc, char** argv)
   applyTheme();
 
   AppState app;
-  if (!app.musicPlayer.init())
-  {
-    std::cerr << "rah: could not initialize music player" << std::endl;
-  }
-  if (!app.videoPlayer.init())
-  {
-    std::cerr << "rah: could not initialize video player" << std::endl;
-  }
   glfwSetWindowUserPointer(window, &app);
   app.sections = buildSections();
   app.lastPath = app.fm.currentPath();
@@ -6615,58 +4493,13 @@ int main(int argc, char** argv)
     }
     else
     {
-      std::cerr << "rah: invalid path: " << argv[1] << std::endl;
+      std::cerr << "mewFM: invalid path: " << argv[1] << std::endl;
     }
   }
 
   while (!glfwWindowShouldClose(window))
   {
     glfwPollEvents();
-    app.musicPlayer.update();
-    app.videoPlayer.update();
-
-    if (app.videoActive &&
-        app.videoPlayer.state() == VideoPlayerState::Failed)
-    {
-      app.videoPlayer.close();
-      app.videoActive = false;
-      app.toast.show("Could not open video");
-    }
-
-    if (app.youtubeLoading)
-    {
-      const YouTubeLoadStatus st = app.youtube.pollLoad();
-      if (st == YouTubeLoadStatus::Done)
-      {
-        app.youtubeLoading = false;
-        syncYoutubeChannelNames(app);
-        saveConfig(app);
-      }
-      else if (st == YouTubeLoadStatus::Failed)
-      {
-        app.youtubeLoading = false;
-        if (app.youtube.videos().empty())
-        {
-          app.browserMode = BrowserMode::Files;
-          if (app.youtube.isSearch())
-          {
-            app.modal.openInfo("Error", "Search failed. Is yt-dlp installed?");
-          }
-          else
-          {
-            app.modal.openInfo("Error", "Could not fetch channel. Is yt-dlp installed?");
-          }
-        }
-        else
-        {
-          app.toast.show("Could not load more videos");
-        }
-      }
-    }
-    else if (app.youtube.loadStatus() == YouTubeLoadStatus::Loading)
-    {
-      app.youtube.pollLoad();
-    }
 
     const FileOpStatus opStatus = app.fm.pollFileOp();
     if (opStatus == FileOpStatus::FinishedCopy)
@@ -6693,7 +4526,7 @@ int main(int argc, char** argv)
     float w = static_cast<float>(winW);
     float h = static_cast<float>(winH);
 
-    const bool previewAllowed = app.previewVisible && !app.editor.active && !app.videoActive;
+    const bool previewAllowed = app.previewVisible && !app.editor.active;
     const float targetPreview = previewAllowed ? 1.0f : 0.0f;
     if (app.previewAnim < targetPreview)
     {
@@ -6707,7 +4540,7 @@ int main(int argc, char** argv)
     }
     const float previewW = kPreviewWidth * app.previewAnim;
 
-    const float targetSidebar = (app.sidebarVisible && !app.videoActive) ? 1.0f : 0.0f;
+    const float targetSidebar = app.sidebarVisible ? 1.0f : 0.0f;
     if (app.sidebarAnim < targetSidebar)
     {
       app.sidebarAnim += 0.15f;
@@ -6724,26 +4557,17 @@ int main(int argc, char** argv)
     float mainY = kTopBarHeight;
     float mainW = w - sidebarW - previewW;
     float listTop = mainY + kHeaderHeight;
-    const bool musicPanelVisible = !app.videoActive && shouldShowMusicPanel(app);
-    const float musicPanelH = musicPanelVisible ? kMusicPanelHeight : 0.0f;
-    float listH = h - listTop - kStatusBarHeight - musicPanelH;
+    float listH = h - listTop - kStatusBarHeight;
 
     glViewport(0, 0, fbW, fbH);
     glClearColor(app.theme.bg.r, app.theme.bg.g, app.theme.bg.b, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
-    if (app.videoActive)
-    {
-      renderVideoFrame(app, mainX, mainY, mainW,
-                       h - mainY - kStatusBarHeight,
-                       pxRatio, static_cast<float>(fbH));
-    }
-
     nvgBeginFrame(vg, w, h, pxRatio);
 
     resetOnPathChange(app);
     applyScroll(app, listH);
-    bool popupActive = app.modal.active || app.textInput.active || app.youtubeLoading;
+    bool popupActive = app.modal.active || app.textInput.active;
     bool clickBefore = g_mouseClicked;
     if (popupActive)
     {
@@ -6754,51 +4578,7 @@ int main(int argc, char** argv)
     {
       if (g_rightClicked)
       {
-        if (g_mouseX < sidebarW && app.youtubeHeaderY >= 0.0f &&
-            g_mouseY >= app.youtubeHeaderY &&
-            g_mouseY <= app.youtubeHeaderY + app.youtubeHeaderH)
-        {
-          app.menuKind = MenuKind::SidebarYoutube;
-          app.menuX = g_mouseX;
-          app.menuY = g_mouseY;
-          app.menuRowIndex = -1;
-          app.youtubeMenuChannelIndex = -1;
-        }
-        else if (g_mouseX < sidebarW && !app.youtubeItemYs.empty())
-        {
-          const float itemH = 26.0f;
-          int hit = -1;
-          for (size_t i = 0; i < app.youtubeItemYs.size(); i++)
-          {
-            const float iy = app.youtubeItemYs[i];
-            if (g_mouseY >= iy && g_mouseY <= iy + itemH)
-            {
-              hit = static_cast<int>(i);
-              break;
-            }
-          }
-          if (hit >= 0)
-          {
-            app.menuKind = MenuKind::SidebarYoutubeChannel;
-            app.menuX = g_mouseX;
-            app.menuY = g_mouseY;
-            app.menuRowIndex = -1;
-            app.youtubeMenuChannelIndex = hit;
-          }
-          else
-          {
-            openContextMenu(app, mainX, listTop, mainW, listH);
-          }
-        }
-        else
-        {
-          openContextMenu(
-            app,
-            mainX,
-            listTop,
-            mainW,
-            listH);
-        }
+        openContextMenu(app, mainX, listTop, mainW, listH);
         g_rightClicked = false;
       }
       else if (hadMenu && g_mouseClicked)
@@ -6813,10 +4593,6 @@ int main(int argc, char** argv)
       }
     }
     if (!popupActive)
-    {
-      handleMusicPanel(app, mainX, mainW, h, musicPanelH);
-    }
-    if (!app.videoActive)
     {
       handleListClick(app, mainX, listTop, mainW, listH);
     }
@@ -6843,15 +4619,6 @@ int main(int argc, char** argv)
     {
       drawEditor(vg, app, mainX, mainY, mainW, h - mainY - kStatusBarHeight);
     }
-    else if (app.videoActive)
-    {
-      drawVideoControls(vg, app, mainX, mainY, mainW, h - mainY - kStatusBarHeight);
-    }
-    else if (app.browserMode == BrowserMode::YoutubeVideos)
-    {
-      drawYoutubeHeader(vg, mainX, mainY, mainW);
-      drawYoutubeRows(vg, app, mainX, listTop, mainW, listH);
-    }
     else
     {
       drawMainHeader(vg, app, mainX, mainY, mainW);
@@ -6860,11 +4627,6 @@ int main(int argc, char** argv)
     if (previewW > 1.0f)
     {
       drawPreviewPanel(vg, app, mainX + mainW, mainY, previewW, h - mainY - kStatusBarHeight);
-    }
-    if (musicPanelVisible)
-    {
-      drawMusicPanel(vg, app, mainX, h - kStatusBarHeight - musicPanelH, mainW, musicPanelH);
-      drawSeparator(vg, mainX, h - kStatusBarHeight - musicPanelH, mainX + mainW, h - kStatusBarHeight - musicPanelH);
     }
     drawStatusBar(vg, app, 0.0f, h - kStatusBarHeight, w);
     drawToast(vg, app, w, h);
@@ -6883,11 +4645,6 @@ int main(int argc, char** argv)
       app,
       w,
       h);
-
-    if (app.youtubeLoading)
-    {
-      drawYoutubeLoading(vg, w, h, app.youtubeLoadingName);
-    }
 
     bool resizeHover = (app.hoveredSep >= 0) || (app.dragColumn >= 0);
     if (app.modal.active || app.textInput.active)
@@ -6909,7 +4666,7 @@ int main(int argc, char** argv)
     {
       drawSeparator(vg, mainX + mainW, kTopBarHeight, mainX + mainW, h - kStatusBarHeight);
     }
-    if (!app.editor.active && !app.videoActive)
+    if (!app.editor.active)
     {
       drawSeparator(vg, mainX, mainY + kHeaderHeight, mainX + mainW, mainY + kHeaderHeight);
     }
@@ -6918,10 +4675,6 @@ int main(int argc, char** argv)
 
     glfwSwapBuffers(window);
 
-    if (app.videoActive)
-    {
-      app.videoPlayer.reportSwap();
-    }
     g_mouseClicked = false;
     g_rightClicked = false;
   }
@@ -6932,7 +4685,6 @@ int main(int argc, char** argv)
     nvgDeleteImage(vg, app.previewImage);
     app.previewImage = -1;
   }
-  app.videoPlayer.shutdown();
   nvgDeleteGL2(vg);
   if (resizeCursor != nullptr)
   {

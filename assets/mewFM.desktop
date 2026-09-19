@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=mewFM
+Exec=/usr/bin/mewFM
+Icon=/usr/share/icons/hicolor/scalable/apps/mewFM.svg
+Categories=System;FileManager;

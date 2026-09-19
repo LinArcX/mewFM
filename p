@@ -126,23 +126,23 @@ menu () {
     "run(debug)")
       clear
       cd build/debug
-      ./rah 
+      ./mewFM 
       cd ../..
       scc src/
       ;;
     "gf2")
-      gf2 -nx -ex "source breakpoints.gdb" build/debug/rah
+      gf2 -nx -ex "source breakpoints.gdb" build/debug/mewFM
       ;;
     "gf2 attach")
       # if you get this error: 
       # Attaching to process 18446 ❌️ ptrace: Operation not permitted.
       # just run:
       #   sudo sysctl kernel.yama.ptrace_scope=0
-      gf2 -nx -ex "source breakpoints.gdb" -p "$(pidof rah)" >/dev/null 2>&1 & disown
+      gf2 -nx -ex "source breakpoints.gdb" -p "$(pidof mewFM)" >/dev/null 2>&1 & disown
       sleep 2
       wmctrl -r "gf2" -e 0,0,500,1820,550
 
-      #gf2 -nx -ex "source breakpoints.gdb" -p $(pidof rah) &
+      #gf2 -nx -ex "source breakpoints.gdb" -p $(pidof mewFM) &
       #until wmctrl -l | grep -q "gf2"; do
       #  sleep 0.1
       #done
@@ -151,7 +151,7 @@ menu () {
       #wait
       ;;
     "rr record")
-      /usr/bin/rr record build/debug/rah
+      /usr/bin/rr record build/debug/mewFM
       ;;
     "gf2 --rr-replay")
       gf2 --rr-replay -x breakpoints.gdb
@@ -178,9 +178,9 @@ menu () {
       fi
      ;;
     "run(release)")
-      echo ">>> running rah (release)"
+      echo ">>> running mewFM (release)"
       cd build/release
-      ./rah
+      ./mewFM
       cd ../..
       scc src/
       ;;
@@ -205,18 +205,18 @@ menu () {
         -Wformat=2 -Wall -Wextra -Wpedantic -Wexceptions -fno-exceptions -Wno-unused-parameter \
         -Wshadow -Wwrite-strings -Wstrict-prototypes \
         -Wold-style-definition -Wredundant-decls -Wnested-externs -Wmissing-include-dirs -Wjump-misses-init -Wlogical-op \
-        -lc -lcmocka -lmagic -o ./build/tests/raht \
+        -lc -lcmocka -lmagic -o ./build/tests/mewFMt \
         $(pkg-config --cflags notcurses) ./tests/*.c ./src/linarcx*.c  ./src/linux*.c $(pkg-config --libs notcurses) $(pkg-config --cflags --libs vips)
       ;;
     "run(tests)")
       clear
       cd build/tests
-      ./raht
+      ./mewFMt
       cd ../..
       ;;
     "gdb(tests)")
       cd build/tests
-      gdb --tui raht
+      gdb --tui mewFMt
       cd ../..
       ;;
     "clean(tests)")
@@ -227,7 +227,7 @@ menu () {
     "start xephyr")
       #./start_xephyr.sh 
       Xephyr :1 -screen 1280x800 -ac &
-      DISPLAY=:1 ./build/debug/rah &
+      DISPLAY=:1 ./build/debug/mewFM &
       DISPLAY=:1 wezterm start &
       ;;
     "stop xephyr")
@@ -247,7 +247,7 @@ menu () {
       # - [error id] may be * to suppress all warnings (for a specified file or files).
       # - [filename] may contain the wildcard characters * or ?.
       cppcheck --addon=cppcheck/misra.json --addon=cppcheck/findcasts.json --addon=cppcheck/misc.json --addon=cppcheck/y2038.json --addon=cppcheck/threadsafety.json --inline-suppr --std=c11 --enable=all --error-exitcode=1 --platform=unix64 --report-type=misra-c-2012 -q --xml --xml-version=2 lib/util/*.c lib/*.c example/*.c -I lib/util/ > report/cppcheck.xml 2>&1
-      cppcheck-htmlreport --file=report/cppcheck.xml --title="rah" --report-dir=report --source-dir=.
+      cppcheck-htmlreport --file=report/cppcheck.xml --title="mewFM" --report-dir=report --source-dir=.
       ;;
     "cppcheck(show)")
       ~/software/brave/brave-browser-1.86.142-linux-amd64/brave ./report/index.html
@@ -267,7 +267,7 @@ menu () {
       ;;
     "lcov")
       # https://wiki.cs.jmu.edu/student/gcov/start
-      ./build/debug/rah
+      ./build/debug/mewFM
       lcov --capture --directory build/debug --output-file build/debug/coverage.info
       ;;
     "gcovr")
@@ -282,7 +282,7 @@ menu () {
       ;;
     "kcov(generate)")
       rm -r coverage/*
-      kcov coverage/ build/debug/rah
+      kcov coverage/ build/debug/mewFM
       ;;
     "kcov(show)")
       ~/software/brave/brave-browser-1.86.142-linux-amd64/brave ./coverage/index.html
@@ -291,37 +291,37 @@ menu () {
     "llvm-cov")
       ;;
     "valgrind(memcheck)")
-      valgrind --tool=memcheck --leak-check=full --show-leak-kinds=all --track-origins=yes --xtree-leak=yes -s -v build/debug/rah
+      valgrind --tool=memcheck --leak-check=full --show-leak-kinds=all --track-origins=yes --xtree-leak=yes -s -v build/debug/mewFM
       ;;
     "callgrind")
-      valgrind --tool=callgrind --dump-instr=yes --collect-jumps=yes -s -v build/debug/rah
+      valgrind --tool=callgrind --dump-instr=yes --collect-jumps=yes -s -v build/debug/mewFM
       ;;
     "kcachegrind")
       ls callgrind.out.* cachegrind.out.* | fzf --header="kcachgrind: " | xargs kcachegrind
       ;;
     "cachegrind")
-      valgrind --tool=cachegrind --cache-sim=yes --branch-sim=yes -s -v build/debug/rah
+      valgrind --tool=cachegrind --cache-sim=yes --branch-sim=yes -s -v build/debug/mewFM
       ;;
     "helgrind")
-      valgrind --tool=helgrind -s -v build/debug/rah
+      valgrind --tool=helgrind -s -v build/debug/mewFM
       ;;
     "massif")
-      valgrind --tool=massif -s -v build/debug/rah
+      valgrind --tool=massif -s -v build/debug/mewFM
       ;;
     "ms_print")
       ls massif.out.* | fzf --header="ms_print: " | xargs ms_print
       ;;
     "drd")
-      valgrind --tool=drd --trace-fork-join=yes --trace-mutex=yes --trace-semaphore=yes -s -v build/debug/rah
+      valgrind --tool=drd --trace-fork-join=yes --trace-mutex=yes --trace-semaphore=yes -s -v build/debug/mewFM
       ;;
     "dhat")
-      valgrind --tool=dhat -s -v build/debug/rah
+      valgrind --tool=dhat -s -v build/debug/mewFM
       ;;
     "dhat(cat)")
       ls dhat.out.* | fzf --header="dhat: " | xargs cat | less
       ;;
     "bbv")
-      valgrind --tool=exp-bbv -s -v build/debug/rah
+      valgrind --tool=exp-bbv -s -v build/debug/mewFM
       ;;
     "bbv(cat)")
       ls bb.out.* | fzf --header="bbv: " | xargs cat | less
@@ -330,7 +330,7 @@ menu () {
       ls build/debug | fzf --header="perf: " | xargs perf stat -d
       ;;
     "uftrace record(test)")
-      uftrace --srcline -a --symbols --time --no-libcall --symbols -F __clove_symint___UtilSuite* record build/debug/rah
+      uftrace --srcline -a --symbols --time --no-libcall --symbols -F __clove_symint___UtilSuite* record build/debug/mewFM
       ;;
     "uftrace replay(tests)")
       uftrace replay

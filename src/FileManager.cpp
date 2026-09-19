@@ -1061,7 +1061,7 @@ void FileManager::finalizeFileOp(bool success)
 
 FileOpStatus FileManager::pollFileOp()
 {
-      FILE* f = std::fopen("/tmp/rah_op.log", "a");
+      FILE* f = std::fopen("/tmp/mewFM.log", "a");
     if (f != nullptr)
     {
       std::fprintf(f, "poll active=%d stage=%d kind=%d fileIdx=%zu done=%llu total=%llu\n",

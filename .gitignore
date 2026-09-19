@@ -1,8 +1,9 @@
 build/*
 .cache/*
 gmon.out
-package.json
+garbage/*
 patches/*
+package.json
 node_modules/
 breakpoints.json
 package-lock.json
