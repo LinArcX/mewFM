@@ -10,6 +10,7 @@
 #include "Modal.hpp"
 #include "MusicPlayer.hpp"
 #include "TextInput.hpp"
+#include "VideoPlayer.hpp"
 #include "HurmitFont.hpp"
 #include "BlenderIcons.hpp"
 
@@ -104,6 +105,7 @@ namespace
     None,
     Open,
     EditHere,
+    View,
     Extract,
     Restore,
     Copy,
@@ -222,6 +224,15 @@ namespace
     std::string previewPath;
     std::string previewText;
     Editor editor;
+    VideoPlayer videoPlayer;
+    bool videoActive = false;
+    unsigned int videoFbo = 0;
+    unsigned int videoTex = 0;
+    int videoTexW = 0;
+    int videoTexH = 0;
+    bool videoSeekDrag = false;
+    float videoSeekValue = 0.0f;
+    bool videoVolDrag = false;
   };
 
   float g_mouseX = 0.0f;
@@ -954,6 +965,12 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
     if (modalActive)
     {
       app->modal.close();
+      return;
+    }
+    if (app != nullptr && app->videoActive)
+    {
+      app->videoPlayer.close();
+      app->videoActive = false;
       return;
     }
     glfwSetWindowShouldClose(window, GLFW_TRUE);
@@ -2578,6 +2595,15 @@ static bool isTextExtension(const std::string& ext)
          ext == "css";
 }
 
+static bool isVideoExtension(const std::string& ext)
+{
+  return ext == "mp4"  || ext == "mkv"  || ext == "avi"  ||
+         ext == "mov"  || ext == "webm" || ext == "flv"  ||
+         ext == "wmv"  || ext == "m4v"  || ext == "mpg"  ||
+         ext == "mpeg" || ext == "mpv"  || ext == "3gp"  ||
+         ext == "ogv"  || ext == "vob"  || ext == "m2ts";
+}
+
 static std::string currentSelectionPath(const AppState& app)
 {
   const auto& entries = app.fm.entries();
@@ -3577,6 +3603,20 @@ static bool menuItemEnabled(const AppState& app, const MenuItem& item, int rowId
   {
     return false;
   }
+  if (item.action == MenuAction::View)
+  {
+    const auto& entries = app.fm.entries();
+    if (rowIdx < 0 || rowIdx >= static_cast<int>(entries.size()))
+    {
+      return false;
+    }
+    if (entries[rowIdx].isDirectory)
+    {
+      return false;
+    }
+    std::string ext = lowercaseExtension(entries[rowIdx].name);
+    return isVideoExtension(ext);
+  }
   if (item.action == MenuAction::AddBookmark)
   {
     const auto& entries = app.fm.entries();
@@ -3647,6 +3687,7 @@ static std::vector<MenuItem> buildRowMenuItems(const AppState& app)
   std::vector<MenuItem> items;
   items.push_back({"Open", MenuAction::Open, true});
   items.push_back({"Edit Here", MenuAction::EditHere, true});
+  items.push_back({"View", MenuAction::View, true});
   items.push_back({"Extract", MenuAction::Extract, true});
   if (isInsideTrash(app))
   {
@@ -3898,6 +3939,39 @@ static void beginEdit(AppState& app, int rowIdx)
   app.editor.dirty = false;
 }
 
+static void beginView(AppState& app, int rowIdx)
+{
+  const auto& entries = app.fm.entries();
+  if (rowIdx < 0 || rowIdx >= static_cast<int>(entries.size()))
+  {
+    return;
+  }
+  if (entries[rowIdx].isDirectory)
+  {
+    return;
+  }
+  std::string ext = lowercaseExtension(entries[rowIdx].name);
+  if (!isVideoExtension(ext))
+  {
+    return;
+  }
+  std::string full = joinPath(app.fm.currentPath(), entries[rowIdx].name);
+  if (!app.videoPlayer.init())
+  {
+    app.modal.openInfo("Error", "Could not initialize video player.");
+    return;
+  }
+  if (!app.videoPlayer.open(full))
+  {
+    app.modal.openInfo("Error", "Could not open video.");
+    return;
+  }
+  app.videoActive = true;
+  app.videoSeekDrag = false;
+  app.videoSeekValue = 0.0f;
+  app.videoVolDrag = false;
+}
+
 static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
 {
   switch (action)
@@ -3910,6 +3984,9 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
       break;
     case MenuAction::EditHere:
       beginEdit(app, rowIdx);
+      break;
+    case MenuAction::View:
+      beginView(app, rowIdx);
       break;
     case MenuAction::Extract:
       if (rowIdx >= 0)
@@ -4519,6 +4596,300 @@ static void drawMusicPanel(NVGcontext* vg, AppState& app,
   nvgRestore(vg);
 }
 
+static void ensureVideoFbo(AppState& app, int fw, int fh)
+{
+  if (app.videoFbo != 0 && app.videoTexW == fw && app.videoTexH == fh)
+  {
+    return;
+  }
+  if (app.videoFbo != 0)
+  {
+    glDeleteFramebuffers(1, &app.videoFbo);
+    app.videoFbo = 0;
+  }
+  if (app.videoTex != 0)
+  {
+    glDeleteTextures(1, &app.videoTex);
+    app.videoTex = 0;
+  }
+
+  glGenTextures(1, &app.videoTex);
+  glBindTexture(GL_TEXTURE_2D, app.videoTex);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, fw, fh, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+  glGenFramebuffers(1, &app.videoFbo);
+  glBindFramebuffer(GL_FRAMEBUFFER, app.videoFbo);
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, app.videoTex, 0);
+  GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  if (status != GL_FRAMEBUFFER_COMPLETE)
+  {
+    glDeleteFramebuffers(1, &app.videoFbo);
+    app.videoFbo = 0;
+    glDeleteTextures(1, &app.videoTex);
+    app.videoTex = 0;
+    app.videoTexW = 0;
+    app.videoTexH = 0;
+    return;
+  }
+  app.videoTexW = fw;
+  app.videoTexH = fh;
+}
+
+static void renderVideoFrame(AppState& app,
+                             float x, float y, float w, float h,
+                             float pxRatio, float fbH)
+{
+  if (!app.videoPlayer.isActive())
+  {
+    return;
+  }
+  int fw = static_cast<int>(w * pxRatio);
+  int fh = static_cast<int>(h * pxRatio);
+  if (fw < 2 || fh < 2)
+  {
+    return;
+  }
+  ensureVideoFbo(app, fw, fh);
+  if (app.videoFbo == 0)
+  {
+    return;
+  }
+
+  if (app.videoPlayer.needsRender())
+  {
+    glBindFramebuffer(GL_FRAMEBUFFER, app.videoFbo);
+    glViewport(0, 0, fw, fh);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    app.videoPlayer.render(app.videoFbo, fw, fh);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+  }
+
+  int dx0 = static_cast<int>(x * pxRatio);
+  int dy0 = static_cast<int>(fbH - (y + h) * pxRatio);
+  int dx1 = static_cast<int>((x + w) * pxRatio);
+  int dy1 = static_cast<int>(fbH - y * pxRatio);
+
+  glBindFramebuffer(GL_READ_FRAMEBUFFER, app.videoFbo);
+  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
+  glBlitFramebuffer(0, 0, fw, fh, dx0, dy0, dx1, dy1, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+  glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+static void drawVideoControls(NVGcontext* vg, AppState& app,
+                              float x, float y, float w, float h)
+{
+  VideoPlayer& vp = app.videoPlayer;
+
+  const float ctrlH = 56.0f;
+  const float ctrlY = y + h - ctrlH;
+
+  nvgBeginPath(vg);
+  nvgRect(vg, x, ctrlY, w, ctrlH);
+  nvgFillColor(vg, nvgRGBAf(0.0f, 0.0f, 0.0f, 0.65f));
+  nvgFill(vg);
+
+  const float pad = 12.0f;
+  const float btnSize = 32.0f;
+  const float btnGap = 8.0f;
+  const float cy = ctrlY + ctrlH * 0.5f;
+  const float btnY = cy - btnSize * 0.5f;
+  float bx = x + pad;
+
+  {
+    bool hover = inRect(g_mouseX, g_mouseY, bx, btnY, btnSize, btnSize);
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, bx, btnY, btnSize, btnSize, 4.0f);
+    nvgFillColor(vg, hover ? nvgRGBf(0.35f, 0.35f, 0.35f) : nvgRGBf(0.22f, 0.22f, 0.22f));
+    nvgFill(vg);
+    if (vp.isPlaying())
+    {
+      drawPauseGlyph(vg, bx + btnSize * 0.5f, cy, 14.0f);
+    }
+    else
+    {
+      drawPlayGlyph(vg, bx + btnSize * 0.5f, cy, 14.0f);
+    }
+    if (hover && g_mouseClicked)
+    {
+      vp.togglePause();
+    }
+    bx += btnSize + btnGap;
+  }
+
+  {
+    bool hover = inRect(g_mouseX, g_mouseY, bx, btnY, btnSize, btnSize);
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, bx, btnY, btnSize, btnSize, 4.0f);
+    nvgFillColor(vg, hover ? nvgRGBf(0.35f, 0.35f, 0.35f) : nvgRGBf(0.22f, 0.22f, 0.22f));
+    nvgFill(vg);
+    drawStopGlyph(vg, bx + btnSize * 0.5f, cy, 14.0f);
+    if (hover && g_mouseClicked)
+    {
+      vp.stop();
+    }
+    bx += btnSize + btnGap;
+  }
+
+  const float timeW = 110.0f;
+  const float volW = 90.0f;
+  const float volIconW = 20.0f;
+  const float gap = 12.0f;
+  const float rightEdge = x + w - pad;
+  float seekW = rightEdge - bx - gap - timeW - gap - volIconW - 4.0f - volW - 8.0f;
+  if (seekW < 80.0f)
+  {
+    seekW = 80.0f;
+  }
+  const float seekX = bx;
+  const float timeX = seekX + seekW + gap;
+  const float volIconX = timeX + timeW + gap;
+  const float volX = volIconX + volIconW + 4.0f;
+
+  const double dur = vp.duration();
+  const double pos = vp.position();
+  double shownPos = pos;
+  if (app.videoSeekDrag && dur > 0.0)
+  {
+    shownPos = static_cast<double>(app.videoSeekValue) * dur;
+  }
+
+  const float trackH = 6.0f;
+  const float hitH = 18.0f;
+  const float trackY = cy - trackH * 0.5f;
+  const float hitY = cy - hitH * 0.5f;
+
+  const bool overSeek = inRect(g_mouseX, g_mouseY, seekX, hitY, seekW, hitH);
+  if (g_mouseClicked && overSeek)
+  {
+    app.videoSeekDrag = true;
+    app.videoSeekValue = (dur > 0.0) ? static_cast<float>(pos / dur) : 0.0f;
+  }
+  if (app.videoSeekDrag && g_mouseDown)
+  {
+    float frac = (g_mouseX - seekX) / seekW;
+    if (frac < 0.0f) frac = 0.0f;
+    if (frac > 1.0f) frac = 1.0f;
+    app.videoSeekValue = frac;
+  }
+  if (app.videoSeekDrag && !g_mouseDown)
+  {
+    app.videoSeekDrag = false;
+    if (dur > 0.0)
+    {
+      vp.seekAbsolute(static_cast<double>(app.videoSeekValue) * dur);
+    }
+  }
+
+  nvgBeginPath(vg);
+  nvgRoundedRect(vg, seekX, trackY, seekW, trackH, trackH * 0.5f);
+  nvgFillColor(vg, nvgRGBf(0.15f, 0.15f, 0.15f));
+  nvgFill(vg);
+
+  float progress = 0.0f;
+  if (dur > 0.0)
+  {
+    progress = static_cast<float>(shownPos / dur);
+    if (progress < 0.0f) progress = 0.0f;
+    if (progress > 1.0f) progress = 1.0f;
+  }
+  if (progress > 0.0f)
+  {
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, seekX, trackY, seekW * progress, trackH, trackH * 0.5f);
+    nvgFillColor(vg, nvgRGBf(0.35f, 0.55f, 0.85f));
+    nvgFill(vg);
+  }
+  nvgBeginPath(vg);
+  nvgCircle(vg, seekX + seekW * progress, cy, 5.0f);
+  nvgFillColor(vg, nvgRGBf(0.85f, 0.90f, 1.00f));
+  nvgFill(vg);
+
+  char timeBuf[48];
+  int curSec = static_cast<int>(shownPos);
+  int durSec = static_cast<int>(dur);
+  if (curSec < 0) curSec = 0;
+  if (durSec < 0) durSec = 0;
+  std::snprintf(timeBuf, sizeof(timeBuf), "%d:%02d / %d:%02d",
+                curSec / 60, curSec % 60, durSec / 60, durSec % 60);
+  nvgFontFace(vg, "sans");
+  nvgFontSize(vg, g_fontSize - 2.0f);
+  nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
+  nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+  nvgText(vg, timeX, cy + 1.0f, timeBuf, nullptr);
+
+  nvgBeginPath(vg);
+  nvgMoveTo(vg, volIconX + 2.0f, cy - 4.0f);
+  nvgLineTo(vg, volIconX + 6.0f, cy - 4.0f);
+  nvgLineTo(vg, volIconX + 10.0f, cy - 8.0f);
+  nvgLineTo(vg, volIconX + 10.0f, cy + 8.0f);
+  nvgLineTo(vg, volIconX + 6.0f, cy + 4.0f);
+  nvgLineTo(vg, volIconX + 2.0f, cy + 4.0f);
+  nvgClosePath(vg);
+  nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
+  nvgFill(vg);
+
+  const int vol = vp.volume();
+  const bool overVol = inRect(g_mouseX, g_mouseY, volX, hitY, volW, hitH);
+  if (g_mouseClicked && overVol)
+  {
+    app.videoVolDrag = true;
+  }
+  if (app.videoVolDrag && g_mouseDown)
+  {
+    float frac = (g_mouseX - volX) / volW;
+    if (frac < 0.0f) frac = 0.0f;
+    if (frac > 1.0f) frac = 1.0f;
+    vp.setVolume(static_cast<int>(frac * 100.0f + 0.5f));
+  }
+  if (app.videoVolDrag && !g_mouseDown)
+  {
+    app.videoVolDrag = false;
+  }
+  nvgBeginPath(vg);
+  nvgRoundedRect(vg, volX, trackY, volW, trackH, trackH * 0.5f);
+  nvgFillColor(vg, nvgRGBf(0.15f, 0.15f, 0.15f));
+  nvgFill(vg);
+  float volFrac = static_cast<float>(vol) / 100.0f;
+  if (volFrac < 0.0f) volFrac = 0.0f;
+  if (volFrac > 1.0f) volFrac = 1.0f;
+  if (volFrac > 0.0f)
+  {
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, volX, trackY, volW * volFrac, trackH, trackH * 0.5f);
+    nvgFillColor(vg, nvgRGBf(0.55f, 0.75f, 0.55f));
+    nvgFill(vg);
+  }
+  nvgBeginPath(vg);
+  nvgCircle(vg, volX + volW * volFrac, cy, 5.0f);
+  nvgFillColor(vg, nvgRGBf(0.90f, 0.95f, 0.90f));
+  nvgFill(vg);
+
+  const float closeSize = 28.0f;
+  const float closeX = x + w - closeSize - 8.0f;
+  const float closeY = y + 8.0f;
+  const bool closeHover = inRect(g_mouseX, g_mouseY, closeX, closeY, closeSize, closeSize);
+  nvgBeginPath(vg);
+  nvgRoundedRect(vg, closeX, closeY, closeSize, closeSize, 4.0f);
+  nvgFillColor(vg, closeHover ? nvgRGBAf(0.7f, 0.2f, 0.2f, 0.85f) : nvgRGBAf(0.0f, 0.0f, 0.0f, 0.55f));
+  nvgFill(vg);
+  nvgFontFace(vg, "sans");
+  nvgFontSize(vg, g_fontSize);
+  nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.95f));
+  nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+  nvgText(vg, closeX + closeSize * 0.5f, closeY + closeSize * 0.5f, "X", nullptr);
+  if (closeHover && g_mouseClicked)
+  {
+    app.videoPlayer.close();
+    app.videoActive = false;
+  }
+}
+
 static void drawStatusBar(NVGcontext* vg, AppState& app, float x, float y, float w)
 {
   bndBackground(vg, x, y, w, kStatusBarHeight);
@@ -4748,6 +5119,10 @@ int main(int argc, char** argv)
   {
     std::cerr << "rah: could not initialize music player" << std::endl;
   }
+  if (!app.videoPlayer.init())
+  {
+    std::cerr << "rah: could not initialize video player" << std::endl;
+  }
   glfwSetWindowUserPointer(window, &app);
   app.sections = buildSections();
   app.lastPath = app.fm.currentPath();
@@ -4780,6 +5155,7 @@ int main(int argc, char** argv)
   {
     glfwPollEvents();
     app.musicPlayer.update();
+    app.videoPlayer.update();
 
     const FileOpStatus opStatus = app.fm.pollFileOp();
     if (opStatus == FileOpStatus::FinishedCopy)
@@ -4803,22 +5179,29 @@ int main(int argc, char** argv)
     glfwGetFramebufferSize(window, &fbW, &fbH);
     float pxRatio = (winW > 0) ? (static_cast<float>(fbW) / static_cast<float>(winW)) : 1.0f;
 
-    glViewport(0, 0, fbW, fbH);
-    glClearColor(app.theme.bg.r, app.theme.bg.g, app.theme.bg.b, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-
-    nvgBeginFrame(vg, static_cast<float>(winW), static_cast<float>(winH), pxRatio);
-
     float w = static_cast<float>(winW);
     float h = static_cast<float>(winH);
-    float previewW = (app.previewVisible && !app.editor.active) ? kPreviewWidth : 0.0f;
+    float previewW = (app.previewVisible && !app.editor.active && !app.videoActive) ? kPreviewWidth : 0.0f;
     float mainX = kSidebarWidth;
     float mainY = kTopBarHeight;
     float mainW = w - kSidebarWidth - previewW;
     float listTop = mainY + kHeaderHeight;
-    const bool musicPanelVisible = shouldShowMusicPanel(app);
+    const bool musicPanelVisible = !app.videoActive && shouldShowMusicPanel(app);
     const float musicPanelH = musicPanelVisible ? kMusicPanelHeight : 0.0f;
     float listH = h - listTop - kStatusBarHeight - musicPanelH;
+
+    glViewport(0, 0, fbW, fbH);
+    glClearColor(app.theme.bg.r, app.theme.bg.g, app.theme.bg.b, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+    if (app.videoActive)
+    {
+      renderVideoFrame(app, mainX, mainY, mainW,
+                       h - mainY - kStatusBarHeight,
+                       pxRatio, static_cast<float>(fbH));
+    }
+
+    nvgBeginFrame(vg, w, h, pxRatio);
 
     resetOnPathChange(app);
     applyScroll(app, listH);
@@ -4880,12 +5263,16 @@ int main(int argc, char** argv)
     {
       drawEditor(vg, app, mainX, mainY, mainW, h - mainY - kStatusBarHeight);
     }
+    else if (app.videoActive)
+    {
+      drawVideoControls(vg, app, mainX, mainY, mainW, h - mainY - kStatusBarHeight);
+    }
     else
     {
       drawMainHeader(vg, app, mainX, mainY, mainW);
       drawRows(vg, app, mainX, listTop, mainW, listH);
     }
-    if (app.previewVisible && !app.editor.active)
+    if (app.previewVisible && !app.editor.active && !app.videoActive)
     {
       drawPreviewPanel(vg, app, mainX + mainW, mainY, previewW, h - mainY - kStatusBarHeight);
     }
@@ -4925,16 +5312,21 @@ int main(int argc, char** argv)
     drawSeparator(vg, 0.0f, kTabBarHeight, w, kTabBarHeight);
     drawSeparator(vg, 0.0f, kTopBarHeight, w, kTopBarHeight);
     drawSeparator(vg, kSidebarWidth, kTopBarHeight, kSidebarWidth, h - kStatusBarHeight);
-    if (app.previewVisible && !app.editor.active)
+    if (app.previewVisible && !app.editor.active && !app.videoActive)
     {
       drawSeparator(vg, mainX + mainW, kTopBarHeight, mainX + mainW, h - kStatusBarHeight);
     }
-    if (!app.editor.active)
+    if (!app.editor.active && !app.videoActive)
     {
       drawSeparator(vg, mainX, mainY + kHeaderHeight, mainX + mainW, mainY + kHeaderHeight);
     }
     drawSeparator(vg, 0.0f, h - kStatusBarHeight, w, h - kStatusBarHeight);
     nvgEndFrame(vg);
+
+    if (app.videoActive)
+    {
+      app.videoPlayer.reportSwap();
+    }
 
     glfwSwapBuffers(window);
     g_mouseClicked = false;
@@ -4947,6 +5339,7 @@ int main(int argc, char** argv)
     nvgDeleteImage(vg, app.previewImage);
     app.previewImage = -1;
   }
+  app.videoPlayer.shutdown();
   nvgDeleteGL2(vg);
   if (resizeCursor != nullptr)
   {

@@ -76,6 +76,7 @@
 ☑ Preview panel (thumbnail for images, text preview)
 ☑ Integrated text editor (right-click, Edit Here)
 ☑ Built-in music player (libmpv): panel above status bar, play/pause/stop/prev/next, seek slider, volume slider, animated level bars
+☑ Built-in video player (libmpv): right-click a video file and choose "View" to play it in the main panel (play/pause, stop, seek, volume, Esc closes)
 □ List / grid view toggle
 □ Drag and drop (internal move, external in / out)
 □ Symlink handling (broken-link marker, follow toggle)

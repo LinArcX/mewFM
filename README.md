@@ -13,6 +13,7 @@ A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and ou
 - Extension-aware icons (images, video, audio, documents, fonts, source code)
 - Preview panel for image thumbnails and text files (F3 to toggle)
 - Integrated text editor: right-click a text file and choose "Edit Here" (Ctrl+S saves, Esc closes with a save prompt)
+- Built-in video player (libmpv): right-click a video file (mp4, mkv, avi, mov, webm, ...) and choose "View" to play it in the main panel; play/pause, stop, seek, and volume controls; Esc or the on-screen X closes it
 - Single-click to select, double-click to open
 - Multi-selection: Ctrl+click toggles a row, Shift+click selects a range, Ctrl+A selects all
 - Right-click context menu: row actions (Open, Edit Here, Extract, Restore when inside Trash, Copy, Cut, Rename, Delete, Properties, Add to Bookmarks, Remove from Bookmarks) and empty-space actions (Paste, New Folder, New File, Empty Trash when inside Trash, Refresh)
