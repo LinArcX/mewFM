@@ -240,6 +240,7 @@ namespace
     int subFontSize = 0;
     bool sidebarVisible = true;
     float sidebarAnim = 1.0f;
+    float previewAnim = 1.0f;
   };
 
   float g_mouseX = 0.0f;
@@ -443,6 +444,11 @@ static void loadConfig(AppState& app)
       app.sidebarVisible = (val != "0");
       app.sidebarAnim = app.sidebarVisible ? 1.0f : 0.0f;
     }
+    else if (key == "previewVisible")
+    {
+      app.previewVisible = (val != "0");
+      app.previewAnim = app.previewVisible ? 1.0f : 0.0f;
+    }
     else if (key.compare(0, 10, "collapsed_") == 0)
     {
       std::string secKey = key.substr(10);
@@ -551,6 +557,7 @@ static void saveConfig(const AppState& app)
   out << "path=" << app.fm.currentPath() << "\n";
   out << "hidden=" << (app.fm.showHidden() ? "1" : "0") << "\n";
   out << "sidebarVisible=" << (app.sidebarVisible ? "1" : "0") << "\n";
+  out << "previewVisible=" << (app.previewVisible ? "1" : "0") << "\n";
   out << "sortField=" << static_cast<int>(app.fm.sortField()) << "\n";
   out << "sortDir=" << (app.fm.sortAscending() ? "0" : "1") << "\n";
   if (!app.subFont.empty())
@@ -2202,6 +2209,49 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
   }
   x += kBtnSize + kBtnGap;
 
+  {
+    const bool toggleHover = inRect(g_mouseX, g_mouseY, x, kBtnY, kBtnSize, kBtnSize);
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, x, kBtnY, kBtnSize, kBtnSize, 4.0f);
+    nvgFillColor(vg, toggleHover ? nvgRGBf(0.30f, 0.30f, 0.30f)
+                                 : nvgRGBf(0.20f, 0.20f, 0.20f));
+    nvgFill(vg);
+    nvgStrokeColor(vg, nvgRGBf(0.10f, 0.10f, 0.10f));
+    nvgStrokeWidth(vg, 1.0f);
+    nvgStroke(vg);
+
+    const float cx = x + kBtnSize * 0.5f;
+    const float cy = kBtnY + kBtnSize * 0.5f;
+    const float rw = 16.0f;
+    const float rh = 12.0f;
+
+    nvgBeginPath(vg);
+    nvgRect(vg, cx - rw * 0.5f, cy - rh * 0.5f, rw, rh);
+    nvgStrokeColor(vg, nvgRGBf(0.88f, 0.88f, 0.88f));
+    nvgStrokeWidth(vg, 1.5f);
+    nvgStroke(vg);
+
+    nvgBeginPath(vg);
+    nvgMoveTo(vg, cx, cy - rh * 0.5f);
+    nvgLineTo(vg, cx, cy + rh * 0.5f);
+    nvgStroke(vg);
+
+    if (app.previewVisible)
+    {
+      nvgBeginPath(vg);
+      nvgRect(vg, cx, cy - rh * 0.5f, rw * 0.5f, rh);
+      nvgFillColor(vg, nvgRGBf(0.88f, 0.88f, 0.88f));
+      nvgFill(vg);
+    }
+
+    if (toggleHover && g_mouseClicked)
+    {
+      app.previewVisible = !app.previewVisible;
+      saveConfig(app);
+    }
+  }
+  x += kBtnSize + kBtnGap;
+
   bool homeHover = inRect(g_mouseX, g_mouseY, x, kBtnY, kBtnSize, kBtnSize);
   bndToolButton(vg, x, kBtnY, kBtnSize, kBtnSize, BND_CENTER,
                 homeHover ? BND_HOVER : BND_DEFAULT,
@@ -3454,6 +3504,7 @@ static void handleKeyboardNav(AppState& app, float listH)
   if (g_togglePreview)
   {
     app.previewVisible = !app.previewVisible;
+    saveConfig(app);
     g_togglePreview = false;
   }
 
@@ -5371,7 +5422,20 @@ int main(int argc, char** argv)
 
     float w = static_cast<float>(winW);
     float h = static_cast<float>(winH);
-    float previewW = (app.previewVisible && !app.editor.active && !app.videoActive) ? kPreviewWidth : 0.0f;
+
+    const bool previewAllowed = app.previewVisible && !app.editor.active && !app.videoActive;
+    const float targetPreview = previewAllowed ? 1.0f : 0.0f;
+    if (app.previewAnim < targetPreview)
+    {
+      app.previewAnim += 0.15f;
+      if (app.previewAnim > 1.0f) app.previewAnim = 1.0f;
+    }
+    else if (app.previewAnim > targetPreview)
+    {
+      app.previewAnim -= 0.15f;
+      if (app.previewAnim < 0.0f) app.previewAnim = 0.0f;
+    }
+    const float previewW = kPreviewWidth * app.previewAnim;
 
     const float targetSidebar = app.sidebarVisible ? 1.0f : 0.0f;
     if (app.sidebarAnim < targetSidebar)
@@ -5479,7 +5543,7 @@ int main(int argc, char** argv)
       drawMainHeader(vg, app, mainX, mainY, mainW);
       drawRows(vg, app, mainX, listTop, mainW, listH);
     }
-    if (app.previewVisible && !app.editor.active && !app.videoActive)
+    if (previewW > 1.0f)
     {
       drawPreviewPanel(vg, app, mainX + mainW, mainY, previewW, h - mainY - kStatusBarHeight);
     }
@@ -5522,7 +5586,7 @@ int main(int argc, char** argv)
     {
       drawSeparator(vg, sidebarW, kTopBarHeight, sidebarW, h - kStatusBarHeight);
     }
-    if (app.previewVisible && !app.editor.active && !app.videoActive)
+    if (previewW > 1.0f)
     {
       drawSeparator(vg, mainX + mainW, kTopBarHeight, mainX + mainW, h - kStatusBarHeight);
     }

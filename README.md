@@ -12,7 +12,7 @@ A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and ou
 - Resizable columns (drag separator in the header row)
 - Sortable columns: click Name, Size, Type, Owner, or Permissions to sort; click again to toggle ascending/descending
 - Extension-aware icons (images, video, audio, documents, fonts, source code)
-- Preview panel for image thumbnails and text files (F3 to toggle)
+- Preview panel for image thumbnails and text files (F3, or the toolbar button; slides in / out with animation)
 - Integrated text editor: right-click a text file and choose "Edit Here" (Ctrl+S saves, Esc closes with a save prompt)
 - Built-in video player (libmpv): right-click a video file (mp4, mkv, avi, mov, webm, ...) and choose "View" to play it in the main panel; play/pause, stop, seek, and volume controls; Esc or the on-screen X closes it
 - Single-click to select, double-click to open
@@ -117,6 +117,7 @@ sortField	Numeric sort column (0=Name, 1=Size, 2=Type, 3=Owner, 4=Permissions)
 sortDir	0 for ascending, 1 for descending
 collapsed_<key>	Collapse state for sidebar sections (places, devices, bookmarks)
 sidebarVisible	1 to show the sidebar, 0 to hide it (written on toggle)
+previewVisible	1 to show the preview panel, 0 to hide it (written on toggle)
 bookmark	Absolute path of a sidebar bookmark; one line per bookmark (written on add)
 theme.bg	Background color (R,G,B floats 0.0-1.0)
 theme.text	Text color (R,G,B floats)
