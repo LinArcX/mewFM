@@ -121,6 +121,8 @@ theme.text	Text color (R,G,B floats)
 theme.rowSelected	Selected-row color (R,G,B floats)
 theme.rowHover	Hovered-row color (R,G,B floats)
 theme.rowStripe	Row stripe color (R,G,B floats; alpha fixed at 0.035)
+subFont	Subtitle font family used by the video player (libmpv `sub-font`)
+subFontSize	Subtitle font size (pixels) used by the video player (libmpv `sub-font-size`)
 
 Values for `path`, `hidden`, and `collapsed_*` are written automatically. Column widths are written on drag release. fontSize is user-authored — `rah` does not overwrite it.
 

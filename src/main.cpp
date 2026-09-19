@@ -233,6 +233,9 @@ namespace
     bool videoSeekDrag = false;
     float videoSeekValue = 0.0f;
     bool videoVolDrag = false;
+    double videoControlsLastActive = 0.0;
+    float videoLastMouseX = 0.0f;
+    float videoLastMouseY = 0.0f;
   };
 
   float g_mouseX = 0.0f;
@@ -349,6 +352,8 @@ static void loadConfig(AppState& app)
   int savedSortField = -1;
   int savedSortDir = -1;
   std::vector<std::string> savedBookmarks;
+  std::string subFont;
+  int subFontSize = -1;
   std::string line;
   while (std::getline(in, line))
   {
@@ -420,6 +425,14 @@ static void loadConfig(AppState& app)
         app.theme.rowStripe = nvgRGBAf(c.r, c.g, c.b, 0.035f);
       }
     }
+    else if (key == "subFont")
+    {
+      subFont = val;
+    }
+    else if (key == "subFontSize")
+    {
+      subFontSize = std::atoi(val.c_str());
+    }
     else if (key.compare(0, 10, "collapsed_") == 0)
     {
       std::string secKey = key.substr(10);
@@ -473,6 +486,15 @@ static void loadConfig(AppState& app)
   if (savedHidden)
   {
     app.fm.setShowHidden(true);
+  }
+
+  if (!subFont.empty())
+  {
+    app.videoPlayer.setSubtitleFont(subFont);
+  }
+  if (subFontSize > 0)
+  {
+    app.videoPlayer.setSubtitleFontSize(subFontSize);
   }
 
   std::error_code ec;
@@ -4016,6 +4038,9 @@ static void beginView(AppState& app, int rowIdx)
   app.videoSeekDrag = false;
   app.videoSeekValue = 0.0f;
   app.videoVolDrag = false;
+  app.videoControlsLastActive = glfwGetTime();
+  app.videoLastMouseX = g_mouseX;
+  app.videoLastMouseY = g_mouseY;
 }
 
 static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
@@ -4690,7 +4715,7 @@ static void renderVideoFrame(AppState& app,
                              float x, float y, float w, float h,
                              float pxRatio, float fbH)
 {
-  if (!app.videoPlayer.isActive())
+  if (!app.videoActive)
   {
     return;
   }
@@ -4711,7 +4736,6 @@ static void renderVideoFrame(AppState& app,
 
   if (app.videoPlayer.needsRender())
   {
-    glPushAttrib(GL_ALL_ATTRIB_BITS);
     glBindFramebuffer(GL_FRAMEBUFFER, app.videoFbo);
     glViewport(0, 0, fw, fh);
     glDisable(GL_BLEND);
@@ -4722,7 +4746,6 @@ static void renderVideoFrame(AppState& app,
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
     app.videoPlayer.render(app.videoFbo, fw, fh);
-    glPopAttrib();
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
   }
 
@@ -4745,6 +4768,33 @@ static void drawVideoControls(NVGcontext* vg, AppState& app,
 
   const float ctrlH = 56.0f;
   const float ctrlY = y + h - ctrlH;
+
+  const bool mouseMoved = (g_mouseX != app.videoLastMouseX) ||
+                          (g_mouseY != app.videoLastMouseY);
+  app.videoLastMouseX = g_mouseX;
+  app.videoLastMouseY = g_mouseY;
+
+  const bool inCtrlArea = (g_mouseY >= ctrlY - 24.0f) && (g_mouseY <= y + h);
+  if ((mouseMoved && inCtrlArea) || app.videoSeekDrag || app.videoVolDrag)
+  {
+    app.videoControlsLastActive = glfwGetTime();
+  }
+
+  const double elapsed = glfwGetTime() - app.videoControlsLastActive;
+  float alpha = 1.0f;
+  if (elapsed >= 3.0)
+  {
+    alpha = 0.0f;
+  }
+  else if (elapsed > 2.5)
+  {
+    alpha = static_cast<float>(1.0 - (elapsed - 2.5) / 0.5);
+  }
+
+  if (alpha > 0.0f)
+  {
+    nvgSave(vg);
+    nvgGlobalAlpha(vg, alpha);
 
   nvgBeginPath(vg);
   nvgRect(vg, x, ctrlY, w, ctrlH);
@@ -4926,6 +4976,9 @@ static void drawVideoControls(NVGcontext* vg, AppState& app,
   nvgCircle(vg, volX + volW * volFrac, cy, 5.0f);
   nvgFillColor(vg, nvgRGBf(0.90f, 0.95f, 0.90f));
   nvgFill(vg);
+
+    nvgRestore(vg);
+  }
 
   const float closeSize = 28.0f;
   const float closeX = x + w - closeSize - 8.0f;
@@ -5383,12 +5436,12 @@ int main(int argc, char** argv)
     drawSeparator(vg, 0.0f, h - kStatusBarHeight, w, h - kStatusBarHeight);
     nvgEndFrame(vg);
 
+    glfwSwapBuffers(window);
+
     if (app.videoActive)
     {
       app.videoPlayer.reportSwap();
     }
-
-    glfwSwapBuffers(window);
     g_mouseClicked = false;
     g_rightClicked = false;
   }

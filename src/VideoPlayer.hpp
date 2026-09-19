@@ -32,9 +32,12 @@ public:
 
   void togglePause();
   void stop();
+  [[nodiscard]] bool play();
   void setVolume(int percent);
   int volume() const;
   void seekAbsolute(double seconds);
+  void setSubtitleFont(const std::string& font);
+  void setSubtitleFontSize(int size);
 
   double position() const;
   double duration() const;

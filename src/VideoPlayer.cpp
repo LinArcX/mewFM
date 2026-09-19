@@ -166,19 +166,57 @@ void VideoPlayer::togglePause()
   {
     return;
   }
-  if (m_state != VideoPlayerState::Playing &&
-      m_state != VideoPlayerState::Paused)
+  if (m_state == VideoPlayerState::Playing || m_state == VideoPlayerState::Paused)
+  {
+    int paused = (m_state == VideoPlayerState::Paused) ? 0 : 1;
+    mpv_set_property(m_pMpv, "pause", MPV_FORMAT_FLAG, &paused);
+    m_state = (paused == 1) ? VideoPlayerState::Paused : VideoPlayerState::Playing;
+    return;
+  }
+  play();
+}
+
+bool VideoPlayer::play()
+{
+  if (m_pMpv == nullptr || m_currentFile.empty())
+  {
+    return false;
+  }
+  if (m_state == VideoPlayerState::Playing || m_state == VideoPlayerState::Paused)
+  {
+    return true;
+  }
+  return open(m_currentFile);
+}
+
+void VideoPlayer::setSubtitleFont(const std::string& font)
+{
+  if (m_pMpv == nullptr || font.empty())
   {
     return;
   }
-  int paused = (m_state == VideoPlayerState::Paused) ? 0 : 1;
-  mpv_set_property(m_pMpv, "pause", MPV_FORMAT_FLAG, &paused);
-  m_state = (paused == 1) ? VideoPlayerState::Paused : VideoPlayerState::Playing;
+  mpv_set_property_string(m_pMpv, "sub-font", font.c_str());
+}
+
+void VideoPlayer::setSubtitleFontSize(int size)
+{
+  if (m_pMpv == nullptr || size <= 0)
+  {
+    return;
+  }
+  int64_t s = static_cast<int64_t>(size);
+  mpv_set_property(m_pMpv, "sub-font-size", MPV_FORMAT_INT64, &s);
 }
 
 void VideoPlayer::stop()
 {
-  close();
+  if (m_pMpv == nullptr)
+  {
+    return;
+  }
+  const char* cmd[] = {"stop", nullptr};
+  mpv_command(m_pMpv, cmd);
+  m_state = VideoPlayerState::Idle;
 }
 
 void VideoPlayer::setVolume(int percent)
