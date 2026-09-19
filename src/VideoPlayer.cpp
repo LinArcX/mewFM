@@ -34,6 +34,13 @@ bool VideoPlayer::init()
   }
   mpv_set_option_string(m_pMpv, "vo", "libmpv");
   mpv_set_option_string(m_pMpv, "gpu-api", "opengl");
+  // These didn't improve the performance. Still when i hit View, it's laggish and slow to open player view.
+  // mpv_set_option_string(m_pMpv, "hwdec", "auto-safe");
+  // mpv_set_option_string(m_pMpv, "gpu-hwdec-interop", "auto");
+  // mpv_set_option_string(m_pMpv, "scale", "bilinear");
+  // mpv_set_option_string(m_pMpv, "dscale", "bilinear");
+  // mpv_set_option_string(m_pMpv, "interpolation", "no");
+  // mpv_set_option_string(m_pMpv, "vd-lavc-dr", "yes");
   mpv_set_option_string(m_pMpv, "force-window", "no");
   mpv_set_option_string(m_pMpv, "audio-display", "no");
   mpv_set_option_string(m_pMpv, "idle", "yes");
