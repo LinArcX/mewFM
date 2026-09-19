@@ -323,22 +323,7 @@ bool VideoPlayer::open(const std::string& path)
   cancelResolve();
   if (isYoutubeUrl(path))
   {
-    if (m_preferredHeight > 0)
-    {
-      m_resolveFormat =
-        "bv*[height<=" + std::to_string(m_preferredHeight) +
-        "]+ba/b[height<=" + std::to_string(m_preferredHeight) +
-        "]/bv*+ba/b";
-    }
-    else
-    {
-      m_resolveFormat = "bv*+ba/b";
-    }
-    mpv_set_property_string(m_pMpv, "ytdl-format", m_resolveFormat.c_str());
-    mpv_set_property_string(m_pMpv, "sub-auto", "fuzzy");
-    mpv_set_property_string(m_pMpv, "ytdl", "yes");
-    const char* cmd[] = {"loadfile", path.c_str(), "replace", nullptr};
-    if (mpv_command(m_pMpv, cmd) < 0)
+    if (!startResolveYoutube(path))
     {
       return false;
     }

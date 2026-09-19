@@ -397,6 +397,7 @@ bool YouTubeManager::loadMore()
     }
     const char* argv[] = {
       "yt-dlp",
+      "--flat-playlist",
       "--no-warnings",
       "--ignore-errors",
       "--playlist-start",
@@ -493,6 +494,7 @@ bool YouTubeManager::startLoadChannel(int index, bool forceNetwork)
     }
     const char* argv[] = {
       "yt-dlp",
+      "--flat-playlist",
       "--no-warnings",
       "--ignore-errors",
       "--playlist-start",

@@ -3145,7 +3145,11 @@ static bool downloadYoutubeThumbnail(const std::string& videoId,
   outPath = dir + "/" + videoId + ".jpg";
   if (std::filesystem::is_regular_file(outPath, ec))
   {
-    return true;
+    const auto sz = std::filesystem::file_size(outPath, ec);
+    if (!ec && sz > 500)
+    {
+      return true;
+    }
   }
   const std::string url =
     "https://i.ytimg.com/vi/" + videoId + "/hqdefault.jpg";
@@ -3169,23 +3173,47 @@ static bool downloadYoutubeThumbnail(const std::string& videoId,
       dup2(devnull, STDERR_FILENO);
       ::close(devnull);
     }
-    const char* argv[] = {
+    const char* argvCurl[] = {
       "curl", "-fsSL", "--max-time", "8", url.c_str(), nullptr
     };
-    execvp("curl", const_cast<char* const*>(argv));
+    execvp("curl", const_cast<char* const*>(argvCurl));
+    const char* argvWget[] = {
+      "wget", "-q", "-O", "-", "--timeout=8", url.c_str(), nullptr
+    };
+    execvp("wget", const_cast<char* const*>(argvWget));
     _exit(127);
   }
-  int status = 0;
-  if (waitpid(pid, &status, 0) != pid)
+  // SIGCHLD is SIG_IGN in main, so waitpid is unreliable; poll the file.
+  for (int i = 0; i < 50; i++)
   {
-    return false;
+    usleep(100000);
+    if (std::filesystem::is_regular_file(outPath, ec))
+    {
+      const auto sz = std::filesystem::file_size(outPath, ec);
+      if (!ec && sz > 500)
+      {
+        return true;
+      }
+    }
+    if (kill(pid, 0) != 0)
+    {
+      break;
+    }
   }
-  if (!(WIFEXITED(status) && WEXITSTATUS(status) == 0))
+  if (kill(pid, 0) == 0)
   {
-    std::filesystem::remove(outPath, ec);
-    return false;
+    kill(pid, SIGTERM);
   }
-  return std::filesystem::is_regular_file(outPath, ec);
+  if (std::filesystem::is_regular_file(outPath, ec))
+  {
+    const auto sz = std::filesystem::file_size(outPath, ec);
+    if (!ec && sz > 500)
+    {
+      return true;
+    }
+  }
+  std::filesystem::remove(outPath, ec);
+  return false;
 }
 
 static void updatePreview(AppState& app, NVGcontext* vg)
@@ -3235,9 +3263,23 @@ static void updatePreview(AppState& app, NVGcontext* vg)
     if (app.selectedIndex >= 0 &&
         app.selectedIndex < static_cast<int>(videos.size()))
     {
-      const std::string& id = videos[static_cast<size_t>(app.selectedIndex)].id;
+      std::string id = videos[static_cast<size_t>(app.selectedIndex)].id;
+      if (id.empty())
+      {
+        const std::string& u = videos[static_cast<size_t>(app.selectedIndex)].url;
+        const size_t pos = u.find("v=");
+        if (pos != std::string::npos)
+        {
+          id = u.substr(pos + 2);
+          const size_t amp = id.find('&');
+          if (amp != std::string::npos)
+          {
+            id = id.substr(0, amp);
+          }
+        }
+      }
       std::string thumbPath;
-      if (downloadYoutubeThumbnail(id, thumbPath))
+      if (!id.empty() && downloadYoutubeThumbnail(id, thumbPath))
       {
         int img = nvgCreateImage(vg, thumbPath.c_str(), 0);
         if (img >= 0)
@@ -3310,7 +3352,17 @@ static void drawPreviewPanel(
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
 
   std::string title = "Preview";
-  if (!app.previewPath.empty())
+  if (app.browserMode == BrowserMode::YoutubeVideos &&
+      app.selectedIndex >= 0 &&
+      app.selectedIndex < static_cast<int>(app.youtube.videos().size()))
+  {
+    title = app.youtube.videos()[static_cast<size_t>(app.selectedIndex)].title;
+    if (title.empty())
+    {
+      title = app.youtube.videos()[static_cast<size_t>(app.selectedIndex)].id;
+    }
+  }
+  else if (!app.previewPath.empty())
   {
     std::filesystem::path fp(app.previewPath);
     std::string name = fp.filename().string();
