@@ -8,12 +8,14 @@
 #include "../third_party/oui-blendish/blendish.h"
 #include "FileManager.hpp"
 #include "Modal.hpp"
+#include "MusicPlayer.hpp"
 #include "TextInput.hpp"
 #include "HurmitFont.hpp"
 #include "BlenderIcons.hpp"
 
 #include <fstream>
 #include <cctype>
+#include <cmath>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -50,6 +52,8 @@ namespace
   constexpr float kMenuPadY       =   4.0f;
   constexpr float kFilterBoxW     = 200.0f;
   constexpr float kFilterBoxH     =  24.0f;
+  constexpr float kMusicPanelHeight = 44.0f;
+  constexpr int   kSpectrumBars    = 6;
 
   struct Place
   {
@@ -209,6 +213,10 @@ namespace
     bool tabScrollToActive = true;
     Theme theme;
     Toast toast;
+    MusicPlayer musicPlayer;
+    bool musicSeekDrag = false;
+    bool musicVolDrag = false;
+    float musicSeekValue = 0.0f;
     bool previewVisible = true;
     int previewImage = -1;
     std::string previewPath;
@@ -1460,6 +1468,70 @@ static int iconForEntry(const Entry& e)
   return BND_ICON_FILE_BLANK;
 }
 
+static bool isAudioExtension(const std::string& ext)
+{
+  return ext == "mp3"  || ext == "wav"  || ext == "flac" ||
+         ext == "ogg"  || ext == "opus" || ext == "m4a"  ||
+         ext == "aac"  || ext == "wma"  || ext == "alac" ||
+         ext == "aiff" || ext == "aif"  || ext == "ape"  ||
+         ext == "wv"   || ext == "mpc"  || ext == "tta";
+}
+
+static std::string extensionOfLower(const std::string& name)
+{
+  size_t dot = name.find_last_of('.');
+  if (dot == std::string::npos || dot + 1 >= name.size())
+  {
+    return std::string();
+  }
+  std::string ext = name.substr(dot + 1);
+  for (char& c : ext)
+  {
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  return ext;
+}
+
+static std::vector<int> collectAudioIndices(const AppState& app)
+{
+  std::vector<int> out;
+  const auto& entries = app.fm.entries();
+  for (size_t i = 0; i < entries.size(); i++)
+  {
+    if (entries[i].isDirectory)
+    {
+      continue;
+    }
+    if (isAudioExtension(extensionOfLower(entries[i].name)))
+    {
+      out.push_back(static_cast<int>(i));
+    }
+  }
+  return out;
+}
+
+static std::vector<std::string> collectAudioPaths(const AppState& app)
+{
+  std::vector<std::string> out;
+  const auto& entries = app.fm.entries();
+  std::vector<int> idx = collectAudioIndices(app);
+  for (size_t i = 0; i < idx.size(); i++)
+  {
+    out.push_back(joinPath(app.fm.currentPath(), entries[idx[i]].name));
+  }
+  return out;
+}
+
+static bool shouldShowMusicPanel(const AppState& app)
+{
+  if (app.musicPlayer.isActive())
+  {
+    return true;
+  }
+  std::vector<int> idx = collectAudioIndices(app);
+  return !idx.empty();
+}
+
 static void openEntry(AppState& app, int index)
 {
   const auto& entries = app.fm.entries();
@@ -1474,15 +1546,38 @@ static void openEntry(AppState& app, int index)
     app.fm.setPath(full);
     app.selectedIndex = -1;
     app.scrollOffset = 0.0f;
+    return;
   }
-  else if (e.isExecutable)
+  if (isAudioExtension(extensionOfLower(e.name)))
+  {
+    std::vector<int> audioIdx = collectAudioIndices(app);
+    std::vector<std::string> paths;
+    paths.reserve(audioIdx.size());
+    int selPos = -1;
+    for (size_t i = 0; i < audioIdx.size(); i++)
+    {
+      const Entry& ae = entries[audioIdx[i]];
+      paths.push_back(joinPath(app.fm.currentPath(), ae.name));
+      if (audioIdx[i] == index)
+      {
+        selPos = static_cast<int>(i);
+      }
+    }
+    if (selPos >= 0)
+    {
+      if (!app.musicPlayer.playPlaylist(paths, selPos))
+      {
+        app.toast.show("Could not play audio");
+      }
+    }
+    return;
+  }
+  if (e.isExecutable)
   {
     runExecutable(full);
+    return;
   }
-  else
-  {
-    openWithDefaultApp(full);
-  }
+  openWithDefaultApp(full);
 }
 
 
@@ -4011,6 +4106,399 @@ static void drawToast(NVGcontext* vg, const AppState& app, float w, float h)
   nvgText(vg, boxX + boxW * 0.5f, boxY + boxH * 0.5f, app.toast.message.c_str(), nullptr);
 }
 
+static NVGcolor spectrumColorAt(int index)
+{
+  switch (index)
+  {
+    case 0: return nvgRGBf(0.30f, 0.70f, 0.90f);
+    case 1: return nvgRGBf(0.30f, 0.85f, 0.45f);
+    case 2: return nvgRGBf(0.90f, 0.85f, 0.30f);
+    case 3: return nvgRGBf(0.95f, 0.65f, 0.25f);
+    case 4: return nvgRGBf(0.90f, 0.30f, 0.30f);
+    default: return nvgRGBf(0.65f, 0.35f, 0.85f);
+  }
+}
+
+static void drawPlayGlyph(NVGcontext* vg, float cx, float cy, float s)
+{
+  nvgBeginPath(vg);
+  nvgMoveTo(vg, cx - s * 0.45f, cy - s * 0.65f);
+  nvgLineTo(vg, cx + s * 0.65f, cy);
+  nvgLineTo(vg, cx - s * 0.45f, cy + s * 0.65f);
+  nvgClosePath(vg);
+  nvgFillColor(vg, nvgRGBf(0.92f, 0.92f, 0.92f));
+  nvgFill(vg);
+}
+
+static void drawPauseGlyph(NVGcontext* vg, float cx, float cy, float s)
+{
+  const float bw = s * 0.28f;
+  const float bh = s * 1.25f;
+  nvgBeginPath(vg);
+  nvgRect(vg, cx - s * 0.45f, cy - bh * 0.5f, bw, bh);
+  nvgRect(vg, cx + s * 0.45f - bw, cy - bh * 0.5f, bw, bh);
+  nvgFillColor(vg, nvgRGBf(0.92f, 0.92f, 0.92f));
+  nvgFill(vg);
+}
+
+static void drawStopGlyph(NVGcontext* vg, float cx, float cy, float s)
+{
+  const float sw = s * 0.85f;
+  nvgBeginPath(vg);
+  nvgRect(vg, cx - sw * 0.5f, cy - sw * 0.5f, sw, sw);
+  nvgFillColor(vg, nvgRGBf(0.92f, 0.92f, 0.92f));
+  nvgFill(vg);
+}
+
+static void drawPrevGlyph(NVGcontext* vg, float cx, float cy, float s)
+{
+  const float bw = s * 0.16f;
+  const float bh = s * 1.1f;
+  nvgBeginPath(vg);
+  nvgRect(vg, cx - s * 0.65f, cy - bh * 0.5f, bw, bh);
+  nvgFillColor(vg, nvgRGBf(0.92f, 0.92f, 0.92f));
+  nvgFill(vg);
+  nvgBeginPath(vg);
+  nvgMoveTo(vg, cx + s * 0.6f, cy - s * 0.55f);
+  nvgLineTo(vg, cx + s * 0.6f, cy + s * 0.55f);
+  nvgLineTo(vg, cx - s * 0.4f + bw, cy);
+  nvgClosePath(vg);
+  nvgFill(vg);
+}
+
+static void drawNextGlyph(NVGcontext* vg, float cx, float cy, float s)
+{
+  const float bw = s * 0.16f;
+  const float bh = s * 1.1f;
+  nvgBeginPath(vg);
+  nvgRect(vg, cx + s * 0.65f - bw, cy - bh * 0.5f, bw, bh);
+  nvgFillColor(vg, nvgRGBf(0.92f, 0.92f, 0.92f));
+  nvgFill(vg);
+  nvgBeginPath(vg);
+  nvgMoveTo(vg, cx - s * 0.6f, cy - s * 0.55f);
+  nvgLineTo(vg, cx - s * 0.6f, cy + s * 0.55f);
+  nvgLineTo(vg, cx + s * 0.4f - bw, cy);
+  nvgClosePath(vg);
+  nvgFill(vg);
+}
+
+static void handleMusicPanel(AppState& app, float w, float h, float panelH)
+{
+  if (panelH <= 0.0f)
+  {
+    return;
+  }
+  const float panelY = h - kStatusBarHeight - panelH;
+  const float pad = 8.0f;
+  const float btnSize = 26.0f;
+  const float btnGap = 6.0f;
+  const float cy = panelY + panelH * 0.5f;
+  const float btnY = cy - btnSize * 0.5f;
+
+  float bx = pad;
+
+  if (inRect(g_mouseX, g_mouseY, bx, btnY, btnSize, btnSize) && g_mouseClicked)
+  {
+    if (!app.musicPlayer.previous())
+    {
+      app.toast.show("Nothing to play");
+    }
+  }
+  bx += btnSize + btnGap;
+
+  if (inRect(g_mouseX, g_mouseY, bx, btnY, btnSize, btnSize) && g_mouseClicked)
+  {
+    const MusicPlayerState st = app.musicPlayer.state();
+    if (st == MusicPlayerState::Idle)
+    {
+      std::vector<std::string> paths = collectAudioPaths(app);
+      if (!paths.empty())
+      {
+        if (!app.musicPlayer.playPlaylist(paths, 0))
+        {
+          app.toast.show("Could not play audio");
+        }
+      }
+    }
+    else
+    {
+      app.musicPlayer.togglePause();
+    }
+  }
+  bx += btnSize + btnGap;
+
+  if (inRect(g_mouseX, g_mouseY, bx, btnY, btnSize, btnSize) && g_mouseClicked)
+  {
+    app.musicPlayer.stop();
+  }
+  bx += btnSize + btnGap;
+
+  if (inRect(g_mouseX, g_mouseY, bx, btnY, btnSize, btnSize) && g_mouseClicked)
+  {
+    if (!app.musicPlayer.next())
+    {
+      app.toast.show("Nothing to play");
+    }
+  }
+  bx += btnSize + btnGap + 14.0f;
+
+  const float timeW = 96.0f;
+  const float volIconW = 20.0f;
+  const float volW = 90.0f;
+  const float specW = 70.0f;
+  const float gap1 = 10.0f;
+  const float gap2 = 10.0f;
+  const float gap3 = 8.0f;
+  const float remaining = w - bx - pad;
+  float seekW = remaining - (gap1 + timeW + gap2 + volIconW + 4.0f + volW + gap3 + specW);
+  if (seekW < 60.0f)
+  {
+    seekW = 60.0f;
+  }
+  const float seekX = bx;
+  const float volIconX = seekX + seekW + gap1 + timeW + gap2;
+  const float volX = volIconX + volIconW + 4.0f;
+
+  const float trackH = 6.0f;
+  const float hitH = 16.0f;
+  const float sliderY = cy - hitH * 0.5f;
+
+  const bool overSeek = inRect(g_mouseX, g_mouseY, seekX, sliderY, seekW, hitH);
+  if (g_mouseClicked && overSeek)
+  {
+    app.musicSeekDrag = true;
+    const double dur = app.musicPlayer.duration();
+    if (dur > 0.0)
+    {
+      app.musicSeekValue = static_cast<float>(app.musicPlayer.position() / dur);
+    }
+    else
+    {
+      app.musicSeekValue = 0.0f;
+    }
+  }
+  if (app.musicSeekDrag && g_mouseDown)
+  {
+    float frac = (g_mouseX - seekX) / seekW;
+    if (frac < 0.0f) frac = 0.0f;
+    if (frac > 1.0f) frac = 1.0f;
+    app.musicSeekValue = frac;
+  }
+  if (app.musicSeekDrag && !g_mouseDown)
+  {
+    app.musicSeekDrag = false;
+    const double dur = app.musicPlayer.duration();
+    if (dur > 0.0)
+    {
+      app.musicPlayer.setPosition(static_cast<double>(app.musicSeekValue) * dur);
+    }
+  }
+
+  const bool overVol = inRect(g_mouseX, g_mouseY, volX, sliderY, volW, hitH);
+  if (g_mouseClicked && overVol)
+  {
+    app.musicVolDrag = true;
+  }
+  if (app.musicVolDrag && g_mouseDown)
+  {
+    float frac = (g_mouseX - volX) / volW;
+    if (frac < 0.0f) frac = 0.0f;
+    if (frac > 1.0f) frac = 1.0f;
+    app.musicPlayer.setVolume(static_cast<int>(frac * 100.0f + 0.5f));
+  }
+  if (app.musicVolDrag && !g_mouseDown)
+  {
+    app.musicVolDrag = false;
+  }
+
+  (void)trackH;
+}
+
+static void drawMusicPanel(NVGcontext* vg, AppState& app,
+                           float x, float y, float w, float h)
+{
+  bndBackground(vg, x, y, w, h);
+
+  const float pad = 8.0f;
+  const float btnSize = 26.0f;
+  const float btnGap = 6.0f;
+  const float cy = y + h * 0.5f;
+  const float btnY = cy - btnSize * 0.5f;
+
+  const MusicPlayerState st = app.musicPlayer.state();
+  const bool playing = (st == MusicPlayerState::Playing);
+  const bool active = (st != MusicPlayerState::Idle);
+
+  float bx = x + pad;
+
+  const bool prevHover = inRect(g_mouseX, g_mouseY, bx, btnY, btnSize, btnSize);
+  nvgBeginPath(vg);
+  nvgRoundedRect(vg, bx, btnY, btnSize, btnSize, 4.0f);
+  nvgFillColor(vg, prevHover ? nvgRGBf(0.32f, 0.32f, 0.32f) : nvgRGBf(0.22f, 0.22f, 0.22f));
+  nvgFill(vg);
+  drawPrevGlyph(vg, bx + btnSize * 0.5f, cy, 12.0f);
+  bx += btnSize + btnGap;
+
+  const bool playHover = inRect(g_mouseX, g_mouseY, bx, btnY, btnSize, btnSize);
+  nvgBeginPath(vg);
+  nvgRoundedRect(vg, bx, btnY, btnSize, btnSize, 4.0f);
+  nvgFillColor(vg, playHover ? nvgRGBf(0.32f, 0.32f, 0.32f) : nvgRGBf(0.22f, 0.22f, 0.22f));
+  nvgFill(vg);
+  if (playing)
+  {
+    drawPauseGlyph(vg, bx + btnSize * 0.5f, cy, 12.0f);
+  }
+  else
+  {
+    drawPlayGlyph(vg, bx + btnSize * 0.5f, cy, 12.0f);
+  }
+  bx += btnSize + btnGap;
+
+  const bool stopHover = inRect(g_mouseX, g_mouseY, bx, btnY, btnSize, btnSize);
+  nvgBeginPath(vg);
+  nvgRoundedRect(vg, bx, btnY, btnSize, btnSize, 4.0f);
+  nvgFillColor(vg, stopHover ? nvgRGBf(0.32f, 0.32f, 0.32f) : nvgRGBf(0.22f, 0.22f, 0.22f));
+  nvgFill(vg);
+  drawStopGlyph(vg, bx + btnSize * 0.5f, cy, 12.0f);
+  bx += btnSize + btnGap;
+
+  const bool nextHover = inRect(g_mouseX, g_mouseY, bx, btnY, btnSize, btnSize);
+  nvgBeginPath(vg);
+  nvgRoundedRect(vg, bx, btnY, btnSize, btnSize, 4.0f);
+  nvgFillColor(vg, nextHover ? nvgRGBf(0.32f, 0.32f, 0.32f) : nvgRGBf(0.22f, 0.22f, 0.22f));
+  nvgFill(vg);
+  drawNextGlyph(vg, bx + btnSize * 0.5f, cy, 12.0f);
+  bx += btnSize + btnGap + 14.0f;
+
+  const float timeW = 96.0f;
+  const float volIconW = 20.0f;
+  const float volW = 90.0f;
+  const float specW = 70.0f;
+  const float gap1 = 10.0f;
+  const float gap2 = 10.0f;
+  const float gap3 = 8.0f;
+  const float remaining = w - bx - pad - (x - x);
+  (void)remaining;
+  float seekW = (w - pad) - bx - (gap1 + timeW + gap2 + volIconW + 4.0f + volW + gap3 + specW);
+  if (seekW < 60.0f)
+  {
+    seekW = 60.0f;
+  }
+  const float seekX = bx;
+  const float timeX = seekX + seekW + gap1;
+  const float volIconX = timeX + timeW + gap2;
+  const float volX = volIconX + volIconW + 4.0f;
+  const float specX = volX + volW + gap3;
+
+  const double dur = app.musicPlayer.duration();
+  const double pos = app.musicPlayer.position();
+  double shownPos = pos;
+  if (app.musicSeekDrag)
+  {
+    shownPos = static_cast<double>(app.musicSeekValue) * dur;
+  }
+
+  const float trackH = 6.0f;
+  const float trackY = cy - trackH * 0.5f;
+  const float trackW = seekW;
+
+  nvgBeginPath(vg);
+  nvgRoundedRect(vg, seekX, trackY, trackW, trackH, trackH * 0.5f);
+  nvgFillColor(vg, nvgRGBf(0.18f, 0.18f, 0.18f));
+  nvgFill(vg);
+
+  float progress = 0.0f;
+  if (dur > 0.0)
+  {
+    progress = static_cast<float>(shownPos / dur);
+    if (progress < 0.0f) progress = 0.0f;
+    if (progress > 1.0f) progress = 1.0f;
+  }
+  if (progress > 0.0f)
+  {
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, seekX, trackY, trackW * progress, trackH, trackH * 0.5f);
+    nvgFillColor(vg, nvgRGBf(0.35f, 0.55f, 0.85f));
+    nvgFill(vg);
+  }
+
+  const float handleR = 5.0f;
+  nvgBeginPath(vg);
+  nvgCircle(vg, seekX + trackW * progress, cy, handleR);
+  nvgFillColor(vg, nvgRGBf(0.85f, 0.90f, 1.00f));
+  nvgFill(vg);
+
+  char timeBuf[40];
+  int curSec = static_cast<int>(shownPos);
+  int durSec = static_cast<int>(dur);
+  if (curSec < 0) curSec = 0;
+  if (durSec < 0) durSec = 0;
+  std::snprintf(timeBuf, sizeof(timeBuf), "%d:%02d / %d:%02d",
+                curSec / 60, curSec % 60, durSec / 60, durSec % 60);
+  nvgFontFace(vg, "sans");
+  nvgFontSize(vg, g_fontSize - 3.0f);
+  nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
+  nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+  nvgText(vg, timeX, cy + 1.0f, timeBuf, nullptr);
+
+  nvgBeginPath(vg);
+  nvgMoveTo(vg, volIconX + 2.0f, cy - 4.0f);
+  nvgLineTo(vg, volIconX + 6.0f, cy - 4.0f);
+  nvgLineTo(vg, volIconX + 10.0f, cy - 8.0f);
+  nvgLineTo(vg, volIconX + 10.0f, cy + 8.0f);
+  nvgLineTo(vg, volIconX + 6.0f, cy + 4.0f);
+  nvgLineTo(vg, volIconX + 2.0f, cy + 4.0f);
+  nvgClosePath(vg);
+  nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
+  nvgFill(vg);
+
+  const int vol = app.musicPlayer.volume();
+  nvgBeginPath(vg);
+  nvgRoundedRect(vg, volX, trackY, volW, trackH, trackH * 0.5f);
+  nvgFillColor(vg, nvgRGBf(0.18f, 0.18f, 0.18f));
+  nvgFill(vg);
+  float volFrac = static_cast<float>(vol) / 100.0f;
+  if (volFrac < 0.0f) volFrac = 0.0f;
+  if (volFrac > 1.0f) volFrac = 1.0f;
+  if (volFrac > 0.0f)
+  {
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, volX, trackY, volW * volFrac, trackH, trackH * 0.5f);
+    nvgFillColor(vg, nvgRGBf(0.55f, 0.75f, 0.55f));
+    nvgFill(vg);
+  }
+  nvgBeginPath(vg);
+  nvgCircle(vg, volX + volW * volFrac, cy, handleR);
+  nvgFillColor(vg, nvgRGBf(0.90f, 0.95f, 0.90f));
+  nvgFill(vg);
+
+  const float barW = 4.0f;
+  const float barGap = 2.0f;
+  const float barsMaxH = h - 12.0f;
+  const float barsBaseY = cy + barsMaxH * 0.5f;
+  const double t = glfwGetTime();
+  for (int i = 0; i < kSpectrumBars; i++)
+  {
+    float level = 0.15f;
+    if (playing)
+    {
+      const double phase = t * 6.0 + static_cast<double>(i) * 1.7;
+      level = 0.35f + 0.55f * static_cast<float>(0.5 + 0.5 * std::sin(phase));
+    }
+    else if (active)
+    {
+      level = 0.18f;
+    }
+    const float bh = barsMaxH * level;
+    const float bxx = specX + static_cast<float>(i) * (barW + barGap);
+    const float byy = barsBaseY - bh;
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, bxx, byy, barW, bh, 1.5f);
+    nvgFillColor(vg, spectrumColorAt(i));
+    nvgFill(vg);
+  }
+}
+
 static void drawStatusBar(NVGcontext* vg, AppState& app, float x, float y, float w)
 {
   bndBackground(vg, x, y, w, kStatusBarHeight);
@@ -4236,6 +4724,10 @@ int main(int argc, char** argv)
   applyTheme();
 
   AppState app;
+  if (!app.musicPlayer.init())
+  {
+    std::cerr << "rah: could not initialize music player" << std::endl;
+  }
   glfwSetWindowUserPointer(window, &app);
   app.sections = buildSections();
   app.lastPath = app.fm.currentPath();
@@ -4267,6 +4759,7 @@ int main(int argc, char** argv)
   while (!glfwWindowShouldClose(window))
   {
     glfwPollEvents();
+    app.musicPlayer.update();
 
     const FileOpStatus opStatus = app.fm.pollFileOp();
     if (opStatus == FileOpStatus::FinishedCopy)
@@ -4303,7 +4796,9 @@ int main(int argc, char** argv)
     float mainY = kTopBarHeight;
     float mainW = w - kSidebarWidth - previewW;
     float listTop = mainY + kHeaderHeight;
-    float listH = h - listTop - kStatusBarHeight;
+    const bool musicPanelVisible = shouldShowMusicPanel(app);
+    const float musicPanelH = musicPanelVisible ? kMusicPanelHeight : 0.0f;
+    float listH = h - listTop - kStatusBarHeight - musicPanelH;
 
     resetOnPathChange(app);
     applyScroll(app, listH);
@@ -4337,6 +4832,10 @@ int main(int argc, char** argv)
         g_mouseClicked = false;
       }
     }
+    if (!popupActive)
+    {
+      handleMusicPanel(app, w, h, musicPanelH);
+    }
     handleListClick(app, mainX, listTop, mainW, listH);
     resetOnPathChange(app);
     if (!popupActive)
@@ -4350,7 +4849,7 @@ int main(int argc, char** argv)
     drawTabBar(vg, app, w);
     drawTopBar(vg, app, w);
     resetOnPathChange(app);
-    drawSidebar(vg, app.fm, app.sections, h);
+    drawSidebar(vg, app.fm, app.sections, h - kStatusBarHeight - musicPanelH);
     if (g_sidebarDirty)
     {
       saveConfig(app);
@@ -4369,6 +4868,11 @@ int main(int argc, char** argv)
     if (app.previewVisible && !app.editor.active)
     {
       drawPreviewPanel(vg, app, mainX + mainW, mainY, previewW, h - mainY - kStatusBarHeight);
+    }
+    if (musicPanelVisible)
+    {
+      drawMusicPanel(vg, app, 0.0f, h - kStatusBarHeight - musicPanelH, w, musicPanelH);
+      drawSeparator(vg, 0.0f, h - kStatusBarHeight - musicPanelH, w, h - kStatusBarHeight - musicPanelH);
     }
     drawStatusBar(vg, app, 0.0f, h - kStatusBarHeight, w);
     drawToast(vg, app, w, h);

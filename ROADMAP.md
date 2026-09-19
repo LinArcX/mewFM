@@ -74,6 +74,7 @@
 ☑ User bookmarks (add / remove sidebar entries)
 ☑ Preview panel (thumbnail for images, text preview)
 ☑ Integrated text editor (right-click, Edit Here)
+☑ Built-in music player (libmpv): panel above status bar, play/pause/stop/prev/next, seek slider, volume slider, animated level bars
 □ List / grid view toggle
 □ Drag and drop (internal move, external in / out)
 □ Symlink handling (broken-link marker, follow toggle)

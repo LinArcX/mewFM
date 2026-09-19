@@ -80,10 +80,12 @@ gcc $CFLAGS -c third_party/nanovg/nanovg.c -o "$OUT/nanovg.o"
 echo "${C_CYAN}>>> compiling sources (C++)${C_RESET}"
 g++ $CXXFLAGS -c src/main.cpp -o "$OUT/main.o"
 g++ $CXXFLAGS -c src/FileManager.cpp -o "$OUT/FileManager.o"
+g++ $CXXFLAGS -c src/MusicPlayer.cpp -o "$OUT/MusicPlayer.o"
 
 echo "${C_CYAN}>>> linking${C_RESET}"
-g++ "$OUT/impl.o" "$OUT/nanovg.o" "$OUT/main.o" "$OUT/FileManager.o" \
+g++ "$OUT/impl.o" "$OUT/nanovg.o" "$OUT/main.o" "$OUT/FileManager.o" "$OUT/MusicPlayer.o" \
   $(pkg-config --cflags --libs glfw3 gl) \
+  -lmpv \
   -lm -o "$OUT/rah"
 
 echo "${C_GREEN}>>> done:${C_RESET} ${C_BOLD}$OUT/rah${C_RESET}"

@@ -35,16 +35,17 @@ A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and ou
   - Theme colors
 - Command-line argument: `rah <path>` opens that directory (or the parent, if a file is given)
 - Font and icons embedded into the binary — no runtime asset files needed
+- Built-in music player (libmpv): when the current directory contains audio files, a panel appears above the status bar with prev / play-pause / stop / next, a draggable seek slider, a volume slider, and animated level bars. Double-clicking an audio file starts internal playback; the panel persists while something is playing even after navigating away
 
 ## Requirements
 
 Void Linux:
 
 ```sh
-sudo xbps-install -Su base-devel glfw-devel MesaLib-devel pkg-config
+sudo xbps-install -Su base-devel glfw-devel MesaLib-devel pkg-config libmpv-devel
 Other distributions: install the equivalent of GLFW 3, OpenGL development headers, and pkg-config.
 
-Runtime dependencies: OpenGL 2.0 (works on Intel HD 3000 and older), GLFW's X11 backend.
+Runtime dependencies: OpenGL 2.0 (works on Intel HD 3000 and older), GLFW's X11 backend, and libmpv (for the built-in music player).
 
 Optional: `unzip` (install with `sudo xbps-install -Su unzip`) enables extraction of `.zip` archives. `tar` handles tar-based archives and is part of the base system.
 
