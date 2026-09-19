@@ -4,12 +4,122 @@
 #include <GL/glext.h>
 #include <GLFW/glfw3.h>
 
+#include <cerrno>
 #include <cstdio>
+#include <cstring>
+#include <fcntl.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 static void* getGlProcAddress(void* ctx, const char* name)
 {
   (void)ctx;
   return reinterpret_cast<void*>(glfwGetProcAddress(name));
+}
+
+static bool isYoutubeUrl(const std::string& url)
+{
+  return url.find("youtube.com/") != std::string::npos ||
+         url.find("youtu.be/") != std::string::npos;
+}
+
+static bool resolveYoutubeUrl(const std::string& ytUrl,
+                              std::string& videoUrl,
+                              std::string& audioUrl)
+{
+  videoUrl.clear();
+  audioUrl.clear();
+
+  int pipefd[2];
+  if (pipe(pipefd) != 0)
+  {
+    return false;
+  }
+
+  pid_t pid = fork();
+  if (pid < 0)
+  {
+    close(pipefd[0]);
+    close(pipefd[1]);
+    return false;
+  }
+
+  if (pid == 0)
+  {
+    close(pipefd[0]);
+    dup2(pipefd[1], STDOUT_FILENO);
+    close(pipefd[1]);
+    const char* argv[] = {
+      "yt-dlp",
+      "-f", "bv*+ba/b",
+      "--no-warnings",
+      "--get-url",
+      ytUrl.c_str(),
+      nullptr,
+    };
+    execvp("yt-dlp", const_cast<char* const*>(argv));
+    _exit(127);
+  }
+
+  close(pipefd[1]);
+  std::string output;
+  char buf[4096];
+  while (true)
+  {
+    ssize_t n = read(pipefd[0], buf, sizeof(buf));
+    if (n > 0)
+    {
+      output.append(buf, static_cast<size_t>(n));
+    }
+    else if (n == 0)
+    {
+      break;
+    }
+    else if (errno == EINTR)
+    {
+      continue;
+    }
+    else
+    {
+      break;
+    }
+  }
+  close(pipefd[0]);
+
+  if (output.empty())
+  {
+    return false;
+  }
+
+  size_t nl1 = output.find('\n');
+  std::string line1 = (nl1 == std::string::npos) ? output : output.substr(0, nl1);
+  if (!line1.empty() && line1.back() == '\r')
+  {
+    line1.pop_back();
+  }
+  if (line1.empty())
+  {
+    return false;
+  }
+  videoUrl = line1;
+
+  if (nl1 != std::string::npos)
+  {
+    size_t start2 = nl1 + 1;
+    size_t nl2 = output.find('\n', start2);
+    std::string line2 = (nl2 == std::string::npos)
+      ? output.substr(start2)
+      : output.substr(start2, nl2 - start2);
+    if (!line2.empty() && line2.back() == '\r')
+    {
+      line2.pop_back();
+    }
+    if (!line2.empty())
+    {
+      audioUrl = line2;
+    }
+  }
+  return true;
 }
 
 VideoPlayer::VideoPlayer()
@@ -49,9 +159,6 @@ bool VideoPlayer::init()
   mpv_set_option_string(m_pMpv, "osc", "no");
   mpv_set_option_string(m_pMpv, "terminal", "yes");
   mpv_set_option_string(m_pMpv, "msg-level", "all=warn");
-  mpv_set_option_string(m_pMpv, "ytdl", "yes");
-  mpv_set_option_string(m_pMpv, "ytdl-format", "best[height<=720]/best");
-  mpv_set_option_string(m_pMpv, "script-opts", "ytdl_hook-ytdl_path=yt-dlp");
   if (!m_subFont.empty())
   {
     mpv_set_option_string(m_pMpv, "sub-font", m_subFont.c_str());
@@ -120,7 +227,20 @@ bool VideoPlayer::open(const std::string& path)
   {
     return false;
   }
-  const char* cmd[] = {"loadfile", path.c_str(), "replace", nullptr};
+  std::string resolvedPath = path;
+  std::string audioUrl;
+  if (isYoutubeUrl(path))
+  {
+    std::string videoUrl;
+    if (!resolveYoutubeUrl(path, videoUrl, audioUrl))
+    {
+      return false;
+    }
+    resolvedPath = videoUrl;
+  }
+  const char* setOpt[] = {"set", "audio-file", audioUrl.c_str(), nullptr};
+  mpv_command(m_pMpv, setOpt);
+  const char* cmd[] = {"loadfile", resolvedPath.c_str(), "replace", nullptr};
   if (mpv_command(m_pMpv, cmd) < 0)
   {
     return false;
