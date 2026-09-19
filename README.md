@@ -130,7 +130,7 @@ youtubeChannelN	Absolute URL of a YouTube channel; written when a channel is add
 	youtubeChannelNameN	Cached display name for the corresponding `youtubeChannelN` entry
 subFont	Subtitle font family used by the video player (libmpv `sub-font`); user-authored, written on save only if set
 subFontSize	Subtitle font size in pixels used by the video player (libmpv `sub-font-size`); user-authored, written on save only if set
-
+youtubeQuality	Preferred max video height in pixels for YouTube playback (default 720). 0 means best available. Used as yt-dlp height cap; also changeable from the in-player Quality menu.
 Values for `path`, `hidden`, and `collapsed_*` are written automatically. Column widths are written on drag release. fontSize is user-authored — `rah` does not overwrite it.
 
 ## Project Layout

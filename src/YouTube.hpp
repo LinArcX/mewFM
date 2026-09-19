@@ -31,7 +31,10 @@ class YouTubeManager
 public:
   void setChannels(const std::vector<YouTubeChannel>& channels);
   const std::vector<YouTubeChannel>& channels() const;
-  void addChannel(const YouTubeChannel& channel);
+  [[nodiscard]] bool addChannel(const YouTubeChannel& channel);
+  [[nodiscard]] bool hasChannelUrl(const std::string& url) const;
+  [[nodiscard]] bool moveChannel(int index, int delta);
+  [[nodiscard]] bool removeChannel(int index);
   void setChannelName(int index, const std::string& name);
   void clearChannels();
 

@@ -50,6 +50,18 @@ bool VideoPlayer::startResolveYoutube(const std::string& ytUrl)
     fcntl(pipefd[0], F_SETFL, flags | O_NONBLOCK);
   }
 
+  if (m_preferredHeight > 0)
+  {
+    m_resolveFormat =
+      "bv*[height<=" + std::to_string(m_preferredHeight) +
+      "]+ba/b[height<=" + std::to_string(m_preferredHeight) +
+      "]/bv*+ba/b";
+  }
+  else
+  {
+    m_resolveFormat = "bv*+ba/b";
+  }
+
   pid_t pid = fork();
   if (pid < 0)
   {
@@ -71,7 +83,7 @@ bool VideoPlayer::startResolveYoutube(const std::string& ytUrl)
     }
     const char* argv[] = {
       "yt-dlp",
-      "-f", "bv*+ba/b",
+      "-f", m_resolveFormat.c_str(),
       "--no-warnings",
       "--get-url",
       ytUrl.c_str(),
@@ -450,6 +462,198 @@ const std::string& VideoPlayer::subtitleFont() const
 int VideoPlayer::subtitleFontSize() const
 {
   return m_subFontSize;
+}
+void VideoPlayer::setPreferredHeight(int height)
+{
+  if (height < 0)
+  {
+    height = 0;
+  }
+  m_preferredHeight = height;
+}
+
+int VideoPlayer::preferredHeight() const
+{
+  return m_preferredHeight;
+}
+
+bool VideoPlayer::reopenWithHeight(int height)
+{
+  if (m_currentFile.empty())
+  {
+    return false;
+  }
+  const std::string path = m_currentFile;
+  setPreferredHeight(height);
+  cancelResolve();
+  if (m_pMpv != nullptr)
+  {
+    const char* cmd[] = {"stop", nullptr};
+    mpv_command(m_pMpv, cmd);
+  }
+  m_state = VideoPlayerState::Idle;
+  return open(path);
+}
+
+int VideoPlayer::subtitleTrackCount() const
+{
+  if (m_pMpv == nullptr)
+  {
+    return 0;
+  }
+  int64_t count = 0;
+  if (mpv_get_property(m_pMpv, "track-list/count", MPV_FORMAT_INT64, &count) < 0)
+  {
+    return 0;
+  }
+  int n = 0;
+  for (int64_t i = 0; i < count; i++)
+  {
+    char key[64];
+    std::snprintf(key, sizeof(key), "track-list/%lld/type", static_cast<long long>(i));
+    char* type = nullptr;
+    if (mpv_get_property(m_pMpv, key, MPV_FORMAT_STRING, &type) < 0 || type == nullptr)
+    {
+      continue;
+    }
+    const bool isSub = (std::strcmp(type, "sub") == 0);
+    mpv_free(type);
+    if (isSub)
+    {
+      n++;
+    }
+  }
+  return n;
+}
+
+int VideoPlayer::subtitleTrackIdAt(int index) const
+{
+  if (m_pMpv == nullptr || index < 0)
+  {
+    return -1;
+  }
+  int64_t count = 0;
+  if (mpv_get_property(m_pMpv, "track-list/count", MPV_FORMAT_INT64, &count) < 0)
+  {
+    return -1;
+  }
+  int n = 0;
+  for (int64_t i = 0; i < count; i++)
+  {
+    char key[64];
+    std::snprintf(key, sizeof(key), "track-list/%lld/type", static_cast<long long>(i));
+    char* type = nullptr;
+    if (mpv_get_property(m_pMpv, key, MPV_FORMAT_STRING, &type) < 0 || type == nullptr)
+    {
+      continue;
+    }
+    const bool isSub = (std::strcmp(type, "sub") == 0);
+    mpv_free(type);
+    if (!isSub)
+    {
+      continue;
+    }
+    if (n == index)
+    {
+      std::snprintf(key, sizeof(key), "track-list/%lld/id", static_cast<long long>(i));
+      int64_t id = -1;
+      if (mpv_get_property(m_pMpv, key, MPV_FORMAT_INT64, &id) < 0)
+      {
+        return -1;
+      }
+      return static_cast<int>(id);
+    }
+    n++;
+  }
+  return -1;
+}
+
+std::string VideoPlayer::subtitleTrackLabelAt(int index) const
+{
+  if (m_pMpv == nullptr || index < 0)
+  {
+    return std::string();
+  }
+  int64_t count = 0;
+  if (mpv_get_property(m_pMpv, "track-list/count", MPV_FORMAT_INT64, &count) < 0)
+  {
+    return std::string();
+  }
+  int n = 0;
+  for (int64_t i = 0; i < count; i++)
+  {
+    char key[64];
+    std::snprintf(key, sizeof(key), "track-list/%lld/type", static_cast<long long>(i));
+    char* type = nullptr;
+    if (mpv_get_property(m_pMpv, key, MPV_FORMAT_STRING, &type) < 0 || type == nullptr)
+    {
+      continue;
+    }
+    const bool isSub = (std::strcmp(type, "sub") == 0);
+    mpv_free(type);
+    if (!isSub)
+    {
+      continue;
+    }
+    if (n == index)
+    {
+      std::string label;
+      std::snprintf(key, sizeof(key), "track-list/%lld/lang", static_cast<long long>(i));
+      char* lang = nullptr;
+      if (mpv_get_property(m_pMpv, key, MPV_FORMAT_STRING, &lang) >= 0 && lang != nullptr)
+      {
+        label = lang;
+        mpv_free(lang);
+      }
+      std::snprintf(key, sizeof(key), "track-list/%lld/title", static_cast<long long>(i));
+      char* title = nullptr;
+      if (mpv_get_property(m_pMpv, key, MPV_FORMAT_STRING, &title) >= 0 && title != nullptr)
+      {
+        if (!label.empty())
+        {
+          label += " — ";
+        }
+        label += title;
+        mpv_free(title);
+      }
+      if (label.empty())
+      {
+        label = "Track " + std::to_string(index + 1);
+      }
+      return label;
+    }
+    n++;
+  }
+  return std::string();
+}
+
+int VideoPlayer::currentSubtitleId() const
+{
+  if (m_pMpv == nullptr)
+  {
+    return -1;
+  }
+  int64_t id = -1;
+  if (mpv_get_property(m_pMpv, "sid", MPV_FORMAT_INT64, &id) < 0)
+  {
+    return -1;
+  }
+  return static_cast<int>(id);
+}
+
+void VideoPlayer::setSubtitleId(int id)
+{
+  if (m_pMpv == nullptr)
+  {
+    return;
+  }
+  if (id < 0)
+  {
+    mpv_set_property_string(m_pMpv, "sid", "no");
+    return;
+  }
+  int64_t sid = id;
+  mpv_set_property(m_pMpv, "sid", MPV_FORMAT_INT64, &sid);
 }
 
 void VideoPlayer::stop()

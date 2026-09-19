@@ -42,6 +42,16 @@ public:
   const std::string& subtitleFont() const;
   int subtitleFontSize() const;
 
+  void setPreferredHeight(int height);
+  int preferredHeight() const;
+  [[nodiscard]] bool reopenWithHeight(int height);
+
+  int subtitleTrackCount() const;
+  int subtitleTrackIdAt(int index) const;
+  std::string subtitleTrackLabelAt(int index) const;
+  int currentSubtitleId() const;
+  void setSubtitleId(int id);
+
   double position() const;
   double duration() const;
 
@@ -73,4 +83,6 @@ private:
   pid_t m_resolvePid = -1;
   int m_resolveFd = -1;
   std::string m_resolveBuffer;
+  std::string m_resolveFormat;
+  int m_preferredHeight = 720;
 };

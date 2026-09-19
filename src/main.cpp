@@ -102,6 +102,14 @@ namespace
     Row,
     Empty,
     SidebarYoutube,
+    SidebarYoutubeChannel,
+  };
+
+  enum class VideoMenuKind
+  {
+    None,
+    Quality,
+    Subs,
   };
 
   enum class MenuAction
@@ -125,6 +133,9 @@ namespace
     AddBookmark,
     RemoveBookmark,
     AddYoutubeChannel,
+    MoveChannelUp,
+    MoveChannelDown,
+    RemoveYoutubeChannel,
   };
 
   struct MenuItem
@@ -258,6 +269,10 @@ namespace
     float youtubeHeaderH = 0.0f;
     bool youtubeLoading = false;
     std::string youtubeLoadingName;
+    std::vector<float> youtubeItemYs;
+    int youtubeMenuChannelIndex = -1;
+    int youtubeQuality = 720;
+    VideoMenuKind videoMenu = VideoMenuKind::None;
   };
 
   float g_mouseX = 0.0f;
@@ -479,6 +494,14 @@ static void loadConfig(AppState& app)
     {
       subFontSize = std::atoi(val.c_str());
     }
+    else if (key == "youtubeQuality")
+    {
+      int q = std::atoi(val.c_str());
+      if (q >= 0 && q <= 4320)
+      {
+        app.youtubeQuality = q;
+      }
+    }
     else if (key.compare(0, 14, "youtubeChannel") == 0 && key.size() > 14 &&
              key[14] >= '0' && key[14] <= '9')
     {
@@ -571,6 +594,7 @@ static void loadConfig(AppState& app)
     app.subFontSize = subFontSize;
     app.videoPlayer.setSubtitleFontSize(subFontSize);
   }
+  app.videoPlayer.setPreferredHeight(app.youtubeQuality);
 
   if (!youtubeUrls.empty())
   {
@@ -660,6 +684,7 @@ static void saveConfig(const AppState& app)
   }
   out << "sortField=" << static_cast<int>(app.fm.sortField()) << "\n";
   out << "sortDir=" << (app.fm.sortAscending() ? "0" : "1") << "\n";
+  out << "youtubeQuality=" << app.youtubeQuality << "\n";
   if (!app.subFont.empty())
   {
     out << "subFont=" << app.subFont << "\n";
@@ -688,12 +713,17 @@ static void syncYoutubeChannelNames(AppState& app)
     {
       continue;
     }
-    for (size_t i = 0; i < s.items.size(); i++)
+    s.items.clear();
+    const auto& channels = app.youtube.channels();
+    for (size_t i = 0; i < channels.size(); i++)
     {
-      if (i < app.youtube.channels().size())
-      {
-        s.items[i].label = app.youtube.channels()[i].name;
-      }
+      Place p;
+      p.label = channels[i].name.empty()
+        ? youtubeChannelShortName(channels[i].url)
+        : channels[i].name;
+      p.path = channels[i].url;
+      p.icon = BND_ICON_FILE_MOVIE;
+      s.items.push_back(p);
     }
     break;
   }
@@ -2609,6 +2639,7 @@ static void drawSidebar(NVGcontext* vg, AppState& app, float h, float visibleW)
 {
   app.youtubeHeaderY = -1.0f;
   app.youtubeHeaderH = 0.0f;
+  app.youtubeItemYs.clear();
 
   if (visibleW < 1.0f)
   {
@@ -2696,6 +2727,10 @@ static void drawSidebar(NVGcontext* vg, AppState& app, float h, float visibleW)
       nvgFontSize(vg, g_fontSize - 1.0f);
       std::string shownLabel = truncateToWidth(vg, p.label, itemW - 40.0f);
       bndToolButton(vg, itemX, y, itemW, itemH, BND_LEFT, st, p.icon, shownLabel.c_str());
+      if (isYoutube)
+      {
+        app.youtubeItemYs.push_back(y);
+      }
       if (hover && g_mouseClicked)
       {
         if (isYoutube)
@@ -4014,25 +4049,22 @@ static void handleTextInputResult(AppState& app)
     {
       return;
     }
+    if (app.youtube.hasChannelUrl(url))
+    {
+      app.modal.openInfo("Channel already added", "This channel is already in the list.");
+      return;
+    }
     const std::string shortName = youtubeChannelShortName(url);
     YouTubeChannel ch;
     ch.url = url;
     ch.name = shortName;
-    app.youtube.addChannel(ch);
-    int newIdx = static_cast<int>(app.youtube.channels().size()) - 1;
-    for (auto& s : app.sections)
+    if (!app.youtube.addChannel(ch))
     {
-      if (s.key != "youtube")
-      {
-        continue;
-      }
-      Place p;
-      p.label = shortName;
-      p.path = url;
-      p.icon = BND_ICON_FILE_MOVIE;
-      s.items.push_back(p);
-      break;
+      app.modal.openInfo("Channel already added", "This channel is already in the list.");
+      return;
     }
+    int newIdx = static_cast<int>(app.youtube.channels().size()) - 1;
+    syncYoutubeChannelNames(app);
     if (app.youtube.startLoadChannel(newIdx, true))
     {
       app.browserMode = BrowserMode::YoutubeVideos;
@@ -4349,6 +4381,17 @@ static std::vector<MenuItem> buildSidebarYoutubeMenuItems()
   return items;
 }
 
+static std::vector<MenuItem> buildSidebarYoutubeChannelMenuItems(const AppState& app)
+{
+  std::vector<MenuItem> items;
+  const int idx = app.youtubeMenuChannelIndex;
+  const int n = static_cast<int>(app.youtube.channels().size());
+  items.push_back({"Move Up", MenuAction::MoveChannelUp, idx > 0});
+  items.push_back({"Move Down", MenuAction::MoveChannelDown, idx >= 0 && idx < n - 1});
+  items.push_back({"Remove Channel", MenuAction::RemoveYoutubeChannel, idx >= 0});
+  return items;
+}
+
 static std::vector<MenuItem> menuItemsFor(const AppState& app, MenuKind kind)
 {
   if (kind == MenuKind::Row)
@@ -4358,6 +4401,10 @@ static std::vector<MenuItem> menuItemsFor(const AppState& app, MenuKind kind)
   if (kind == MenuKind::Empty)
   {
     return buildEmptyMenuItems(app);
+  }
+  if (kind == MenuKind::SidebarYoutubeChannel)
+  {
+    return buildSidebarYoutubeChannelMenuItems(app);
   }
   return buildSidebarYoutubeMenuItems();
 }
@@ -4672,6 +4719,33 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
     case MenuAction::AddYoutubeChannel:
       app.textInput.open("Channel URL", "");
       app.pendingInput = PendingInput::YoutubeChannelUrl;
+      break;
+    case MenuAction::MoveChannelUp:
+      if (app.youtube.moveChannel(app.youtubeMenuChannelIndex, -1))
+      {
+        syncYoutubeChannelNames(app);
+        saveConfig(app);
+      }
+      break;
+    case MenuAction::MoveChannelDown:
+      if (app.youtube.moveChannel(app.youtubeMenuChannelIndex, 1))
+      {
+        syncYoutubeChannelNames(app);
+        saveConfig(app);
+      }
+      break;
+    case MenuAction::RemoveYoutubeChannel:
+      if (app.youtube.removeChannel(app.youtubeMenuChannelIndex))
+      {
+        if (app.browserMode == BrowserMode::YoutubeVideos &&
+            app.youtube.activeChannel() < 0)
+        {
+          app.browserMode = BrowserMode::Files;
+        }
+        syncYoutubeChannelNames(app);
+        saveConfig(app);
+        app.toast.show("Channel removed");
+      }
       break;
     case MenuAction::EmptyTrash:
       app.modal.openConfirm("Empty Trash", "Permanently delete all items in Trash?");
@@ -5464,8 +5538,62 @@ static void drawVideoControls(NVGcontext* vg, AppState& app,
     if (hover && g_mouseClicked)
     {
       vp.stop();
+      app.videoMenu = VideoMenuKind::None;
     }
     bx += btnSize + btnGap;
+  }
+
+  {
+    const float qW = 52.0f;
+    bool hover = inRect(g_mouseX, g_mouseY, bx, btnY, qW, btnSize);
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, bx, btnY, qW, btnSize, 4.0f);
+    nvgFillColor(vg, hover ? nvgRGBf(0.35f, 0.35f, 0.35f) : nvgRGBf(0.22f, 0.22f, 0.22f));
+    nvgFill(vg);
+    nvgFontFace(vg, "sans");
+    nvgFontSize(vg, g_fontSize - 4.0f);
+    nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
+    nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    char qBuf[16];
+    if (vp.preferredHeight() > 0)
+    {
+      std::snprintf(qBuf, sizeof(qBuf), "%dp", vp.preferredHeight());
+    }
+    else
+    {
+      std::snprintf(qBuf, sizeof(qBuf), "Best");
+    }
+    nvgText(vg, bx + qW * 0.5f, cy + 1.0f, qBuf, nullptr);
+    if (hover && g_mouseClicked)
+    {
+      app.videoMenu = (app.videoMenu == VideoMenuKind::Quality)
+        ? VideoMenuKind::None
+        : VideoMenuKind::Quality;
+      app.videoControlsLastActive = glfwGetTime();
+    }
+    bx += qW + btnGap;
+  }
+
+  {
+    const float sW = 48.0f;
+    bool hover = inRect(g_mouseX, g_mouseY, bx, btnY, sW, btnSize);
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, bx, btnY, sW, btnSize, 4.0f);
+    nvgFillColor(vg, hover ? nvgRGBf(0.35f, 0.35f, 0.35f) : nvgRGBf(0.22f, 0.22f, 0.22f));
+    nvgFill(vg);
+    nvgFontFace(vg, "sans");
+    nvgFontSize(vg, g_fontSize - 4.0f);
+    nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
+    nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgText(vg, bx + sW * 0.5f, cy + 1.0f, "Subs", nullptr);
+    if (hover && g_mouseClicked)
+    {
+      app.videoMenu = (app.videoMenu == VideoMenuKind::Subs)
+        ? VideoMenuKind::None
+        : VideoMenuKind::Subs;
+      app.videoControlsLastActive = glfwGetTime();
+    }
+    bx += sW + btnGap;
   }
 
   const float timeW = 110.0f;
@@ -5605,6 +5733,121 @@ static void drawVideoControls(NVGcontext* vg, AppState& app,
     nvgRestore(vg);
   }
 
+  if (app.videoMenu == VideoMenuKind::Quality || app.videoMenu == VideoMenuKind::Subs)
+  {
+    app.videoControlsLastActive = glfwGetTime();
+    const float menuW = 160.0f;
+    const float rowH = 26.0f;
+    const float menuPad = 6.0f;
+    int rows = 0;
+    if (app.videoMenu == VideoMenuKind::Quality)
+    {
+      rows = 5;
+    }
+    else
+    {
+      rows = 1 + vp.subtitleTrackCount();
+      if (rows < 1)
+      {
+        rows = 1;
+      }
+    }
+    const float menuH = menuPad * 2.0f + static_cast<float>(rows) * rowH;
+    const float menuX = x + 12.0f;
+    const float menuY = ctrlY - menuH - 8.0f;
+
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, menuX, menuY, menuW, menuH, 4.0f);
+    nvgFillColor(vg, nvgRGBAf(0.12f, 0.12f, 0.12f, 0.95f));
+    nvgFill(vg);
+    nvgStrokeColor(vg, nvgRGBf(0.3f, 0.3f, 0.3f));
+    nvgStrokeWidth(vg, 1.0f);
+    nvgStroke(vg);
+
+    nvgFontFace(vg, "sans");
+    nvgFontSize(vg, g_fontSize - 3.0f);
+    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+
+    if (app.videoMenu == VideoMenuKind::Quality)
+    {
+      const int heights[] = {360, 480, 720, 1080, 0};
+      const char* labels[] = {"360p", "480p", "720p", "1080p", "Best"};
+      for (int i = 0; i < 5; i++)
+      {
+        const float ry = menuY + menuPad + static_cast<float>(i) * rowH;
+        const bool hover = inRect(g_mouseX, g_mouseY, menuX, ry, menuW, rowH);
+        const bool selected = (vp.preferredHeight() == heights[i]);
+        if (hover || selected)
+        {
+          nvgBeginPath(vg);
+          nvgRoundedRect(vg, menuX + 2.0f, ry, menuW - 4.0f, rowH, 3.0f);
+          nvgFillColor(vg, selected ? nvgRGBf(0.25f, 0.4f, 0.55f)
+                                    : nvgRGBf(0.22f, 0.22f, 0.22f));
+          nvgFill(vg);
+        }
+        nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
+        nvgText(vg, menuX + 12.0f, ry + rowH * 0.5f, labels[i], nullptr);
+        if (hover && g_mouseClicked)
+        {
+          app.youtubeQuality = heights[i];
+          app.videoPlayer.setPreferredHeight(heights[i]);
+          if (!app.videoPlayer.reopenWithHeight(heights[i]))
+          {
+            app.toast.show("Could not change quality");
+          }
+          else
+          {
+            saveConfig(app);
+          }
+          app.videoMenu = VideoMenuKind::None;
+        }
+      }
+    }
+    else
+    {
+      const int subCount = vp.subtitleTrackCount();
+      const int curSid = vp.currentSubtitleId();
+      for (int i = 0; i < rows; i++)
+      {
+        const float ry = menuY + menuPad + static_cast<float>(i) * rowH;
+        const bool hover = inRect(g_mouseX, g_mouseY, menuX, ry, menuW, rowH);
+        const int trackId = (i == 0) ? -1 : vp.subtitleTrackIdAt(i - 1);
+        const bool selected = (i == 0) ? (curSid < 0) : (curSid == trackId);
+        if (hover || selected)
+        {
+          nvgBeginPath(vg);
+          nvgRoundedRect(vg, menuX + 2.0f, ry, menuW - 4.0f, rowH, 3.0f);
+          nvgFillColor(vg, selected ? nvgRGBf(0.25f, 0.4f, 0.55f)
+                                    : nvgRGBf(0.22f, 0.22f, 0.22f));
+          nvgFill(vg);
+        }
+        nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
+        if (i == 0)
+        {
+          nvgText(vg, menuX + 12.0f, ry + rowH * 0.5f, "Off", nullptr);
+        }
+        else
+        {
+          std::string lab = vp.subtitleTrackLabelAt(i - 1);
+          if (lab.empty())
+          {
+            lab = "Track " + std::to_string(i);
+          }
+          nvgText(vg, menuX + 12.0f, ry + rowH * 0.5f, lab.c_str(), nullptr);
+        }
+        if (hover && g_mouseClicked)
+        {
+          vp.setSubtitleId(trackId);
+          app.videoMenu = VideoMenuKind::None;
+        }
+      }
+      if (subCount == 0 && rows == 1)
+      {
+        // only Off shown when no tracks
+      }
+    }
+  }
+
   const float closeSize = 28.0f;
   const float closeX = x + w - closeSize - 8.0f;
   const float closeY = y + 8.0f;
@@ -5622,6 +5865,7 @@ static void drawVideoControls(NVGcontext* vg, AppState& app,
   {
     app.videoPlayer.close();
     app.videoActive = false;
+    app.videoMenu = VideoMenuKind::None;
   }
 }
 
@@ -6060,6 +6304,33 @@ int main(int argc, char** argv)
           app.menuX = g_mouseX;
           app.menuY = g_mouseY;
           app.menuRowIndex = -1;
+          app.youtubeMenuChannelIndex = -1;
+        }
+        else if (g_mouseX < sidebarW && !app.youtubeItemYs.empty())
+        {
+          const float itemH = 26.0f;
+          int hit = -1;
+          for (size_t i = 0; i < app.youtubeItemYs.size(); i++)
+          {
+            const float iy = app.youtubeItemYs[i];
+            if (g_mouseY >= iy && g_mouseY <= iy + itemH)
+            {
+              hit = static_cast<int>(i);
+              break;
+            }
+          }
+          if (hit >= 0)
+          {
+            app.menuKind = MenuKind::SidebarYoutubeChannel;
+            app.menuX = g_mouseX;
+            app.menuY = g_mouseY;
+            app.menuRowIndex = -1;
+            app.youtubeMenuChannelIndex = hit;
+          }
+          else
+          {
+            openContextMenu(app, mainX, listTop, mainW, listH);
+          }
         }
         else
         {

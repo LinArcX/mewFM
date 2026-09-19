@@ -28,20 +28,79 @@ const std::vector<YouTubeChannel>& YouTubeManager::channels() const
   return m_channels;
 }
 
-void YouTubeManager::addChannel(const YouTubeChannel& channel)
+bool YouTubeManager::hasChannelUrl(const std::string& url) const
 {
-  if (channel.url.empty())
+  if (url.empty())
   {
-    return;
+    return false;
   }
   for (size_t i = 0; i < m_channels.size(); i++)
   {
-    if (m_channels[i].url == channel.url)
+    if (m_channels[i].url == url)
     {
-      return;
+      return true;
     }
   }
+  return false;
+}
+
+bool YouTubeManager::addChannel(const YouTubeChannel& channel)
+{
+  if (channel.url.empty())
+  {
+    return false;
+  }
+  if (hasChannelUrl(channel.url))
+  {
+    return false;
+  }
   m_channels.push_back(channel);
+  return true;
+}
+
+bool YouTubeManager::moveChannel(int index, int delta)
+{
+  if (index < 0 || index >= static_cast<int>(m_channels.size()))
+  {
+    return false;
+  }
+  const int target = index + delta;
+  if (target < 0 || target >= static_cast<int>(m_channels.size()))
+  {
+    return false;
+  }
+  YouTubeChannel tmp = m_channels[static_cast<size_t>(index)];
+  m_channels[static_cast<size_t>(index)] = m_channels[static_cast<size_t>(target)];
+  m_channels[static_cast<size_t>(target)] = tmp;
+  if (m_activeChannel == index)
+  {
+    m_activeChannel = target;
+  }
+  else if (m_activeChannel == target)
+  {
+    m_activeChannel = index;
+  }
+  return true;
+}
+
+bool YouTubeManager::removeChannel(int index)
+{
+  if (index < 0 || index >= static_cast<int>(m_channels.size()))
+  {
+    return false;
+  }
+  m_channels.erase(m_channels.begin() + index);
+  if (m_activeChannel == index)
+  {
+    m_activeChannel = -1;
+    m_activeChannelName.clear();
+    m_videos.clear();
+  }
+  else if (m_activeChannel > index)
+  {
+    m_activeChannel--;
+  }
+  return true;
 }
 
 void YouTubeManager::setChannelName(int index, const std::string& name)
