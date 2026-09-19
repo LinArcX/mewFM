@@ -4049,8 +4049,9 @@ static void drawStatusBar(NVGcontext* vg, AppState& app, float x, float y, float
   nvgFillColor(vg, nvgRGBf(0.7f, 0.7f, 0.7f));
 
   const float cy = y + kStatusBarHeight * 0.5f;
+  const float textY = cy + 2.5f;
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-  nvgText(vg, x + kPadX, cy, left.c_str(), nullptr);
+  nvgText(vg, x + kPadX, textY, left.c_str(), nullptr);
 
   const FileOpProgress& prog = app.fm.fileOpProgress();
   if (prog.active)
@@ -4060,7 +4061,7 @@ static void drawStatusBar(NVGcontext* vg, AppState& app, float x, float y, float
     float px = x + kPadX + (lb[2] - lb[0]) + 20.0f;
 
     nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
-    nvgText(vg, px, cy, prog.label.c_str(), nullptr);
+    nvgText(vg, px, textY, prog.label.c_str(), nullptr);
 
     float lb2[4];
     nvgTextBounds(vg, 0.0f, 0.0f, prog.label.c_str(), nullptr, lb2);
@@ -4109,14 +4110,14 @@ static void drawStatusBar(NVGcontext* vg, AppState& app, float x, float y, float
     std::snprintf(pctBuf, sizeof(pctBuf), "%3d%%",
                   static_cast<int>(percent * 100.0f + 0.5f));
     nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
-    nvgText(vg, px, cy, pctBuf, nullptr);
+    nvgText(vg, px, textY, pctBuf, nullptr);
 
     float pb[4];
     nvgTextBounds(vg, 0.0f, 0.0f, pctBuf, nullptr, pb);
     px += (pb[2] - pb[0]) + 10.0f;
 
     const float pauseBtnW = 64.0f;
-    const float pauseBtnH = 16.0f;
+    const float pauseBtnH = 18.0f;
     const float pauseBtnY = cy - pauseBtnH * 0.5f;
     const bool pauseHover = inRect(g_mouseX, g_mouseY, px, pauseBtnY, pauseBtnW, pauseBtnH);
     const bool isPaused = prog.paused;
@@ -4130,10 +4131,12 @@ static void drawStatusBar(NVGcontext* vg, AppState& app, float x, float y, float
     nvgStrokeWidth(vg, 1.0f);
     nvgStroke(vg);
 
+    nvgFontSize(vg, g_fontSize - 4.0f);
     nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
     nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-    nvgText(vg, px + pauseBtnW * 0.5f, cy, isPaused ? "Resume" : "Pause", nullptr);
+    nvgText(vg, px + pauseBtnW * 0.5f, cy + 1.5f, isPaused ? "Resume" : "Pause", nullptr);
     nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+    nvgFontSize(vg, g_fontSize - 2.0f);
 
     if (pauseHover && g_mouseClicked)
     {
@@ -4150,7 +4153,7 @@ static void drawStatusBar(NVGcontext* vg, AppState& app, float x, float y, float
                                    static_cast<unsigned long long>(st.f_frsize);
     std::string right = humanSize(freeBytes) + " free";
     nvgTextAlign(vg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
-    nvgText(vg, x + w - kPadX, cy, right.c_str(), nullptr);
+    nvgText(vg, x + w - kPadX, textY, right.c_str(), nullptr);
   }
 }
 

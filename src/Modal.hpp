@@ -43,7 +43,7 @@ struct Modal
     title = t;
     message = msg;
     result = ModalResult::None;
-    focus = -1;
+    focus = 0;
   }
 
   void close()
