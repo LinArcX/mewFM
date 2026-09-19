@@ -4182,7 +4182,7 @@ static void drawNextGlyph(NVGcontext* vg, float cx, float cy, float s)
   nvgFill(vg);
 }
 
-static void handleMusicPanel(AppState& app, float w, float h, float panelH)
+static void handleMusicPanel(AppState& app, float x, float w, float h, float panelH)
 {
   if (panelH <= 0.0f)
   {
@@ -4195,7 +4195,7 @@ static void handleMusicPanel(AppState& app, float w, float h, float panelH)
   const float cy = panelY + panelH * 0.5f;
   const float btnY = cy - btnSize * 0.5f;
 
-  float bx = pad;
+  float bx = x + pad;
 
   if (inRect(g_mouseX, g_mouseY, bx, btnY, btnSize, btnSize) && g_mouseClicked)
   {
@@ -4249,8 +4249,8 @@ static void handleMusicPanel(AppState& app, float w, float h, float panelH)
   const float gap1 = 10.0f;
   const float gap2 = 10.0f;
   const float gap3 = 8.0f;
-  const float remaining = w - bx - pad;
-  float seekW = remaining - (gap1 + timeW + gap2 + volIconW + 4.0f + volW + gap3 + specW);
+  const float rightEdge = x + w - pad;
+  float seekW = rightEdge - bx - (gap1 + timeW + gap2 + volIconW + 4.0f + volW + gap3 + specW);
   if (seekW < 60.0f)
   {
     seekW = 60.0f;
@@ -4377,9 +4377,8 @@ static void drawMusicPanel(NVGcontext* vg, AppState& app,
   const float gap1 = 10.0f;
   const float gap2 = 10.0f;
   const float gap3 = 8.0f;
-  const float remaining = w - bx - pad - (x - x);
-  (void)remaining;
-  float seekW = (w - pad) - bx - (gap1 + timeW + gap2 + volIconW + 4.0f + volW + gap3 + specW);
+  const float rightEdge = x + w - pad;
+  float seekW = rightEdge - bx - (gap1 + timeW + gap2 + volIconW + 4.0f + volW + gap3 + specW);
   if (seekW < 60.0f)
   {
     seekW = 60.0f;
@@ -4834,7 +4833,7 @@ int main(int argc, char** argv)
     }
     if (!popupActive)
     {
-      handleMusicPanel(app, w, h, musicPanelH);
+      handleMusicPanel(app, mainX, mainW, h, musicPanelH);
     }
     handleListClick(app, mainX, listTop, mainW, listH);
     resetOnPathChange(app);
@@ -4849,7 +4848,7 @@ int main(int argc, char** argv)
     drawTabBar(vg, app, w);
     drawTopBar(vg, app, w);
     resetOnPathChange(app);
-    drawSidebar(vg, app.fm, app.sections, h - kStatusBarHeight - musicPanelH);
+    drawSidebar(vg, app.fm, app.sections, h - kStatusBarHeight);
     if (g_sidebarDirty)
     {
       saveConfig(app);
@@ -4871,8 +4870,8 @@ int main(int argc, char** argv)
     }
     if (musicPanelVisible)
     {
-      drawMusicPanel(vg, app, 0.0f, h - kStatusBarHeight - musicPanelH, w, musicPanelH);
-      drawSeparator(vg, 0.0f, h - kStatusBarHeight - musicPanelH, w, h - kStatusBarHeight - musicPanelH);
+      drawMusicPanel(vg, app, mainX, h - kStatusBarHeight - musicPanelH, mainW, musicPanelH);
+      drawSeparator(vg, mainX, h - kStatusBarHeight - musicPanelH, mainX + mainW, h - kStatusBarHeight - musicPanelH);
     }
     drawStatusBar(vg, app, 0.0f, h - kStatusBarHeight, w);
     drawToast(vg, app, w, h);
