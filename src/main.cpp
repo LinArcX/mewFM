@@ -3153,7 +3153,7 @@ static void handleKeyboardNav(AppState& app, float listH)
     {
       if (!app.fm.startPaste())
       {
-        app.modal.openInfo("Error", "Could not paste.");
+        app.modal.openInfo("Error", "Cannot paste here: the source and destination are the same folder.");
       }
       else
       {

@@ -821,6 +821,11 @@ bool FileManager::buildFileOpPlan(const std::string& srcDir,
 
 bool FileManager::startPaste()
 {
+   fprintf(stderr, "[startPaste] mode=%d clipSrc='%s' cur='%s' names=%zu active=%d\n",
+          static_cast<int>(m_clipboardMode), m_clipboardSource.c_str(),
+          m_currentPath.c_str(), m_clipboardNames.size(),
+          m_opProgress.active ? 1 : 0);
+
   if (m_clipboardMode == ClipboardMode::None || m_clipboardNames.empty())
   {
     return false;
@@ -830,9 +835,14 @@ bool FileManager::startPaste()
     return false;
   }
 
+  const bool isMove = (m_clipboardMode == ClipboardMode::Cut);
+  if (isMove && m_clipboardSource == m_currentPath)
+  {
+    return false;
+  }
+
   clearFileOp();
 
-  const bool isMove = (m_clipboardMode == ClipboardMode::Cut);
   const std::string srcDir = m_clipboardSource;
   const std::string dstDir = m_currentPath;
 
@@ -1051,6 +1061,19 @@ void FileManager::finalizeFileOp(bool success)
 
 FileOpStatus FileManager::pollFileOp()
 {
+      FILE* f = std::fopen("/tmp/rah_op.log", "a");
+    if (f != nullptr)
+    {
+      std::fprintf(f, "poll active=%d stage=%d kind=%d fileIdx=%zu done=%llu total=%llu\n",
+                   m_opProgress.active ? 1 : 0,
+                   static_cast<int>(m_opStage),
+                   static_cast<int>(m_opKind),
+                   m_opFileIndex,
+                   m_opDoneBytes,
+                   m_opTotalBytes);
+      std::fclose(f);
+    }
+
   if (!m_opProgress.active)
   {
     return FileOpStatus::Idle;
