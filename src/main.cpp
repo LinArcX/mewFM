@@ -106,6 +106,7 @@ namespace
     Empty,
     SidebarYoutube,
     SidebarYoutubeChannel,
+    YoutubeVideo,
   };
 
   enum class VideoMenuKind
@@ -140,6 +141,8 @@ namespace
     MoveChannelUp,
     MoveChannelDown,
     RemoveYoutubeChannel,
+    SaveYoutubeChannel,
+    PeekYoutubeChannel,
   };
 
   struct MenuItem
@@ -3583,13 +3586,15 @@ static void drawYoutubeHeader(NVGcontext* vg, float x, float y, float w)
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
   float cy = y + kHeaderHeight * 0.5f;
 
-  const float durW = 100.0f;
-  const float dateW = 120.0f;
-  const float titleW = w - kPadX * 2.0f - durW - dateW;
+  const float chanW = 140.0f;
+  const float durW = 90.0f;
+  const float dateW = 110.0f;
+  const float titleW = w - kPadX * 2.0f - chanW - durW - dateW;
 
   nvgText(vg, x + kPadX, cy, " Title", nullptr);
-  nvgText(vg, x + kPadX + titleW, cy, " Duration", nullptr);
-  nvgText(vg, x + kPadX + titleW + durW, cy, " Uploaded", nullptr);
+  nvgText(vg, x + kPadX + titleW, cy, " Channel", nullptr);
+  nvgText(vg, x + kPadX + titleW + chanW, cy, " Duration", nullptr);
+  nvgText(vg, x + kPadX + titleW + chanW + durW, cy, " Uploaded", nullptr);
 }
 
 static void drawYoutubeRows(NVGcontext* vg,
@@ -3602,9 +3607,10 @@ static void drawYoutubeRows(NVGcontext* vg,
   nvgFontSize(vg, g_fontSize - 1.0f);
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
 
-  const float durW = 100.0f;
-  const float dateW = 120.0f;
-  const float titleW = w - kPadX * 2.0f - durW - dateW;
+  const float chanW = 140.0f;
+  const float durW = 90.0f;
+  const float dateW = 110.0f;
+  const float titleW = w - kPadX * 2.0f - chanW - durW - dateW;
 
   nvgSave(vg);
   nvgScissor(vg, x, y, w, h);
@@ -3645,12 +3651,14 @@ static void drawYoutubeRows(NVGcontext* vg,
     const YouTubeVideo& v = videos[i];
     float cy = rowY + g_rowHeight * 0.5f;
     std::string titleText = truncateToWidth(vg, v.title, titleW - 8.0f);
+    std::string chanText = truncateToWidth(vg, v.channel, chanW - 8.0f);
     std::string durText = formatYoutubeDuration(v.duration);
     std::string dateText = formatYoutubeDate(v.uploadDate);
     nvgFillColor(vg, app.theme.text);
     nvgText(vg, x + kPadX, cy, titleText.c_str(), nullptr);
-    nvgText(vg, x + kPadX + titleW, cy, durText.c_str(), nullptr);
-    nvgText(vg, x + kPadX + titleW + durW, cy, dateText.c_str(), nullptr);
+    nvgText(vg, x + kPadX + titleW, cy, chanText.c_str(), nullptr);
+    nvgText(vg, x + kPadX + titleW + chanW, cy, durText.c_str(), nullptr);
+    nvgText(vg, x + kPadX + titleW + chanW + durW, cy, dateText.c_str(), nullptr);
   }
   nvgRestore(vg);
 }
@@ -4618,6 +4626,25 @@ static bool menuItemEnabled(const AppState& app, const MenuItem& item, int rowId
     }
     return FileManager::isArchive(entries[rowIdx].name);
   }
+  if (item.action == MenuAction::SaveYoutubeChannel ||
+      item.action == MenuAction::PeekYoutubeChannel)
+  {
+    const auto& videos = app.youtube.videos();
+    if (rowIdx < 0 || rowIdx >= static_cast<int>(videos.size()))
+    {
+      return false;
+    }
+    const std::string& curl = videos[static_cast<size_t>(rowIdx)].channelUrl;
+    if (curl.empty())
+    {
+      return false;
+    }
+    if (item.action == MenuAction::SaveYoutubeChannel)
+    {
+      return !app.youtube.hasChannelUrl(curl);
+    }
+    return true;
+  }
   return true;
 }
 
@@ -4686,6 +4713,16 @@ static std::vector<MenuItem> buildSidebarYoutubeChannelMenuItems(const AppState&
   return items;
 }
 
+static std::vector<MenuItem> buildYoutubeVideoMenuItems(const AppState& app)
+{
+  std::vector<MenuItem> items;
+  items.push_back({"Open", MenuAction::Open, true});
+  items.push_back({"Save channel", MenuAction::SaveYoutubeChannel, true});
+  items.push_back({"Peek channel", MenuAction::PeekYoutubeChannel, true});
+  (void)app;
+  return items;
+}
+
 static std::vector<MenuItem> menuItemsFor(const AppState& app, MenuKind kind)
 {
   if (kind == MenuKind::Row)
@@ -4699,6 +4736,10 @@ static std::vector<MenuItem> menuItemsFor(const AppState& app, MenuKind kind)
   if (kind == MenuKind::SidebarYoutubeChannel)
   {
     return buildSidebarYoutubeChannelMenuItems(app);
+  }
+  if (kind == MenuKind::YoutubeVideo)
+  {
+    return buildYoutubeVideoMenuItems(app);
   }
   return buildSidebarYoutubeMenuItems();
 }
@@ -4748,6 +4789,26 @@ static void openContextMenu(
   if (inRect(g_mouseX, g_mouseY, listX, listTop, listW, listH))
   {
     int idx = static_cast<int>((g_mouseY - listTop + app.scrollOffset) / g_rowHeight);
+    if (app.browserMode == BrowserMode::YoutubeVideos)
+    {
+      int count = static_cast<int>(app.youtube.videos().size());
+      if (idx >= 0 && idx < count)
+      {
+        if (!isEntrySelected(app, idx))
+        {
+          setSingleSelection(app, idx);
+        }
+        else
+        {
+          app.selectedIndex = idx;
+        }
+        app.menuKind = MenuKind::YoutubeVideo;
+        app.menuRowIndex = idx;
+        return;
+      }
+      app.menuKind = MenuKind::Empty;
+      return;
+    }
     int count = static_cast<int>(app.fm.entries().size());
     if (idx >= 0 && idx < count)
     {
@@ -5043,6 +5104,67 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
         syncYoutubeChannelNames(app);
         saveConfig(app);
         app.toast.show("Channel removed");
+      }
+      break;
+    case MenuAction::SaveYoutubeChannel:
+      if (rowIdx >= 0)
+      {
+        const auto& videos = app.youtube.videos();
+        if (rowIdx < static_cast<int>(videos.size()))
+        {
+          const YouTubeVideo& v = videos[static_cast<size_t>(rowIdx)];
+          if (!v.channelUrl.empty())
+          {
+            YouTubeChannel ch;
+            ch.url = v.channelUrl;
+            ch.name = v.channel.empty() ? youtubeChannelShortName(v.channelUrl) : v.channel;
+            if (app.youtube.addChannel(ch))
+            {
+              syncYoutubeChannelNames(app);
+              saveConfig(app);
+              app.toast.show("Channel saved");
+            }
+            else
+            {
+              app.toast.show("Channel already saved");
+            }
+          }
+        }
+      }
+      break;
+    case MenuAction::PeekYoutubeChannel:
+      if (rowIdx >= 0)
+      {
+        const auto& videos = app.youtube.videos();
+        if (rowIdx < static_cast<int>(videos.size()))
+        {
+          const YouTubeVideo& v = videos[static_cast<size_t>(rowIdx)];
+          if (!v.channelUrl.empty())
+          {
+            const std::string displayName = v.channel.empty()
+              ? youtubeChannelShortName(v.channelUrl)
+              : v.channel;
+            if (app.youtube.startLoadUrl(v.channelUrl, displayName))
+            {
+              app.browserMode = BrowserMode::YoutubeVideos;
+              clearSelection(app);
+              app.scrollOffset = 0.0f;
+              app.youtubeLoadingName = displayName;
+              if (app.youtube.loadStatus() == YouTubeLoadStatus::Loading)
+              {
+                app.youtubeLoading = true;
+              }
+              else
+              {
+                app.toast.show("Channel opened");
+              }
+            }
+            else
+            {
+              app.modal.openInfo("Error", "Could not open channel. Is yt-dlp installed?");
+            }
+          }
+        }
       }
       break;
     case MenuAction::EmptyTrash:

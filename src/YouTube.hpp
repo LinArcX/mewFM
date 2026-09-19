@@ -16,6 +16,8 @@ struct YouTubeVideo
   std::string url;
   int duration = -1;
   std::string uploadDate;
+  std::string channel;
+  std::string channelUrl;
 };
 
 enum class YouTubeLoadStatus
@@ -43,6 +45,7 @@ public:
   const std::vector<YouTubeVideo>& videos() const;
 
   [[nodiscard]] bool startLoadChannel(int index, bool forceNetwork);
+  [[nodiscard]] bool startLoadUrl(const std::string& url, const std::string& displayName);
   [[nodiscard]] bool startSearch(const std::string& query);
   [[nodiscard]] bool loadMore();
   YouTubeLoadStatus pollLoad();
@@ -75,4 +78,5 @@ private:
   bool m_loadIsAppend = false;
   bool m_isSearch = false;
   std::string m_searchQuery;
+  std::string m_peekUrl;
 };
