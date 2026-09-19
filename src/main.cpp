@@ -608,6 +608,7 @@ static std::vector<Section> buildSections()
   Section places;
   places.key = "places";
   places.title = "Places";
+  places.items.push_back({"Root",      "/",               BND_ICON_DISK_DRIVE});
   places.items.push_back({"Home",      h,                BND_ICON_FILE_FOLDER});
   places.items.push_back({"Desktop",   h + "/Desktop",   BND_ICON_FILE_FOLDER});
   places.items.push_back({"Documents", h + "/Documents", BND_ICON_FILE_FOLDER});
@@ -621,14 +622,9 @@ static std::vector<Section> buildSections()
     places.items.push_back({"Trash", trashRoot + "/files", BND_ICON_FILE_BACKUP});
   }
 
-  Section devices;
-  devices.key = "devices";
-  devices.title = "Devices";
-  devices.items.push_back({"File System", "/", BND_ICON_DISK_DRIVE});
-
   std::vector<Section> all;
   std::error_code ec;
-  for (auto& sec : {places, devices})
+  for (auto& sec : {places})
   {
     Section filtered;
     filtered.key = sec.key;

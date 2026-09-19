@@ -3,7 +3,7 @@
 ☑ GLFW + NanoVG + oui-blendish baseline
 ☑ File listing (name, size, type, owner, permissions)
 ☑ Top bar: Home / Back / Forward / Up + breadcrumb
-☑ Collapsible sidebar (Places, Devices)
+☑ Collapsible sidebar (Places, Bookmarks)
 ☑ Column resizing with persistence
 ☑ Extension-aware icons
 ☑ Single-click select, double-click open
