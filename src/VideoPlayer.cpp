@@ -47,9 +47,11 @@ bool VideoPlayer::init()
   mpv_set_option_string(m_pMpv, "input-default-bindings", "no");
   mpv_set_option_string(m_pMpv, "input-vo-keyboard", "no");
   mpv_set_option_string(m_pMpv, "osc", "no");
-  mpv_set_option_string(m_pMpv, "terminal", "no");
-  mpv_set_option_string(m_pMpv, "msg-level", "all=no");
+  mpv_set_option_string(m_pMpv, "terminal", "yes");
+  mpv_set_option_string(m_pMpv, "msg-level", "all=warn");
   mpv_set_option_string(m_pMpv, "ytdl", "yes");
+  mpv_set_option_string(m_pMpv, "ytdl-format", "best[height<=720]/best");
+  mpv_set_option_string(m_pMpv, "script-opts", "ytdl_hook-ytdl_path=yt-dlp");
   if (!m_subFont.empty())
   {
     mpv_set_option_string(m_pMpv, "sub-font", m_subFont.c_str());
