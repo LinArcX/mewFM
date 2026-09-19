@@ -1020,7 +1020,6 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
       app->modal.close();
       return;
     }
-    glfwSetWindowShouldClose(window, GLFW_TRUE);
     return;
   }
   if (inputActive)
