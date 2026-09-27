@@ -307,6 +307,10 @@ namespace
   bool  g_sidebarDirty = false;
 }
 
+/**
+ * @brief Builds the widget theme used by oui-blendish widgets.
+ * @return A BNDwidgetTheme populated with the application's dark palette.
+ */
 static BNDwidgetTheme makeWidgetTheme()
 {
   BNDwidgetTheme w{};
@@ -321,6 +325,10 @@ static BNDwidgetTheme makeWidgetTheme()
   return w;
 }
 
+/**
+ * @brief Computes the path of the configuration file.
+ * @return "$XDG_CONFIG_HOME/mewFM/config", or "$HOME/.config/mewFM/config".
+ */
 static std::string configFilePath()
 {
   const char* xdg = std::getenv("XDG_CONFIG_HOME");
@@ -337,6 +345,12 @@ static std::string configFilePath()
   return base + "/mewFM/config";
 }
 
+/**
+ * @brief Parses a "r,g,b" triple with values in [0,1] into an NVGcolor.
+ * @param s   String to parse.
+ * @param out Output color on success.
+ * @return True if @p s was a valid triple.
+ */
 static bool parseThemeColor(const std::string& s, NVGcolor& out)
 {
   float v[3] = {0.0f, 0.0f, 0.0f};
@@ -377,6 +391,10 @@ static bool parseThemeColor(const std::string& s, NVGcolor& out)
   return true;
 }
 
+/**
+ * @brief Loads persisted settings (columns, theme, path, bookmarks, etc.) into @p app.
+ * @param app Application state to populate.
+ */
 static void loadConfig(AppState& app)
 {
   std::ifstream in(configFilePath());
@@ -533,6 +551,10 @@ static void loadConfig(AppState& app)
   g_rowHeight = g_fontSize + 10.0f;
 }
 
+/**
+ * @brief Writes the current settings of @p app to the configuration file.
+ * @param app Application state to serialize.
+ */
 static void saveConfig(const AppState& app)
 {
   std::string path = configFilePath();
@@ -583,6 +605,9 @@ static void saveConfig(const AppState& app)
   }
 }
 
+/**
+ * @brief Pushes the current widget theme into the oui-blendish global theme.
+ */
 static void applyTheme()
 {
   BNDwidgetTheme w = makeWidgetTheme();
@@ -603,6 +628,10 @@ static void applyTheme()
   bndSetTheme(t);
 }
 
+/**
+ * @brief Builds the initial sidebar sections (Places and Bookmarks).
+ * @return Vector of Section objects; empty sections are removed.
+ */
 static std::vector<Section> buildSections()
 {
   const char* home = std::getenv("HOME");
@@ -653,6 +682,10 @@ static std::vector<Section> buildSections()
   return all;
 }
 
+/**
+ * @brief Opens @p path in the user's preferred application via xdg-open.
+ * @param path Absolute path of the file to open.
+ */
 static void openWithDefaultApp(const std::string& path)
 {
   pid_t pid = fork();
@@ -663,6 +696,10 @@ static void openWithDefaultApp(const std::string& path)
   }
 }
 
+/**
+ * @brief Executes @p path directly as a program.
+ * @param path Absolute path of an executable file.
+ */
 static void runExecutable(const std::string& path)
 {
   pid_t pid = fork();
@@ -673,11 +710,20 @@ static void runExecutable(const std::string& path)
   }
 }
 
+/**
+ * @brief GLFW error callback; prints the error to stderr.
+ * @param error       GLFW error code.
+ * @param description Human-readable error message.
+ */
 static void errorCallback(int error, const char* description)
 {
   std::cerr << "GLFW Error " << error << ": " << description << std::endl;
 }
 
+/**
+ * @brief Deletes the character before the cursor in @p t.
+ * @param t Text input to edit.
+ */
 static void textInputBackspace(TextInput& t)
 {
   if (t.cursor == 0 || t.value.empty())
@@ -688,6 +734,10 @@ static void textInputBackspace(TextInput& t)
   t.cursor--;
 }
 
+/**
+ * @brief Deletes the character under the cursor in @p t.
+ * @param t Text input to edit.
+ */
 static void textInputDelete(TextInput& t)
 {
   if (t.cursor >= t.value.size())
@@ -697,6 +747,11 @@ static void textInputDelete(TextInput& t)
   t.value.erase(t.cursor, 1);
 }
 
+/**
+ * @brief Inserts a printable ASCII character into @p t at the cursor.
+ * @param t         Text input to edit.
+ * @param codepoint Unicode codepoint to insert (only 32..126 accepted).
+ */
 static void textInputInsert(TextInput& t, unsigned int codepoint)
 {
   if (codepoint < 32 || codepoint > 126)
@@ -711,6 +766,12 @@ static void textInputInsert(TextInput& t, unsigned int codepoint)
   t.cursor++;
 }
 
+/**
+ * @brief Reads @p path into @p ed, splitting it into lines.
+ * @param path File to read.
+ * @param ed   Editor state to populate.
+ * @return True on success.
+ */
 static bool loadEditorFile(const std::string& path, Editor& ed)
 {
   std::ifstream in(path, std::ios::binary);
@@ -735,6 +796,12 @@ static bool loadEditorFile(const std::string& path, Editor& ed)
   return true;
 }
 
+/**
+ * @brief Writes the contents of @p ed back to @p path.
+ * @param path Destination file.
+ * @param ed   Editor state to persist.
+ * @return True on success.
+ */
 static bool saveEditorFile(const std::string& path, const Editor& ed)
 {
   std::ofstream out(path, std::ios::binary | std::ios::trunc);
@@ -753,6 +820,10 @@ static bool saveEditorFile(const std::string& path, const Editor& ed)
   return out.good();
 }
 
+/**
+ * @brief Scrolls @p ed so that the cursor line is inside the visible range.
+ * @param ed Editor state to adjust.
+ */
 static void ensureEditorCursorVisible(Editor& ed)
 {
   if (ed.visibleLines <= 0)
@@ -769,6 +840,12 @@ static void ensureEditorCursorVisible(Editor& ed)
   }
 }
 
+/**
+ * @brief Handles a single key press while the text editor overlay is open.
+ * @param app Application state.
+ * @param key GLFW key code.
+ * @param mods Modifier flags.
+ */
 static void handleEditorKey(AppState& app, int key, int mods)
 {
   Editor& ed = app.editor;
@@ -974,6 +1051,14 @@ static void handleEditorKey(AppState& app, int key, int mods)
   }
 }
 
+/**
+ * @brief GLFW key callback; translates keys into pending actions.
+ * @param window   GLFW window handle.
+ * @param key      GLFW key code.
+ * @param scancode Platform-specific scancode (unused).
+ * @param action   GLFW_PRESS, GLFW_RELEASE, or GLFW_REPEAT.
+ * @param mods     Modifier flags.
+ */
 static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
   (void)scancode;
@@ -1146,6 +1231,11 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
   else if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_TAB) g_nextTab = true;
 }
 
+/**
+ * @brief GLFW character callback; inserts a printable character into the active input.
+ * @param window    GLFW window handle.
+ * @param codepoint Unicode codepoint entered by the user.
+ */
 static void charCallback(GLFWwindow* window, unsigned int codepoint)
 {
   AppState* app = static_cast<AppState*>(glfwGetWindowUserPointer(window));
@@ -1200,6 +1290,12 @@ static void charCallback(GLFWwindow* window, unsigned int codepoint)
   }
 }
 
+/**
+ * @brief GLFW cursor-position callback; caches the latest mouse position.
+ * @param window GLFW window handle.
+ * @param x      Cursor X in window coordinates.
+ * @param y      Cursor Y in window coordinates.
+ */
 static void cursorPosCallback(GLFWwindow* window, double x, double y)
 {
   (void)window;
@@ -1207,6 +1303,13 @@ static void cursorPosCallback(GLFWwindow* window, double x, double y)
   g_mouseY = static_cast<float>(y);
 }
 
+/**
+ * @brief GLFW mouse-button callback; records clicks for the current frame.
+ * @param window GLFW window handle.
+ * @param button Mouse button identifier.
+ * @param action GLFW_PRESS or GLFW_RELEASE.
+ * @param mods   Modifier flags.
+ */
 static void mouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
 {
   (void)window;
@@ -1229,6 +1332,12 @@ static void mouseButtonCallback(GLFWwindow* window, int button, int action, int 
   }
 }
 
+/**
+ * @brief GLFW scroll callback; accumulates scroll input for the current frame.
+ * @param window GLFW window handle.
+ * @param x      Horizontal scroll delta.
+ * @param y      Vertical scroll delta.
+ */
 static void scrollCallback(GLFWwindow* window, double x, double y)
 {
   (void)x;
@@ -1266,11 +1375,21 @@ static void scrollCallback(GLFWwindow* window, double x, double y)
   g_scrollY += static_cast<float>(y);
 }
 
+/**
+ * @brief Tests whether the point (mx, my) lies inside the axis-aligned rectangle.
+ * @return True if the point is inside [x, x+w) x [y, y+h).
+ */
 static bool inRect(float mx, float my, float x, float y, float w, float h)
 {
   return mx >= x && mx < x + w && my >= y && my < y + h;
 }
 
+/**
+ * @brief Checks whether row @p idx is part of the current multi-selection.
+ * @param app Application state.
+ * @param idx Row index.
+ * @return True if the row is selected.
+ */
 static bool isEntrySelected(const AppState& app, int idx)
 {
   for (size_t i = 0; i < app.selectedIndices.size(); i++)
@@ -1283,6 +1402,11 @@ static bool isEntrySelected(const AppState& app, int idx)
   return false;
 }
 
+/**
+ * @brief Replaces the selection with a single row.
+ * @param app Application state.
+ * @param idx Row to select (-1 to clear).
+ */
 static void setSingleSelection(AppState& app, int idx)
 {
   app.selectedIndices.clear();
@@ -1294,6 +1418,11 @@ static void setSingleSelection(AppState& app, int idx)
   app.selectionAnchor = idx;
 }
 
+/**
+ * @brief Adds or removes @p idx from the current selection (Ctrl+click behavior).
+ * @param app Application state.
+ * @param idx Row to toggle.
+ */
 static void toggleSelection(AppState& app, int idx)
 {
   if (idx < 0)
@@ -1314,6 +1443,12 @@ static void toggleSelection(AppState& app, int idx)
   app.selectionAnchor = idx;
 }
 
+/**
+ * @brief Selects every row between @p anchor and @p idx (Shift+click behavior).
+ * @param app    Application state.
+ * @param anchor Selection anchor row.
+ * @param idx    Row where the range ends.
+ */
 static void selectRange(AppState& app, int anchor, int idx)
 {
   if (anchor < 0 || idx < 0)
@@ -1336,6 +1471,10 @@ static void selectRange(AppState& app, int anchor, int idx)
   app.selectedIndex = idx;
 }
 
+/**
+ * @brief Selects every visible row (Ctrl+A).
+ * @param app Application state.
+ */
 static void selectAllEntries(AppState& app)
 {
   app.selectedIndices.clear();
@@ -1346,6 +1485,10 @@ static void selectAllEntries(AppState& app)
   }
 }
 
+/**
+ * @brief Clears the selection and its anchor.
+ * @param app Application state.
+ */
 static void clearSelection(AppState& app)
 {
   app.selectedIndices.clear();
@@ -1353,6 +1496,10 @@ static void clearSelection(AppState& app)
   app.selectionAnchor = -1;
 }
 
+/**
+ * @brief Copies the active tab's runtime state into its TabSnapshot.
+ * @param app Application state.
+ */
 static void saveActiveIntoTab(AppState& app)
 {
   if (app.activeTab < 0 || app.activeTab >= static_cast<int>(app.tabs.size()))
@@ -1370,6 +1517,10 @@ static void saveActiveIntoTab(AppState& app)
   t.lastClickIndex = app.lastClickIndex;
 }
 
+/**
+ * @brief Restores AppState from the active tab's TabSnapshot.
+ * @param app Application state.
+ */
 static void loadActiveFromTab(AppState& app)
 {
   if (app.activeTab < 0 || app.activeTab >= static_cast<int>(app.tabs.size()))
@@ -1387,6 +1538,11 @@ static void loadActiveFromTab(AppState& app)
   app.lastClickIndex = t.lastClickIndex;
 }
 
+/**
+ * @brief Switches to the tab at @p newIndex, saving and restoring per-tab state.
+ * @param app      Application state.
+ * @param newIndex Index of the tab to activate.
+ */
 static void switchTab(AppState& app, int newIndex)
 {
   if (newIndex < 0 || newIndex >= static_cast<int>(app.tabs.size()))
@@ -1403,6 +1559,10 @@ static void switchTab(AppState& app, int newIndex)
   app.tabScrollToActive = true;
 }
 
+/**
+ * @brief Adds a new tab pointing at the current directory and activates it.
+ * @param app Application state.
+ */
 static void createNewTab(AppState& app)
 {
   saveActiveIntoTab(app);
@@ -1415,6 +1575,11 @@ static void createNewTab(AppState& app)
   app.tabScrollToActive = true;
 }
 
+/**
+ * @brief Closes the tab at @p index; does nothing when only one tab exists.
+ * @param app   Application state.
+ * @param index Index of the tab to close.
+ */
 static void closeTab(AppState& app, int index)
 {
   if (app.tabs.size() <= 1)
@@ -1443,6 +1608,12 @@ static void closeTab(AppState& app, int index)
   }
 }
 
+/**
+ * @brief Computes the label shown on the tab at @p index.
+ * @param app   Application state.
+ * @param index Tab index.
+ * @return Last path component, or "/" if the path is empty.
+ */
 static std::string tabLabelFor(const AppState& app, int index)
 {
   std::string path;
@@ -1467,6 +1638,12 @@ static std::string tabLabelFor(const AppState& app, int index)
   return name;
 }
 
+/**
+ * @brief Joins a directory and a name with a single '/' separator.
+ * @param base Directory part (may be empty).
+ * @param name File or directory name.
+ * @return Joined path.
+ */
 static std::string joinPath(const std::string& base, const std::string& name)
 {
   if (base.empty())
@@ -1480,6 +1657,11 @@ static std::string joinPath(const std::string& base, const std::string& name)
   return base + "/" + name;
 }
 
+/**
+ * @brief Chooses a Blender icon id based on the entry type and extension.
+ * @param e Directory entry.
+ * @return Icon identifier understood by bndIcon().
+ */
 static int iconForEntry(const Entry& e)
 {
   if (e.isDirectory)
@@ -1542,6 +1724,11 @@ static int iconForEntry(const Entry& e)
   return BND_ICON_FILE_BLANK;
 }
 
+/**
+ * @brief Opens the entry at @p index (navigate, execute, or open-with).
+ * @param app   Application state.
+ * @param index Row index to open.
+ */
 static void openEntry(AppState& app, int index)
 {
   const auto& entries = app.fm.entries();
@@ -1566,6 +1753,11 @@ static void openEntry(AppState& app, int index)
   openWithDefaultApp(full);
 }
 
+/**
+ * @brief Shows a Properties modal describing the entry at @p index.
+ * @param app   Application state.
+ * @param index Row index to inspect.
+ */
 static void showProperties(AppState& app, int index)
 {
   const auto& entries = app.fm.entries();
@@ -1595,6 +1787,14 @@ static void showProperties(AppState& app, int index)
   app.modal.openInfo("Properties", msg);
 }
 
+/**
+ * @brief Draws a 1-pixel separator line using the current NanoVG context.
+ * @param vg NanoVG context.
+ * @param x1 Start X.
+ * @param y1 Start Y.
+ * @param x2 End X.
+ * @param y2 End Y.
+ */
 static void drawSeparator(NVGcontext* vg, float x1, float y1, float x2, float y2)
 {
   nvgBeginPath(vg);
@@ -1611,6 +1811,17 @@ static constexpr float kModalBtnW   =  90.0f;
 static constexpr float kModalBtnH   =  28.0f;
 static constexpr float kModalBtnGap =  10.0f;
 
+/**
+ * @brief Draws a single modal button with optional focus ring.
+ * @param vg      NanoVG context.
+ * @param x       Button X.
+ * @param y       Button Y.
+ * @param w       Button width.
+ * @param h       Button height.
+ * @param label   Text on the button.
+ * @param hover   True when the mouse hovers the button.
+ * @param focused True when the button has keyboard focus.
+ */
 static void drawModalButton(
   NVGcontext* vg,
   float x,
@@ -1646,6 +1857,13 @@ static void drawModalButton(
   nvgText(vg, x + w * 0.5f, y + h * 0.5f, label, nullptr);
 }
 
+/**
+ * @brief Draws the currently active modal dialog and updates its result on click.
+ * @param vg    NanoVG context.
+ * @param modal Modal state to render and mutate.
+ * @param w     Window width.
+ * @param h     Window height.
+ */
 static void drawModal(
   NVGcontext* vg,
   Modal& modal,
@@ -1761,6 +1979,13 @@ static void drawModal(
 static constexpr float kInputWidth  = 520.0f;
 static constexpr float kInputHeight = 170.0f;
 
+/**
+ * @brief Draws the active text input dialog and updates its result on click.
+ * @param vg NanoVG context.
+ * @param t  Text input state to render and mutate.
+ * @param w  Window width.
+ * @param h  Window height.
+ */
 static void drawTextInput(NVGcontext* vg, TextInput& t, float w, float h)
 {
   if (!t.active)
@@ -1861,6 +2086,12 @@ static void drawTextInput(NVGcontext* vg, TextInput& t, float w, float h)
 
 static std::string truncateToWidth(NVGcontext* vg, const std::string& text, float maxWidth);
 
+/**
+ * @brief Draws the tab bar, handles tab clicks, close buttons, and the + button.
+ * @param vg  NanoVG context.
+ * @param app Application state.
+ * @param w   Window width.
+ */
 static void drawTabBar(NVGcontext* vg, AppState& app, float w)
 {
   bndBackground(vg, 0.0f, 0.0f, w, kTabBarHeight);
@@ -2052,6 +2283,12 @@ static void drawTabBar(NVGcontext* vg, AppState& app, float w)
   }
 }
 
+/**
+ * @brief Draws the toolbar (sidebar/preview toggles, navigation, breadcrumb, filter box).
+ * @param vg  NanoVG context.
+ * @param app Application state.
+ * @param w   Window width.
+ */
 static void drawTopBar(NVGcontext* vg, AppState& app, float w)
 {
   FileManager& fm = app.fm;
@@ -2305,6 +2542,14 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
   }
 }
 
+/**
+ * @brief Draws a small triangular arrow used by sidebar section headers.
+ * @param vg           NanoVG context.
+ * @param cx           Center X.
+ * @param cy           Center Y.
+ * @param size         Bounding size in pixels.
+ * @param pointingDown True to draw a downward-pointing triangle.
+ */
 static void drawTriangle(NVGcontext* vg, float cx, float cy, float size, bool pointingDown)
 {
   float s = size * 0.5f;
@@ -2326,6 +2571,13 @@ static void drawTriangle(NVGcontext* vg, float cx, float cy, float size, bool po
   nvgFill(vg);
 }
 
+/**
+ * @brief Draws the sidebar (Places and Bookmarks) and handles its clicks and scrolling.
+ * @param vg       NanoVG context.
+ * @param app      Application state.
+ * @param h        Window height.
+ * @param visibleW Currently visible width of the sidebar (for the slide animation).
+ */
 static void drawSidebar(NVGcontext* vg, AppState& app, float h, float visibleW)
 {
   if (visibleW < 1.0f)
@@ -2480,6 +2732,13 @@ static void drawSidebar(NVGcontext* vg, AppState& app, float h, float visibleW)
   g_mouseX = savedMouseX;
 }
 
+/**
+ * @brief Computes the X coordinate of the given column in the file list.
+ * @param app   Application state (provides column widths).
+ * @param listX X origin of the file list.
+ * @param col   Column index.
+ * @return X coordinate where the column's text begins.
+ */
 static float columnX(const AppState& app, float listX, int col)
 {
   float x = listX + kPadX;
@@ -2490,6 +2749,11 @@ static float columnX(const AppState& app, float listX, int col)
   return x;
 }
 
+/**
+ * @brief Maps a column index to the corresponding SortField.
+ * @param col Column index.
+ * @return SortField used when the header of that column is clicked.
+ */
 static SortField columnSortField(int col)
 {
   switch (col)
@@ -2502,6 +2766,11 @@ static SortField columnSortField(int col)
   }
 }
 
+/**
+ * @brief Returns the header label for a column index.
+ * @param col Column index.
+ * @return Static string with the column's label.
+ */
 static const char* columnLabel(int col)
 {
   switch (col)
@@ -2514,6 +2783,13 @@ static const char* columnLabel(int col)
   }
 }
 
+/**
+ * @brief Draws the sort direction arrow next to a column header.
+ * @param vg        NanoVG context.
+ * @param cx        Center X of the arrow.
+ * @param cy        Center Y of the arrow.
+ * @param ascending True for ascending order, false for descending.
+ */
 static void drawSortArrow(NVGcontext* vg, float cx, float cy, bool ascending)
 {
   float s = 4.0f;
@@ -2535,6 +2811,14 @@ static void drawSortArrow(NVGcontext* vg, float cx, float cy, bool ascending)
   nvgFill(vg);
 }
 
+/**
+ * @brief Draws the file-list header row and handles column resize / sort clicks.
+ * @param vg  NanoVG context.
+ * @param app Application state.
+ * @param x   Header X.
+ * @param y   Header Y.
+ * @param w   Header width.
+ */
 static void drawMainHeader(NVGcontext* vg, AppState& app, float x, float y, float w)
 {
   bndBackground(vg, x, y, w, kHeaderHeight);
@@ -2650,6 +2934,13 @@ static void drawMainHeader(NVGcontext* vg, AppState& app, float x, float y, floa
   }
 }
 
+/**
+ * @brief Truncates @p text to fit inside @p maxWidth, appending "..." when needed.
+ * @param vg       NanoVG context (for text measurement).
+ * @param text     Text to truncate.
+ * @param maxWidth Maximum allowed width in pixels.
+ * @return Possibly-truncated string.
+ */
 static std::string truncateToWidth(NVGcontext* vg, const std::string& text, float maxWidth)
 {
   if (maxWidth <= 0.0f)
@@ -2693,6 +2984,11 @@ static std::string truncateToWidth(NVGcontext* vg, const std::string& text, floa
   return text.substr(0, lo) + ellipsis;
 }
 
+/**
+ * @brief Returns the lowercase extension (without dot) of @p name, or an empty string.
+ * @param name File name.
+ * @return Lowercase extension without the leading dot.
+ */
 static std::string lowercaseExtension(const std::string& name)
 {
   size_t dot = name.find_last_of('.');
@@ -2708,6 +3004,11 @@ static std::string lowercaseExtension(const std::string& name)
   return ext;
 }
 
+/**
+ * @brief Tests whether @p ext is a supported image extension.
+ * @param ext Lowercase extension without dot.
+ * @return True if the extension can be previewed as an image.
+ */
 static bool isImageExtension(const std::string& ext)
 {
   return ext == "png" || ext == "jpg" || ext == "jpeg" ||
@@ -2716,6 +3017,11 @@ static bool isImageExtension(const std::string& ext)
          ext == "pnm";
 }
 
+/**
+ * @brief Tests whether @p ext is a supported text extension.
+ * @param ext Lowercase extension without dot.
+ * @return True if the extension can be previewed or edited as text.
+ */
 static bool isTextExtension(const std::string& ext)
 {
   return ext == "txt"  || ext == "md"   || ext == "log"  ||
@@ -2730,6 +3036,11 @@ static bool isTextExtension(const std::string& ext)
          ext == "css";
 }
 
+/**
+ * @brief Builds the absolute path of the currently focused entry.
+ * @param app Application state.
+ * @return Absolute path, or an empty string if nothing is selected.
+ */
 static std::string currentSelectionPath(const AppState& app)
 {
   const auto& entries = app.fm.entries();
@@ -2740,6 +3051,11 @@ static std::string currentSelectionPath(const AppState& app)
   return joinPath(app.fm.currentPath(), entries[app.selectedIndex].name);
 }
 
+/**
+ * @brief Refreshes the preview panel's cached data based on the current selection.
+ * @param app Application state.
+ * @param vg  NanoVG context (used for image creation).
+ */
 static void updatePreview(AppState& app, NVGcontext* vg)
 {
   if (app.editor.active)
@@ -2823,6 +3139,15 @@ static void updatePreview(AppState& app, NVGcontext* vg)
   app.previewText = cleaned;
 }
 
+/**
+ * @brief Draws the preview panel (image thumbnail or text excerpt).
+ * @param vg  NanoVG context.
+ * @param app Application state.
+ * @param x   Panel X.
+ * @param y   Panel Y.
+ * @param w   Panel width.
+ * @param h   Panel height.
+ */
 static void drawPreviewPanel(
   NVGcontext* vg,
   const AppState& app,
@@ -2932,6 +3257,15 @@ static void drawPreviewPanel(
   nvgText(vg, x + w * 0.5f, y + h * 0.5f, "No preview available", nullptr);
 }
 
+/**
+ * @brief Draws all visible file rows (stripes, selection, icons, and cell text).
+ * @param vg  NanoVG context.
+ * @param app Application state.
+ * @param x   List X.
+ * @param y   List Y.
+ * @param w   List width.
+ * @param h   List height.
+ */
 static void drawRows(NVGcontext* vg,
                      const AppState& app,
                      float x, float y, float w, float h)
@@ -3001,6 +3335,15 @@ static void drawRows(NVGcontext* vg,
   nvgRestore(vg);
 }
 
+/**
+ * @brief Draws the integrated text editor overlay, including header buttons and cursor.
+ * @param vg  NanoVG context.
+ * @param app Application state.
+ * @param x   Overlay X.
+ * @param y   Overlay Y.
+ * @param w   Overlay width.
+ * @param h   Overlay height.
+ */
 static void drawEditor(NVGcontext* vg, AppState& app, float x, float y, float w, float h)
 {
   Editor& ed = app.editor;
@@ -3168,6 +3511,10 @@ static void drawEditor(NVGcontext* vg, AppState& app, float x, float y, float w,
   nvgRestore(vg);
 }
 
+/**
+ * @brief Clears selection and scroll when the current directory changes.
+ * @param app Application state.
+ */
 static void resetOnPathChange(AppState& app)
 {
   if (app.fm.currentPath() == app.lastPath)
@@ -3180,6 +3527,14 @@ static void resetOnPathChange(AppState& app)
   saveConfig(app);
 }
 
+/**
+ * @brief Handles a single or double left-click inside the file list.
+ * @param app     Application state.
+ * @param listX   List X.
+ * @param listTop List Y.
+ * @param listW   List width.
+ * @param listH   List height.
+ */
 static void handleListClick(AppState& app, float listX, float listTop, float listW, float listH)
 {
   if (!g_mouseClicked || !inRect(g_mouseX, g_mouseY, listX, listTop, listW, listH))
@@ -3224,6 +3579,11 @@ static void handleListClick(AppState& app, float listX, float listTop, float lis
   setSingleSelection(app, idx);
 }
 
+/**
+ * @brief Processes pending keyboard-driven actions (navigation, file ops, dialogs).
+ * @param app   Application state.
+ * @param listH Height of the file list (used to keep the selection visible).
+ */
 static void handleKeyboardNav(AppState& app, float listH)
 {
   int count = static_cast<int>(app.fm.entries().size());
@@ -3511,6 +3871,10 @@ static void handleKeyboardNav(AppState& app, float listH)
   }
 }
 
+/**
+ * @brief Acts on the result of the text input dialog (New Folder/File, Rename, GoToPath, Filter).
+ * @param app Application state.
+ */
 static void handleTextInputResult(AppState& app)
 {
   if (app.textInput.result == TextInputResult::None)
@@ -3582,6 +3946,10 @@ static void handleTextInputResult(AppState& app)
   }
 }
 
+/**
+ * @brief Acts on the result of the modal dialog (confirm delete/restore/empty-trash/editor close).
+ * @param app Application state.
+ */
 static void handleModalResult(AppState& app)
 {
   ModalResult r = app.modal.result;
@@ -3694,6 +4062,11 @@ static void handleModalResult(AppState& app)
   }
 }
 
+/**
+ * @brief Applies accumulated scroll input to the sidebar or file list.
+ * @param app   Application state.
+ * @param listH Height of the file list (used to clamp scrolling).
+ */
 static void applyScroll(AppState& app, float listH)
 {
   const float sidebarW = kSidebarWidth * app.sidebarAnim;
@@ -3726,6 +4099,12 @@ static void applyScroll(AppState& app, float listH)
   g_scrollY = 0.0f;
 }
 
+/**
+ * @brief Checks whether @p fullPath is present in the Bookmarks section.
+ * @param app      Application state.
+ * @param fullPath Absolute path to test.
+ * @return True if the path is bookmarked.
+ */
 static bool isBookmarked(const AppState& app, const std::string& fullPath)
 {
   if (fullPath.empty())
@@ -3749,6 +4128,13 @@ static bool isBookmarked(const AppState& app, const std::string& fullPath)
   return false;
 }
 
+/**
+ * @brief Decides whether a context-menu item should be enabled for the current row.
+ * @param app    Application state.
+ * @param item   Menu item being tested.
+ * @param rowIdx Row the menu was opened on (-1 for empty-space menu).
+ * @return True if the item can be invoked.
+ */
 static bool menuItemEnabled(const AppState& app, const MenuItem& item, int rowIdx)
 {
   if (!item.enabled)
@@ -3809,6 +4195,11 @@ static bool menuItemEnabled(const AppState& app, const MenuItem& item, int rowId
   return true;
 }
 
+/**
+ * @brief Checks whether the current directory is the trash's files/ directory.
+ * @param app Application state.
+ * @return True if browsing the Trash folder.
+ */
 static bool isInsideTrash(const AppState& app)
 {
   std::string root = FileManager::trashRootDir();
@@ -3819,6 +4210,11 @@ static bool isInsideTrash(const AppState& app)
   return app.fm.currentPath() == (root + "/files");
 }
 
+/**
+ * @brief Builds the list of items shown in the row context menu.
+ * @param app Application state.
+ * @return Ordered list of MenuItem for a row context menu.
+ */
 static std::vector<MenuItem> buildRowMenuItems(const AppState& app)
 {
   std::vector<MenuItem> items;
@@ -3839,6 +4235,11 @@ static std::vector<MenuItem> buildRowMenuItems(const AppState& app)
   return items;
 }
 
+/**
+ * @brief Builds the list of items shown in the empty-space context menu.
+ * @param app Application state.
+ * @return Ordered list of MenuItem for the empty-space context menu.
+ */
 static std::vector<MenuItem> buildEmptyMenuItems(const AppState& app)
 {
   std::vector<MenuItem> items;
@@ -3853,6 +4254,12 @@ static std::vector<MenuItem> buildEmptyMenuItems(const AppState& app)
   return items;
 }
 
+/**
+ * @brief Returns the appropriate menu items for the given MenuKind.
+ * @param app  Application state.
+ * @param kind Which context menu is open.
+ * @return Vector of MenuItem for that menu.
+ */
 static std::vector<MenuItem> menuItemsFor(const AppState& app, MenuKind kind)
 {
   if (kind == MenuKind::Row)
@@ -3866,6 +4273,13 @@ static std::vector<MenuItem> menuItemsFor(const AppState& app, MenuKind kind)
   return std::vector<MenuItem>();
 }
 
+/**
+ * @brief Returns the action of the menu item currently under the mouse, if any.
+ * @param app Application state.
+ * @param w   Window width.
+ * @param h   Window height.
+ * @return Selected MenuAction, or MenuAction::None.
+ */
 static MenuAction handleMenuClick(const AppState& app, float w, float h)
 {
   if (app.menuKind == MenuKind::None)
@@ -3898,6 +4312,14 @@ static MenuAction handleMenuClick(const AppState& app, float w, float h)
   return MenuAction::None;
 }
 
+/**
+ * @brief Opens a row or empty-space context menu at the current mouse position.
+ * @param app     Application state.
+ * @param listX   List X.
+ * @param listTop List Y.
+ * @param listW   List width.
+ * @param listH   List height.
+ */
 static void openContextMenu(
   AppState& app,
   float listX,
@@ -3930,6 +4352,11 @@ static void openContextMenu(
   app.menuKind = MenuKind::Empty;
 }
 
+/**
+ * @brief Adds @p fullPath to the Bookmarks section if not already present.
+ * @param app      Application state.
+ * @param fullPath Absolute path to bookmark.
+ */
 static void addBookmark(AppState& app, const std::string& fullPath)
 {
   if (fullPath.empty())
@@ -3968,6 +4395,11 @@ static void addBookmark(AppState& app, const std::string& fullPath)
   pBookmarks->items.push_back(p);
 }
 
+/**
+ * @brief Removes @p fullPath from the Bookmarks section.
+ * @param app      Application state.
+ * @param fullPath Absolute path to remove.
+ */
 static void removeBookmark(AppState& app, const std::string& fullPath)
 {
   if (fullPath.empty())
@@ -3991,6 +4423,10 @@ static void removeBookmark(AppState& app, const std::string& fullPath)
   }
 }
 
+/**
+ * @brief Starts a restore of the current selection from Trash, asking on conflicts.
+ * @param app Application state.
+ */
 static void beginRestore(AppState& app)
 {
   const auto& entries = app.fm.entries();
@@ -4055,6 +4491,11 @@ static void beginRestore(AppState& app)
   app.scrollOffset = 0.0f;
 }
 
+/**
+ * @brief Opens the entry at @p rowIdx in the integrated text editor.
+ * @param app    Application state.
+ * @param rowIdx Row index of the file to edit.
+ */
 static void beginEdit(AppState& app, int rowIdx)
 {
   const auto& entries = app.fm.entries();
@@ -4085,6 +4526,12 @@ static void beginEdit(AppState& app, int rowIdx)
   app.editor.dirty = false;
 }
 
+/**
+ * @brief Executes the action selected from a context menu.
+ * @param app    Application state.
+ * @param action Action to perform.
+ * @param rowIdx Row the menu was opened on (-1 for empty-space menu).
+ */
 static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
 {
   switch (action)
@@ -4179,6 +4626,13 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
   }
 }
 
+/**
+ * @brief Draws the currently open context menu, highlighting hovered items.
+ * @param vg  NanoVG context.
+ * @param app Application state.
+ * @param w   Window width.
+ * @param h   Window height.
+ */
 static void drawContextMenu(
   NVGcontext* vg,
   const AppState& app,
@@ -4242,6 +4696,11 @@ static void drawContextMenu(
   }
 }
 
+/**
+ * @brief Formats @p bytes as a human-readable string (e.g. "1.2 MB").
+ * @param bytes Number of bytes.
+ * @return Formatted size string.
+ */
 static std::string humanSize(unsigned long long bytes)
 {
   const char* units[] = {"B", "KB", "MB", "GB", "TB"};
@@ -4264,6 +4723,13 @@ static std::string humanSize(unsigned long long bytes)
   return std::string(buf);
 }
 
+/**
+ * @brief Draws the transient toast notification at the bottom of the window.
+ * @param vg  NanoVG context.
+ * @param app Application state.
+ * @param w   Window width.
+ * @param h   Window height.
+ */
 static void drawToast(NVGcontext* vg, const AppState& app, float w, float h)
 {
   if (!app.toast.active())
@@ -4295,6 +4761,14 @@ static void drawToast(NVGcontext* vg, const AppState& app, float w, float h)
   nvgText(vg, boxX + boxW * 0.5f, boxY + boxH * 0.5f, app.toast.message.c_str(), nullptr);
 }
 
+/**
+ * @brief Draws the status bar (counts, filter, progress, free space, pause button).
+ * @param vg  NanoVG context.
+ * @param app Application state.
+ * @param x   Status bar X.
+ * @param y   Status bar Y.
+ * @param w   Status bar width.
+ */
 static void drawStatusBar(NVGcontext* vg, AppState& app, float x, float y, float w)
 {
   bndBackground(vg, x, y, w, kStatusBarHeight);
@@ -4441,6 +4915,11 @@ static void drawStatusBar(NVGcontext* vg, AppState& app, float x, float y, float
   }
 }
 
+/**
+ * @brief Expands a leading "~" in @p p to the user's HOME directory.
+ * @param p Path that may start with "~" or "~/".
+ * @return Expanded path, or @p p unchanged if it has no leading tilde.
+ */
 static std::string expandTilde(const std::string& p)
 {
   if (p.empty() || p[0] != '~')
@@ -4463,6 +4942,16 @@ static std::string expandTilde(const std::string& p)
   return p;
 }
 
+/**
+ * @brief Program entry point.
+ *
+ * Initializes GLFW, NanoVG, the oui-blendish font/icon atlas, loads the
+ * persisted configuration, and runs the main render loop.
+ *
+ * @param argc Argument count.
+ * @param argv Argument vector; argv[1] is an optional path to open.
+ * @return 0 on clean exit, 1 on initialization failure.
+ */
 int main(int argc, char** argv)
 {
   std::signal(SIGCHLD, SIG_IGN);
