@@ -55,120 +55,164 @@ namespace
   constexpr float kFilterBoxW     = 200.0f;
   constexpr float kFilterBoxH     =  24.0f;
 
+  /**
+   * @brief A single clickable entry in the sidebar (a Place or a Bookmark).
+   */
   struct Place
   {
-    std::string label;
-    std::string path;
-    int icon;
+    std::string label; ///< Text shown to the user.
+    std::string path;  ///< Absolute path that will be opened on click.
+    int icon;          ///< Blender icon id used to draw the entry.
   };
 
+  /**
+   * @brief A collapsible group of Places shown in the sidebar.
+   */
   struct Section
   {
-    std::string key;
-    std::string title;
-    bool collapsed = false;
-    std::vector<Place> items;
+    std::string key;                 ///< Stable identifier used for persistence.
+    std::string title;               ///< Header text shown in the sidebar.
+    bool collapsed = false;          ///< True when the section is collapsed.
+    std::vector<Place> items;        ///< Items contained in this section.
   };
 
+  /**
+   * @brief Identifies what action a currently open TextInput dialog belongs to.
+   */
   enum class PendingInput
   {
-    None,
-    NewFolder,
-    NewFile,
-    Rename,
-    GoToPath,
-    Filter,
+    None,      ///< No text input is pending.
+    NewFolder, ///< Creating a new folder.
+    NewFile,   ///< Creating a new file.
+    Rename,    ///< Renaming the selected entry.
+    GoToPath,  ///< Navigating to a user-typed path.
+    Filter,    ///< Live filter box.
   };
 
+  /**
+   * @brief State of the integrated text editor overlay.
+   */
   struct Editor
   {
-    bool active = false;
-    std::string path;
-    std::vector<std::string> lines;
-    int cursorLine = 0;
-    int cursorCol = 0;
-    int scrollLine = 0;
-    int visibleLines = 20;
-    bool dirty = false;
+    bool active = false;                 ///< True while the editor overlay is open.
+    std::string path;                    ///< Absolute path of the edited file.
+    std::vector<std::string> lines;      ///< File contents split into lines.
+    int cursorLine = 0;                  ///< Cursor line (0-based).
+    int cursorCol = 0;                   ///< Cursor column (0-based).
+    int scrollLine = 0;                  ///< First visible line.
+    int visibleLines = 20;               ///< Number of lines currently visible.
+    bool dirty = false;                  ///< True when there are unsaved changes.
   };
 
+  /**
+   * @brief Distinguishes which context menu is currently open.
+   */
   enum class MenuKind
   {
-    None,
-    Row,
-    Empty,
+    None,  ///< No context menu is open.
+    Row,   ///< Context menu opened on a file/folder row.
+    Empty, ///< Context menu opened on empty space.
   };
 
+  /**
+   * @brief Action selected from a context menu.
+   */
   enum class MenuAction
   {
-    None,
-    Open,
-    EditHere,
-    Extract,
-    Restore,
-    Copy,
-    Cut,
-    Paste,
-    Rename,
-    Delete,
-    NewFolder,
-    NewFile,
-    Refresh,
-    EmptyTrash,
-    Properties,
-    AddBookmark,
-    RemoveBookmark,
+    None,           ///< No action.
+    Open,           ///< Open the selected entry.
+    EditHere,       ///< Open the entry in the integrated editor.
+    Extract,        ///< Extract an archive.
+    Restore,        ///< Restore an entry from Trash.
+    Copy,           ///< Copy the selection.
+    Cut,            ///< Cut the selection.
+    Paste,          ///< Paste the clipboard.
+    Rename,         ///< Rename the selection.
+    Delete,         ///< Move the selection to Trash.
+    NewFolder,      ///< Create a new folder.
+    NewFile,        ///< Create a new file.
+    Refresh,        ///< Reload the current directory.
+    EmptyTrash,     ///< Empty the Trash directory.
+    Properties,     ///< Show the Properties dialog.
+    AddBookmark,    ///< Add the selected folder to Bookmarks.
+    RemoveBookmark, ///< Remove the selected folder from Bookmarks.
   };
 
+  /**
+   * @brief One entry in a context menu.
+   */
   struct MenuItem
   {
-    const char* label;
-    MenuAction action;
-    bool enabled;
+    const char* label;   ///< Text shown to the user.
+    MenuAction action;   ///< Action triggered when the item is clicked.
+    bool enabled;        ///< Statically enabled flag (may be overridden at runtime).
   };
 
+  /**
+   * @brief Identifies the action awaiting confirmation from the modal dialog.
+   */
   enum class PendingConfirm
   {
-    None,
-    DeleteEntry,
-    RestoreEntry,
-    EmptyTrash,
-    EditorClose,
+    None,         ///< No confirmation is pending.
+    DeleteEntry,  ///< Confirming a delete or trash operation.
+    RestoreEntry, ///< Confirming a restore over an existing file.
+    EmptyTrash,   ///< Confirming an Empty Trash operation.
+    EditorClose,  ///< Confirming that unsaved editor changes may be discarded.
   };
 
+  /**
+   * @brief Complete browsing state of a single tab.
+   *
+   * When the active tab changes, the current AppState is copied into the
+   * corresponding TabSnapshot, and the new tab's TabSnapshot is copied back
+   * into AppState.
+   */
   struct TabSnapshot
   {
-    FileManager fm;
-    int selectedIndex = -1;
-    int selectionAnchor = -1;
-    std::vector<int> selectedIndices;
-    float scrollOffset = 0.0f;
-    std::string lastPath;
-    double lastClickTime = 0.0;
-    int lastClickIndex = -1;
+    FileManager fm;                    ///< FileManager instance owned by this tab.
+    int selectedIndex = -1;            ///< Currently focused row index.
+    int selectionAnchor = -1;          ///< Anchor used for shift-selection ranges.
+    std::vector<int> selectedIndices;  ///< All currently selected row indices.
+    float scrollOffset = 0.0f;         ///< Vertical scroll offset of the list.
+    std::string lastPath;              ///< Last observed path (used to detect navigation).
+    double lastClickTime = 0.0;        ///< Timestamp of the last click (for double-click detection).
+    int lastClickIndex = -1;           ///< Row index of the last click.
   };
 
+  /**
+   * @brief Colors used to render the file list.
+   */
   struct Theme
   {
-    NVGcolor bg          = nvgRGBf(0.15f, 0.15f, 0.15f);
-    NVGcolor text        = nvgRGBf(0.9f, 0.9f, 0.9f);
-    NVGcolor rowSelected = nvgRGBf(0.2f, 0.35f, 0.55f);
-    NVGcolor rowHover    = nvgRGBf(0.25f, 0.25f, 0.25f);
-    NVGcolor rowStripe   = nvgRGBAf(1.0f, 1.0f, 1.0f, 0.035f);
+    NVGcolor bg          = nvgRGBf(0.15f, 0.15f, 0.15f);          ///< Window background color.
+    NVGcolor text        = nvgRGBf(0.9f, 0.9f, 0.9f);             ///< Default text color.
+    NVGcolor rowSelected = nvgRGBf(0.2f, 0.35f, 0.55f);           ///< Background of selected rows.
+    NVGcolor rowHover    = nvgRGBf(0.25f, 0.25f, 0.25f);          ///< Background of hovered rows.
+    NVGcolor rowStripe   = nvgRGBAf(1.0f, 1.0f, 1.0f, 0.035f);    ///< Zebra-stripe overlay for even rows.
   };
 
+  /**
+   * @brief Transient notification shown at the bottom of the window.
+   */
   struct Toast
   {
-    std::string message;
-    double shownAt = 0.0;
-    double duration = 3.0;
+    std::string message;      ///< Text currently being shown.
+    double shownAt = 0.0;     ///< Timestamp (seconds) when the toast appeared.
+    double duration = 3.0;    ///< How long the toast stays visible, in seconds.
 
+    /**
+     * @brief Starts showing @p msg for the configured duration.
+     * @param msg Message to display.
+     */
     void show(const std::string& msg)
     {
       message = msg;
       shownAt = glfwGetTime();
     }
 
+    /**
+     * @return True while the toast should still be visible.
+     */
     bool active() const
     {
       if (message.empty())
@@ -179,49 +223,55 @@ namespace
     }
   };
 
+  /**
+   * @brief Root application state shared by the whole frame.
+   *
+   * A single AppState instance is allocated on the stack in main() and
+   * passed to every drawing and event-handling function.
+   */
   struct AppState
   {
-    FileManager fm;
-    std::vector<Section> sections;
-    Modal modal;
-    TextInput textInput;
-    PendingInput pendingInput = PendingInput::None;
-    std::string renameOldName;
-    PendingConfirm pendingConfirm = PendingConfirm::None;
-    bool pendingDeleteIsTrash = true;
-    std::vector<std::string> pendingDeleteNames;
-    std::vector<std::string> pendingRestoreNames;
-    MenuKind menuKind = MenuKind::None;
-    float menuX = 0.0f;
-    float menuY = 0.0f;
-    int menuRowIndex = -1;
-    float scrollOffset = 0.0f;
-    int selectedIndex = -1;
-    int selectionAnchor = -1;
-    std::vector<int> selectedIndices;
-    std::string lastPath;
-    double lastClickTime = 0.0;
-    int lastClickIndex = -1;
-    float colWidths[kNumCols] = {260.0f, 90.0f, 110.0f, 100.0f, 110.0f};
-    int dragColumn = -1;
-    int hoveredSep = -1;
-    float dragStartMouseX = 0.0f;
-    float dragStartWidth = 0.0f;
-    std::vector<TabSnapshot> tabs;
-    int activeTab = 0;
-    float tabScrollOffset = 0.0f;
-    bool tabScrollToActive = true;
-    Theme theme;
-    Toast toast;
-    bool previewVisible = true;
-    int previewImage = -1;
-    std::string previewPath;
-    std::string previewText;
-    Editor editor;
-    bool sidebarVisible = true;
-    float sidebarAnim = 1.0f;
-    float previewAnim = 1.0f;
-    float sidebarScrollY = 0.0f;
+    FileManager fm;                                    ///< FileManager of the active tab.
+    std::vector<Section> sections;                     ///< Sidebar sections (Places, Bookmarks).
+    Modal modal;                                       ///< Active modal dialog.
+    TextInput textInput;                               ///< Active text-input dialog.
+    PendingInput pendingInput = PendingInput::None;    ///< What the text input is being used for.
+    std::string renameOldName;                         ///< Original name for a pending rename.
+    PendingConfirm pendingConfirm = PendingConfirm::None; ///< What the modal is confirming.
+    bool pendingDeleteIsTrash = true;                  ///< True if the pending delete is a trash, not a permanent delete.
+    std::vector<std::string> pendingDeleteNames;       ///< Names to delete / trash on confirmation.
+    std::vector<std::string> pendingRestoreNames;      ///< Names to restore on confirmation.
+    MenuKind menuKind = MenuKind::None;                ///< Which context menu is currently open.
+    float menuX = 0.0f;                                ///< X position of the open context menu.
+    float menuY = 0.0f;                                ///< Y position of the open context menu.
+    int menuRowIndex = -1;                             ///< Row the context menu was opened on (-1 for empty menu).
+    float scrollOffset = 0.0f;                         ///< Vertical scroll offset of the file list.
+    int selectedIndex = -1;                            ///< Focused row index.
+    int selectionAnchor = -1;                          ///< Anchor for shift-selection.
+    std::vector<int> selectedIndices;                  ///< All currently selected row indices.
+    std::string lastPath;                              ///< Last observed path (used to reset state on navigation).
+    double lastClickTime = 0.0;                        ///< Timestamp of the last click.
+    int lastClickIndex = -1;                           ///< Row index of the last click.
+    float colWidths[kNumCols] = {260.0f, 90.0f, 110.0f, 100.0f, 110.0f}; ///< Column widths, persisted to disk.
+    int dragColumn = -1;                               ///< Column currently being resized (-1 = none).
+    int hoveredSep = -1;                               ///< Separator currently hovered (-1 = none).
+    float dragStartMouseX = 0.0f;                      ///< Mouse X at the start of a column drag.
+    float dragStartWidth = 0.0f;                       ///< Column width at the start of a column drag.
+    std::vector<TabSnapshot> tabs;                     ///< All open tabs.
+    int activeTab = 0;                                 ///< Index of the active tab.
+    float tabScrollOffset = 0.0f;                      ///< Horizontal scroll offset of the tab bar.
+    bool tabScrollToActive = true;                     ///< If true, scroll the tab bar to reveal the active tab.
+    Theme theme;                                       ///< Colors of the file list.
+    Toast toast;                                       ///< Active toast notification.
+    bool previewVisible = true;                        ///< True if the preview panel is enabled.
+    int previewImage = -1;                             ///< NanoVG image handle of the previewed image (-1 = none).
+    std::string previewPath;                           ///< Path currently being previewed.
+    std::string previewText;                           ///< Cached text contents of the previewed file.
+    Editor editor;                                     ///< State of the integrated text editor.
+    bool sidebarVisible = true;                        ///< True if the sidebar is enabled.
+    float sidebarAnim = 1.0f;                          ///< Sidebar slide animation progress (0..1).
+    float previewAnim = 1.0f;                          ///< Preview panel slide animation progress (0..1).
+    float sidebarScrollY = 0.0f;                       ///< Vertical scroll offset of the sidebar.
   };
 
   float g_mouseX = 0.0f;

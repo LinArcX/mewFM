@@ -35,6 +35,17 @@
 #     - zeal
 #     - www.devdocs.io 
 
+function applyPatch() {
+  if [ -n $1 ]; then
+    if python3 scripts/extractFiles.py "$1"; then
+      echo "Patch Success!"
+      ./scripts/build.sh --debug
+    else
+      echo "Patch Failed!"
+    fi
+  fi
+}
+
 menu () {
   commands=(
     # patch
@@ -106,11 +117,21 @@ menu () {
   
   case $selected in
     "create patch")
-      read -r -p "Enter name of yoru patch: (it will be save in patches/) " filename
+      clear
+      read -r -p "Enter name of your patch [$(date '+%Y_%m_%d_%H_%M')]: " filename
+      if [ -z "$filename" ]; then
+        filename="$(date '+%Y_%m_%d_%H_%M')"
+      fi
+      
       file="patches/${filename}.json"
+      
       nvim "$file"
+      
       if [ $? -eq 0 ] && [ -s "$file" ]; then
-        ./scripts/applyPatch.sh $file
+        applyPatch "$file"
+
+        echo -e "Removing patch $file .."
+        rm -f "$file"
       fi
       ;;
     "build(debug)")
