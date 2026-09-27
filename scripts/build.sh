@@ -4,6 +4,12 @@ set -e
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+SCRIPT_PATH="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+if [ -z "$MEWFM_BEAR_WRAPPED" ] && command -v bear >/dev/null 2>&1; then
+  export MEWFM_BEAR_WRAPPED=1
+  exec bear -- "$SCRIPT_PATH" "$@"
+fi
+
 if [ -t 1 ]; then
   C_RESET=$'\033[0m'; C_DIM=$'\033[2m'; C_BOLD=$'\033[1m'
   C_CYAN=$'\033[36m'; C_YELLOW=$'\033[33m'; C_GREEN=$'\033[32m'; C_RED=$'\033[31m'
