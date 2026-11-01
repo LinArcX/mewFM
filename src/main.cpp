@@ -4901,15 +4901,24 @@ static MenuAction handleMenuClick(const AppState& app, float w, float h)
         subX = mx - kMenuWidth;
       }
       const int subCount = static_cast<int>(items[i].submenu.size());
+      float subH = kMenuPadY * 2.0f + kMenuItemHeight * static_cast<float>(subCount);
+      float subY = iy;
+      if (subY + subH > h)
+      {
+        subY = h - subH;
+      }
+      if (subY < 0.0f)
+      {
+        subY = 0.0f;
+      }
       for (int k = 0; k < subCount; k++)
       {
-        float sy = iy + kMenuPadY + static_cast<float>(k) * kMenuItemHeight;
+        float sy = subY + kMenuPadY + static_cast<float>(k) * kMenuItemHeight;
         if (inRect(g_mouseX, g_mouseY, subX, sy, kMenuWidth, kMenuItemHeight))
         {
           return items[i].submenu[k].enabled ? items[i].submenu[k].action : MenuAction::None;
         }
       }
-      return MenuAction::None;
     }
   }
   return MenuAction::None;
