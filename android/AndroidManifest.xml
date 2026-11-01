@@ -11,6 +11,11 @@
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
         android:hardwareAccelerated="true">
+        <provider
+            android:name=".FileContentProvider"
+            android:authorities="com.mewfm.files"
+            android:exported="false"
+            android:grantUriPermissions="true" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

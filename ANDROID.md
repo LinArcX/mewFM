@@ -25,7 +25,7 @@ Output: `build/android/mewFM.apk`.
 
 ## Features
 
-Currently implemented in `FileManager.kt` / `FileListView.kt`:
+Currently implemented:
 
 - Directory listing with Name and Size columns
 - Sort by 7 fields (`SortField`), with directory-first ordering
@@ -36,6 +36,8 @@ Currently implemented in `FileManager.kt` / `FileListView.kt`:
 - Create folder, create file, refresh (via the FAB)
 - Sidebar with hardcoded shortcuts (Root, Home, Pictures, Downloads, DCIM)
 - Single-tap selection, double-tap to navigate into a folder
+- Open files in external apps via `ACTION_VIEW`, served through the
+  minimal `FileContentProvider` (`android/src/com/mewfm/FileContentProvider.kt`)
 - Toast notifications
 - Ripple feedback, fling scrolling
 
@@ -55,7 +57,6 @@ Everything below is missing compared with the desktop build:
 
 ### UI
 
-- Opening a file in another app (`openEntry` just shows a toast)
 - Context menu (no long-press handler)
 - Multi-selection (single selection only)
 - Tabs

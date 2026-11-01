@@ -1,8 +1,11 @@
 package com.mewfm
 
 import android.app.AlertDialog
+import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.Intent
 import android.graphics.*
+import android.net.Uri
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.VelocityTracker
@@ -208,8 +211,36 @@ class FileListView(context: Context) : View(context) {
 
     private fun openEntry(idx: Int) {
         val e = fm.entries[idx]
-        if (e.isDirectory) navigateTo(fm.currentPath.trimEnd('/') + "/" + e.name)
-        else showToast("Opening ${e.name}")
+        if (e.isDirectory) {
+            navigateTo(fm.currentPath.trimEnd('/') + "/" + e.name)
+            return
+        }
+        if (e.isBrokenLink) {
+            showToast("Broken link: ${e.name}")
+            return
+        }
+        val fullPath = fm.currentPath.trimEnd('/') + "/" + e.name
+        val uri = Uri.Builder()
+            .scheme("content")
+            .authority("com.mewfm.files")
+            .path(fullPath)
+            .build()
+        val mime = try {
+            context.contentResolver.getType(uri) ?: "*/*"
+        } catch (ex: Exception) {
+            "*/*"
+        }
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, mime)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        try {
+            context.startActivity(intent)
+        } catch (ex: ActivityNotFoundException) {
+            showToast("No app can open ${e.name}")
+        } catch (ex: Exception) {
+            showToast("Failed to open ${e.name}")
+        }
     }
 
     override fun onDraw(c: Canvas) {
