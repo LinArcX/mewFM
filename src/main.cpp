@@ -3975,6 +3975,8 @@ static void handleKeyboardNav(AppState& app, float listH)
   }
 }
 
+static std::string expandTilde(const std::string& p);
+
 /**
  * @brief Acts on the result of the text input dialog (New Folder/File, Rename, GoToPath, Filter).
  * @param app Application state.
@@ -4043,7 +4045,8 @@ static void handleTextInputResult(AppState& app)
 
   if (pending == PendingInput::GoToPath)
   {
-    if (!app.fm.setPath(app.textInput.value))
+    const std::string expanded = expandTilde(app.textInput.value);
+    if (!app.fm.setPath(expanded))
     {
       app.modal.openInfo("Error", "Could not open path.");
     }
