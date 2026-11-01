@@ -27,6 +27,8 @@ struct Entry
   unsigned long long sizeBytes = 0;  ///< Raw size in bytes (0 for directories).
   bool isDirectory = false;          ///< True when the entry is a directory.
   bool isExecutable = false;         ///< True when any execute bit is set on a file.
+  bool isSymlink = false;            ///< True when the entry itself is a symlink.
+  bool isBrokenLink = false;         ///< True when the entry is a broken symlink.
 };
 
 /**
@@ -305,6 +307,7 @@ private:
     None,           ///< No operation.
     MakeDirs,       ///< Create the destination directory tree.
     CopyFiles,      ///< Copy file contents chunk by chunk.
+    CopySymlinks,   ///< Recreate symlinks at the destination.
     DeleteSources,  ///< Remove source files after a cross-device move.
     RenameTopLevel, ///< Fast-path rename for same-device moves.
   };
@@ -317,6 +320,15 @@ private:
     std::string src;             ///< Absolute source path.
     std::string dst;             ///< Absolute destination path.
     unsigned long long size = 0; ///< File size in bytes.
+  };
+
+  /**
+   * @brief Describes a single symlink to recreate at the destination.
+   */
+  struct FileOpSymlink
+  {
+    std::string src; ///< Absolute source path (the link itself).
+    std::string dst; ///< Absolute destination path for the link.
   };
 
   /**
@@ -352,7 +364,11 @@ private:
                        bool moveMode);
 
   /**
-   * @brief Recursively walks @p srcRoot, populating m_opDirs and m_opFiles.
+   * @brief Recursively walks @p srcRoot, populating m_opDirs, m_opFiles, and m_opSymlinks.
+   *
+   * Symlinks are recorded as links (into m_opSymlinks) and are never
+   * followed, so a symlink loop cannot cause runaway recursion.
+   *
    * @param srcRoot Source directory to walk.
    * @param dstRoot Destination directory that mirrors the source tree.
    * @return True on success.
@@ -460,10 +476,12 @@ private:
   std::string m_opDstDir;                     ///< Destination directory of the operation.
   std::vector<std::string> m_opTopNames;      ///< Top-level names being operated on.
   std::vector<FileOpFile> m_opFiles;          ///< Flat list of files to copy.
+  std::vector<FileOpSymlink> m_opSymlinks;    ///< Symlinks to recreate at the destination.
   std::vector<std::string> m_opDirs;          ///< Directories that must exist before copying.
   std::vector<char> m_opBuffer;               ///< Reusable I/O buffer.
   size_t m_opDirIndex = 0;                    ///< Index into m_opDirs.
   size_t m_opFileIndex = 0;                   ///< Index into m_opFiles.
+  size_t m_opSymlinkIndex = 0;                ///< Index into m_opSymlinks.
   size_t m_opDeleteIndex = 0;                 ///< Index into m_opTopNames for deletion.
   size_t m_opRenameIndex = 0;                 ///< Index into m_opTopNames for rename.
   unsigned long long m_opTotalBytes = 0;      ///< Total bytes to transfer.

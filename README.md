@@ -12,6 +12,8 @@ A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and ou
 - Resizable columns (drag separator in the header row)
 - Sortable columns (click to sort, click again to toggle asc/desc)
 - Extension-aware icons (images, video, audio, documents, fonts, code)
+- Broken symlinks shown with a "Broken link" type (never hidden)
+- Copy / move preserve symlinks as links (never followed)
 - Preview panel for image thumbnails and text files (F3)
 - Integrated text editor: right-click a text file → "Edit Here"
 - Single-click select, double-click open

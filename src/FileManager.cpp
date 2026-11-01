@@ -446,7 +446,7 @@ bool FileManager::trashEntry(const std::string& name)
   if (ec)
   {
     ec.clear();
-    fs::copy(src, dst, fs::copy_options::recursive, ec);
+    fs::copy(src, dst, fs::copy_options::recursive | fs::copy_options::copy_symlinks, ec);
     if (ec)
     {
       return false;
@@ -720,10 +720,12 @@ void FileManager::clearFileOp()
   m_opDstDir.clear();
   m_opTopNames.clear();
   m_opFiles.clear();
+  m_opSymlinks.clear();
   m_opDirs.clear();
   m_opBuffer.clear();
   m_opDirIndex = 0;
   m_opFileIndex = 0;
+  m_opSymlinkIndex = 0;
   m_opDeleteIndex = 0;
   m_opRenameIndex = 0;
   m_opTotalBytes = 0;
@@ -778,6 +780,15 @@ bool FileManager::collectDirPlan(const std::string& srcRoot, const std::string& 
       const fs::path& p = entry.path();
       std::string name = p.filename().string();
       fs::path d = cur.dst / name;
+      if (entry.is_symlink())
+      {
+        FileOpSymlink link;
+        link.src = p.string();
+        link.dst = d.string();
+        m_opSymlinks.push_back(link);
+        ec.clear();
+        continue;
+      }
       if (fs::is_directory(p, ec))
       {
         m_opDirs.push_back(d.string());
@@ -822,10 +833,12 @@ bool FileManager::buildFileOpPlan(const std::string& srcDir,
       return false;
     }
     fs::path src = fs::path(srcDir) / name;
-    if (!fs::exists(src, ec))
+    const fs::file_status srcStatus = fs::symlink_status(src, ec);
+    if (ec || srcStatus.type() == fs::file_type::not_found)
     {
       return false;
     }
+    const bool srcIsLink = fs::is_symlink(srcStatus);
 
     std::string dstName = name;
     if (!moveMode)
@@ -845,7 +858,14 @@ bool FileManager::buildFileOpPlan(const std::string& srcDir,
     }
     fs::path dst = fs::path(dstDir) / dstName;
 
-    if (fs::is_directory(src, ec))
+    if (srcIsLink)
+    {
+      FileOpSymlink link;
+      link.src = src.string();
+      link.dst = dst.string();
+      m_opSymlinks.push_back(link);
+    }
+    else if (fs::is_directory(src, ec))
     {
       if (!collectDirPlan(src.string(), dst.string()))
       {
@@ -1029,9 +1049,16 @@ bool FileManager::stepFileOp(double budgetSeconds)
         if (m_opSrcFd < 0 && m_opFileIndex >= m_opFiles.size())
         {
           m_opDoneBytes = m_opTotalBytes;
-          m_opStage = (m_opKind == FileOpKind::Move)
-            ? FileOpStage::DeleteSources
-            : FileOpStage::None;
+          if (!m_opSymlinks.empty())
+          {
+            m_opStage = FileOpStage::CopySymlinks;
+          }
+          else
+          {
+            m_opStage = (m_opKind == FileOpKind::Move)
+              ? FileOpStage::DeleteSources
+              : FileOpStage::None;
+          }
           break;
         }
         if (!stepCopyChunk())
@@ -1039,6 +1066,27 @@ bool FileManager::stepFileOp(double budgetSeconds)
           m_opFailed = true;
           return true;
         }
+        break;
+      }
+
+      case FileOpStage::CopySymlinks:
+      {
+        if (m_opSymlinkIndex >= m_opSymlinks.size())
+        {
+          m_opStage = (m_opKind == FileOpKind::Move)
+            ? FileOpStage::DeleteSources
+            : FileOpStage::None;
+          break;
+        }
+        const FileOpSymlink& link = m_opSymlinks[m_opSymlinkIndex];
+        std::error_code localEc;
+        fs::copy_symlink(fs::path(link.src), fs::path(link.dst), localEc);
+        if (localEc)
+        {
+          m_opFailed = true;
+          return true;
+        }
+        m_opSymlinkIndex++;
         break;
       }
 
@@ -1315,12 +1363,39 @@ const std::vector<Entry>& FileManager::entries() const
 
 bool FileManager::buildEntry(const std::string& fullPath, const std::string& name, Entry& out)
 {
-  struct stat st;
-  if (::stat(fullPath.c_str(), &st) != 0)
+  std::error_code ec;
+  const fs::file_status lst = fs::symlink_status(fullPath, ec);
+  if (ec)
   {
     return false;
   }
   out.name = name;
+  out.isSymlink = fs::is_symlink(lst);
+  out.isBrokenLink = false;
+
+  struct stat st;
+  if (::stat(fullPath.c_str(), &st) != 0)
+  {
+    if (!out.isSymlink)
+    {
+      return false;
+    }
+    struct stat linkSt;
+    if (::lstat(fullPath.c_str(), &linkSt) != 0)
+    {
+      return false;
+    }
+    out.isBrokenLink = true;
+    out.isDirectory = false;
+    out.isExecutable = false;
+    out.sizeBytes = 0;
+    out.sizeText = "-";
+    out.typeText = "Broken link";
+    out.ownerText = ownerName(linkSt.st_uid);
+    out.permText = permissionsToString(static_cast<unsigned int>(linkSt.st_mode));
+    return true;
+  }
+
   out.isDirectory = S_ISDIR(st.st_mode) != 0;
   out.isExecutable = !out.isDirectory && (st.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH)) != 0;
   out.ownerText = ownerName(st.st_uid);
