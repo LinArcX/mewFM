@@ -71,6 +71,29 @@ collapsed sidebar sections, and user bookmarks.
 
 ## Requirements
 
-Void Linux:
+Build:
 ```sh
 sudo xbps-install -Su base-devel glfw-devel MesaLib-devel pkg-config
+```
+
+`xxd` is required to embed the font and icon assets. It is typically
+included with vim; install `vim` (or an equivalent `xxd` package) if
+`xxd` is not already available on your system.
+
+Runtime (for archive extraction and "open with default app"):
+```sh
+sudo xbps-install -Su unzip tar xdg-utils
+```
+
+Optional (only for regenerating `compile_commands.json` for the LSP):
+```sh
+sudo xbps-install -Su bear
+```
+
+## Patch workflow
+
+Changes are applied from JSON patch files under `patches/`. The
+interactive menu (`./p`) provides a **create patch** entry that opens a
+new patch file for editing, then validates and applies it with
+`scripts/extractFiles.py`. Patches are removed after a successful
+application.
