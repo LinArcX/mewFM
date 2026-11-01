@@ -1538,6 +1538,27 @@ const std::vector<Entry>& FileManager::entries() const
   return m_entries;
 }
 
+/**
+ * @brief Formats a time_t value as "YYYY-MM-DD HH:MM".
+ * @param t Time value.
+ * @return Formatted string, or "-" if t is 0.
+ */
+static std::string formatTime(time_t t)
+{
+  if (t == 0)
+  {
+    return "-";
+  }
+  struct tm tmBuf;
+  if (localtime_r(&t, &tmBuf) == nullptr)
+  {
+    return "-";
+  }
+  char buf[32];
+  std::strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M", &tmBuf);
+  return std::string(buf);
+}
+
 bool FileManager::buildEntry(const std::string& fullPath, const std::string& name, Entry& out)
 {
   std::error_code ec;
@@ -1577,6 +1598,10 @@ bool FileManager::buildEntry(const std::string& fullPath, const std::string& nam
   out.isExecutable = !out.isDirectory && (st.st_mode & (S_IXUSR | S_IXGRP | S_IXOTH)) != 0;
   out.ownerText = ownerName(st.st_uid);
   out.permText = permissionsToString(static_cast<unsigned int>(st.st_mode));
+  out.createdTime = st.st_ctime;
+  out.modifiedTime = st.st_mtime;
+  out.createdText = formatTime(out.createdTime);
+  out.modifiedText = formatTime(out.modifiedTime);
   if (out.isDirectory)
   {
     out.sizeText = countChildren(fullPath);
@@ -1637,6 +1662,18 @@ void FileManager::sortEntries()
         {
           if (a.permText < b.permText) cmp = -1;
           else if (b.permText < a.permText) cmp = 1;
+          break;
+        }
+        case SortField::DateCreated:
+        {
+          if (a.createdTime < b.createdTime) cmp = -1;
+          else if (b.createdTime < a.createdTime) cmp = 1;
+          break;
+        }
+        case SortField::DateModified:
+        {
+          if (a.modifiedTime < b.modifiedTime) cmp = -1;
+          else if (b.modifiedTime < a.modifiedTime) cmp = 1;
           break;
         }
       }

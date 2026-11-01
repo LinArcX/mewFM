@@ -10,6 +10,7 @@
 
 #include <string>
 #include <vector>
+#include <ctime>
 
 /**
  * @brief Describes a single directory entry (file or folder).
@@ -24,7 +25,11 @@ struct Entry
   std::string typeText;              ///< Type description, e.g. "cpp file" or "Folder".
   std::string ownerText;             ///< Owner user name resolved from the UID.
   std::string permText;              ///< Permissions string, e.g. "drwxr-xr-x".
+  std::string createdText;           ///< Creation time formatted, e.g. "2023-10-24 12:00".
+  std::string modifiedText;          ///< Modification time formatted.
   unsigned long long sizeBytes = 0;  ///< Raw size in bytes (0 for directories).
+  time_t createdTime = 0;            ///< Creation time (status change).
+  time_t modifiedTime = 0;           ///< Modification time.
   bool isDirectory = false;          ///< True when the entry is a directory.
   bool isExecutable = false;         ///< True when any execute bit is set on a file.
   bool isSymlink = false;            ///< True when the entry itself is a symlink.
@@ -46,11 +51,13 @@ enum class ClipboardMode
  */
 enum class SortField
 {
-  Name,        ///< Sort alphabetically by name.
-  Size,        ///< Sort by file size in bytes.
-  Type,        ///< Sort by type description.
-  Owner,       ///< Sort by owner name.
-  Permissions, ///< Sort by permission string.
+  Name,         ///< Sort alphabetically by name.
+  Size,         ///< Sort by file size in bytes.
+  Type,         ///< Sort by type description.
+  Owner,        ///< Sort by owner name.
+  Permissions,  ///< Sort by permission string.
+  DateCreated,  ///< Sort by creation date.
+  DateModified, ///< Sort by modification date.
 };
 
 /**

@@ -58,7 +58,7 @@ namespace
   constexpr float kIconSize     = 16.0f;
   constexpr float kIconGap      = 4.0f;
   constexpr float kMinColWidth  = 40.0f;
-  constexpr int   kNumCols      = 5;
+  constexpr int   kNumCols      = 7;
   constexpr float kMenuWidth      = 220.0f;
   constexpr float kMenuItemHeight =  26.0f;
   constexpr float kMenuPadY       =   4.0f;
@@ -270,7 +270,7 @@ namespace
     std::string lastPath;                              ///< Last observed path (used to reset state on navigation).
     double lastClickTime = 0.0;                        ///< Timestamp of the last click.
     int lastClickIndex = -1;                           ///< Row index of the last click.
-    float colWidths[kNumCols] = {260.0f, 90.0f, 110.0f, 100.0f, 110.0f}; ///< Column widths, persisted to disk.
+    float colWidths[kNumCols] = {260.0f, 90.0f, 110.0f, 100.0f, 110.0f, 130.0f, 130.0f}; ///< Column widths, persisted to disk.
     int dragColumn = -1;                               ///< Column currently being resized (-1 = none).
     int hoveredSep = -1;                               ///< Separator currently hovered (-1 = none).
     float dragStartMouseX = 0.0f;                      ///< Mouse X at the start of a column drag.
@@ -4451,7 +4451,9 @@ static SortField columnSortField(int col)
     case 1: return SortField::Size;
     case 2: return SortField::Type;
     case 3: return SortField::Owner;
-    default: return SortField::Permissions;
+    case 4: return SortField::Permissions;
+    case 5: return SortField::DateCreated;
+    default: return SortField::DateModified;
   }
 }
 
@@ -4468,7 +4470,9 @@ static const char* columnLabel(int col)
     case 1: return " Size";
     case 2: return " Type";
     case 3: return " Owner";
-    default: return " Permissions";
+    case 4: return " Permissions";
+    case 5: return " Created";
+    default: return " Modified";
   }
 }
 
@@ -4533,10 +4537,10 @@ static void drawMainHeader(NVGcontext* vg, AppState& app, float x, float y, floa
     }
   }
 
-  float seps[4];
+  float seps[6];
   {
     float cx = x + kPadX;
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < 6; i++)
     {
       cx += app.colWidths[i];
       seps[i] = cx;
@@ -4546,7 +4550,7 @@ static void drawMainHeader(NVGcontext* vg, AppState& app, float x, float y, floa
   int hoverSep = -1;
   if (g_mouseY >= y && g_mouseY < y + kHeaderHeight)
   {
-    for (int i = 0; i < 4; i++)
+    for (int i = 0; i < 6; i++)
     {
       if (g_mouseX >= seps[i] - sepTol && g_mouseX <= seps[i] + sepTol)
       {
@@ -4610,7 +4614,7 @@ static void drawMainHeader(NVGcontext* vg, AppState& app, float x, float y, floa
     }
   }
 
-  for (int i = 0; i < 4; i++)
+  for (int i = 0; i < 6; i++)
   {
     bool active = (hoverSep == i || app.dragColumn == i);
     nvgBeginPath(vg);
@@ -5013,6 +5017,8 @@ static void drawRows(NVGcontext* vg,
     std::string sizeText = truncateToWidth(vg, e.sizeText,  app.colWidths[1] - cellPad);
     std::string typeText = truncateToWidth(vg, e.typeText,  app.colWidths[2] - cellPad);
     std::string ownerText = truncateToWidth(vg, e.ownerText, app.colWidths[3] - cellPad);
+    std::string createdText = truncateToWidth(vg, e.createdText, app.colWidths[5] - cellPad);
+    std::string modifiedText = truncateToWidth(vg, e.modifiedText, app.colWidths[6] - cellPad);
 
     nvgFillColor(vg, app.theme.text);
     nvgText(vg, iconX + kIconSize + kIconGap, cy, nameText.c_str(), nullptr);
@@ -5020,6 +5026,8 @@ static void drawRows(NVGcontext* vg,
     nvgText(vg, columnX(app, x, 2), cy, typeText.c_str(), nullptr);
     nvgText(vg, columnX(app, x, 3), cy, ownerText.c_str(), nullptr);
     nvgText(vg, columnX(app, x, 4), cy, e.permText.c_str(), nullptr);
+    nvgText(vg, columnX(app, x, 5), cy, createdText.c_str(), nullptr);
+    nvgText(vg, columnX(app, x, 6), cy, modifiedText.c_str(), nullptr);
   }
   nvgRestore(vg);
 }
