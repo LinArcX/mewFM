@@ -58,7 +58,7 @@ namespace
   constexpr float kIconGap      = 4.0f;
   constexpr float kMinColWidth  = 40.0f;
   constexpr int   kNumCols      = 5;
-  constexpr float kMenuWidth      = 160.0f;
+  constexpr float kMenuWidth      = 220.0f;
   constexpr float kMenuItemHeight =  26.0f;
   constexpr float kMenuPadY       =   4.0f;
   constexpr float kFilterBoxW     = 200.0f;
@@ -6004,7 +6004,8 @@ static void drawContextMenu(
     }
     nvgFillColor(vg, enabled ? nvgRGBf(0.9f, 0.9f, 0.9f)
                              : nvgRGBf(0.5f, 0.5f, 0.5f));
-    nvgText(vg, mx + 10.0f, iy + kMenuItemHeight * 0.5f, items[i].label.c_str(), nullptr);
+    std::string shownLabel = truncateToWidth(vg, items[i].label, kMenuWidth - (items[i].submenu.empty() ? 20.0f : 32.0f));
+    nvgText(vg, mx + 10.0f, iy + kMenuItemHeight * 0.5f, shownLabel.c_str(), nullptr);
     if (!items[i].submenu.empty())
     {
       nvgFillColor(vg, nvgRGBf(0.7f, 0.7f, 0.7f));
