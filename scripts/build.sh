@@ -42,7 +42,19 @@ if [ "$ANDROID_BUILD" = "1" ]; then
     exit 1
   fi
   SDK_DIR=${ANDROID_HOME:-$ANDROID_SDK_ROOT}
-  BUILD_TOOLS="$SDK_DIR/build-tools/34.0.0"
+  BUILD_TOOLS=""
+  if [ -d "$SDK_DIR/build-tools" ]; then
+    latest_bt="$(ls -1 "$SDK_DIR/build-tools" 2>/dev/null | sort -V | tail -n 1)"
+    if [ -n "$latest_bt" ] && [ -x "$SDK_DIR/build-tools/$latest_bt/d8" ]; then
+      BUILD_TOOLS="$SDK_DIR/build-tools/$latest_bt"
+    fi
+  fi
+  if [ -z "$BUILD_TOOLS" ]; then
+    echo "Error: no build-tools directory with a usable d8 found under $SDK_DIR/build-tools" >&2
+    echo "Install one via sdkmanager, e.g.: sdkmanager 'build-tools;34.0.0'" >&2
+    exit 1
+  fi
+  echo "  ${C_CYAN}using build-tools:${C_RESET} $BUILD_TOOLS"
   PLATFORM="$SDK_DIR/platforms/android-33/android.jar"
   
   if [ ! -f "$PLATFORM" ]; then
