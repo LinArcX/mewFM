@@ -316,6 +316,7 @@ namespace
   int   g_mouseMods = 0;
   bool  g_rightClicked = false;
   bool  g_sidebarDirty = false;
+  std::string g_tooltip;
 }
 
 /**
@@ -2433,6 +2434,10 @@ static void drawTabBar(NVGcontext* vg, AppState& app, float w)
 
     if (tabCount > 1 && hover)
     {
+      if (closeHover)
+      {
+        g_tooltip = "Close Tab (Ctrl+W)";
+      }
       nvgFillColor(vg, closeHover ? nvgRGBf(1.0f, 0.4f, 0.4f) : nvgRGBf(0.7f, 0.7f, 0.7f));
       nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
       nvgText(vg, closeX + 6.0f, tabY + tabH * 0.5f, "x", nullptr);
@@ -2458,6 +2463,10 @@ static void drawTabBar(NVGcontext* vg, AppState& app, float w)
 
   const float plusX = w - kPadX - plusW;
   bool plusHover = inRect(g_mouseX, g_mouseY, plusX, tabY, plusW, tabH);
+  if (plusHover)
+  {
+    g_tooltip = "New Tab (Ctrl+T)";
+  }
   nvgBeginPath(vg);
   nvgRoundedRect(vg, plusX, tabY, plusW, tabH, 4.0f);
   nvgFillColor(vg, plusHover ? nvgRGBf(0.3f, 0.3f, 0.3f) : nvgRGBf(0.2f, 0.2f, 0.2f));
@@ -2521,6 +2530,10 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
     nvgStrokeWidth(vg, 2.0f);
     nvgStroke(vg);
 
+    if (toggleHover)
+    {
+      g_tooltip = "Toggle Sidebar (Ctrl+B)";
+    }
     if (toggleHover && g_mouseClicked)
     {
       app.sidebarVisible = !app.sidebarVisible;
@@ -2564,6 +2577,10 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
       nvgFill(vg);
     }
 
+    if (toggleHover)
+    {
+      g_tooltip = "Toggle Preview (F3)";
+    }
     if (toggleHover && g_mouseClicked)
     {
       app.previewVisible = !app.previewVisible;
@@ -2576,6 +2593,10 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
   bndToolButton(vg, x, kBtnY, kBtnSize, kBtnSize, BND_CENTER,
                 homeHover ? BND_HOVER : BND_DEFAULT,
                 BND_ICON_DISK_DRIVE, "");
+  if (homeHover)
+  {
+    g_tooltip = "Home";
+  }
   if (homeHover && g_mouseClicked)
   {
     const char* home = std::getenv("HOME");
@@ -2599,6 +2620,12 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
       st = BND_HOVER;
     }
     bndToolButton(vg, x, kBtnY, kBtnSize, kBtnSize, BND_CENTER, st, icons[i], "");
+    if (hover)
+    {
+      if (i == 0) g_tooltip = "Back";
+      else if (i == 1) g_tooltip = "Forward";
+      else if (i == 2) g_tooltip = "Up";
+    }
     if (hover && g_mouseClicked)
     {
       action = i;
@@ -2684,6 +2711,10 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
       nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
       nvgText(vg, x + 6.0f, cy, crumbs[k].first.c_str(), nullptr);
     }
+    if (hover)
+    {
+      g_tooltip = "Go to " + crumbs[k].second;
+    }
     if (hover && g_mouseClicked)
     {
       navTo = crumbs[k].second;
@@ -2729,6 +2760,10 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
     }
     nvgRestore(vg);
 
+    if (filterHover)
+    {
+      g_tooltip = "Filter (Ctrl+F)";
+    }
     if (filterHover && g_mouseClicked)
     {
       app.textInput.open("Filter", app.fm.filter());
@@ -4979,6 +5014,51 @@ static void drawToast(NVGcontext* vg, const AppState& app, float w, float h)
 }
 
 /**
+ * @brief Draws the tooltip popup near the mouse cursor.
+ * @param vg NanoVG context.
+ * @param w  Window width.
+ * @param h  Window height.
+ */
+static void drawTooltip(NVGcontext* vg, float w, float h)
+{
+  if (g_tooltip.empty())
+  {
+    return;
+  }
+  nvgFontFace(vg, "sans");
+  nvgFontSize(vg, g_fontSize - 2.0f);
+  float bounds[4];
+  nvgTextBounds(vg, 0.0f, 0.0f, g_tooltip.c_str(), nullptr, bounds);
+  float textW = bounds[2] - bounds[0];
+  float textH = bounds[3] - bounds[1];
+
+  const float padX = 8.0f;
+  const float padY = 4.0f;
+  float boxW = textW + padX * 2.0f;
+  float boxH = textH + padY * 2.0f;
+
+  float boxX = g_mouseX + 12.0f;
+  float boxY = g_mouseY + 18.0f;
+
+  if (boxX + boxW > w) boxX = w - boxW - 4.0f;
+  if (boxY + boxH > h) boxY = h - boxH - 4.0f;
+  if (boxX < 0.0f) boxX = 0.0f;
+  if (boxY < 0.0f) boxY = 0.0f;
+
+  nvgBeginPath(vg);
+  nvgRoundedRect(vg, boxX, boxY, boxW, boxH, 4.0f);
+  nvgFillColor(vg, nvgRGBAf(0.1f, 0.1f, 0.1f, 0.9f));
+  nvgFill(vg);
+  nvgStrokeColor(vg, nvgRGBAf(1.0f, 1.0f, 1.0f, 0.1f));
+  nvgStrokeWidth(vg, 1.0f);
+  nvgStroke(vg);
+
+  nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.95f));
+  nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+  nvgText(vg, boxX + padX, boxY + boxH * 0.5f, g_tooltip.c_str(), nullptr);
+}
+
+/**
  * @brief Draws the status bar (counts, filter, progress, free space, pause button).
  * @param vg  NanoVG context.
  * @param app Application state.
@@ -5324,6 +5404,8 @@ int main(int argc, char** argv)
 
     nvgBeginFrame(vg, w, h, pxRatio);
 
+    g_tooltip.clear();
+
     resetOnPathChange(app);
     applyScroll(app, listH);
     bool popupActive = app.modal.active || app.textInput.active;
@@ -5404,6 +5486,8 @@ int main(int argc, char** argv)
       app,
       w,
       h);
+
+    drawTooltip(vg, w, h);
 
     bool resizeHover = (app.hoveredSep >= 0) || (app.dragColumn >= 0);
     if (app.modal.active || app.textInput.active)
