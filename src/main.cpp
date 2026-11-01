@@ -20,6 +20,7 @@
 #include "HurmitFont.hpp"
 #include "BlenderIcons.hpp"
 
+#include <algorithm>
 #include <fstream>
 #include <cctype>
 #include <cmath>
@@ -285,6 +286,7 @@ namespace
     float sidebarAnim = 1.0f;                          ///< Sidebar slide animation progress (0..1).
     float previewAnim = 1.0f;                          ///< Preview panel slide animation progress (0..1).
     float sidebarScrollY = 0.0f;                       ///< Vertical scroll offset of the sidebar.
+    std::string pendingOpenWithExec;                   ///< Exec command of the OpenWith item being invoked.
     GLFWwindow* window = nullptr;                      ///< Owning GLFW window (set once at startup).
   };
 
@@ -1490,9 +1492,311 @@ static void windowCloseCallback(GLFWwindow* window)
 }
 
 /**
- * @brief Tests whether the point (mx, my) lies inside the axis-aligned rectangle.
- * @return True if the point is inside [x, x+w) x [y, y+h).
+ * @brief Parses a .desktop file and extracts its Name= and Exec= entries.
+ *
+ * Only entries inside the [Desktop Entry] group are considered. Entries
+ * with NoDisplay=true or Hidden=true are rejected. Field codes (%f, %F,
+ * %u, %U, %i, %c, %k, %%) are stripped from Exec=.
+ *
+ * @param path   Absolute path of the .desktop file.
+ * @param pName  Output: human-readable application name.
+ * @param pExec  Output: exec command with field codes removed.
+ * @return True when the file yielded a usable (name, exec) pair.
  */
+static bool parseDesktopFile(const std::string& path,
+                             std::string& pName,
+                             std::string& pExec)
+{
+  std::ifstream in(path);
+  if (!in)
+  {
+    return false;
+  }
+  pName.clear();
+  pExec.clear();
+  bool inGroup = false;
+  bool noDisplay = false;
+  bool hidden = false;
+  std::string line;
+  while (std::getline(in, line))
+  {
+    if (!line.empty() && line.back() == '\r')
+    {
+      line.pop_back();
+    }
+    if (line.size() >= 2 && line[0] == '[' && line.back() == ']')
+    {
+      inGroup = (line == "[Desktop Entry]");
+      continue;
+    }
+    if (!inGroup)
+    {
+      continue;
+    }
+    size_t eq = line.find('=');
+    if (eq == std::string::npos)
+    {
+      continue;
+    }
+    std::string key = line.substr(0, eq);
+    std::string val = line.substr(eq + 1);
+    if (key == "Name" && pName.empty())
+    {
+      pName = val;
+    }
+    else if (key == "Exec" && pExec.empty())
+    {
+      pExec = val;
+    }
+    else if (key == "NoDisplay" && val == "true")
+    {
+      noDisplay = true;
+    }
+    else if (key == "Hidden" && val == "true")
+    {
+      hidden = true;
+    }
+  }
+  if (noDisplay || hidden || pName.empty() || pExec.empty())
+  {
+    return false;
+  }
+
+  std::string cleaned;
+  cleaned.reserve(pExec.size());
+  for (size_t i = 0; i < pExec.size(); i++)
+  {
+    if (pExec[i] == '%' && i + 1 < pExec.size())
+    {
+      const char c = pExec[i + 1];
+      if (c == '%')
+      {
+        cleaned.push_back('%');
+        i++;
+        continue;
+      }
+      if (c == 'f' || c == 'F' || c == 'u' || c == 'U' ||
+          c == 'i' || c == 'c' || c == 'k')
+      {
+        i++;
+        continue;
+      }
+    }
+    cleaned.push_back(pExec[i]);
+  }
+  while (!cleaned.empty() && cleaned.back() == ' ')
+  {
+    cleaned.pop_back();
+  }
+  if (cleaned.empty())
+  {
+    return false;
+  }
+  pExec = cleaned;
+  return true;
+}
+
+/**
+ * @brief Splits a command line into argv tokens on spaces.
+ *
+ * Supports double-quoted tokens so paths with spaces survive the split.
+ *
+ * @param s Command line.
+ * @return Vector of tokens.
+ */
+static std::vector<std::string> splitCommand(const std::string& s)
+{
+  std::vector<std::string> out;
+  std::string cur;
+  bool inQuote = false;
+  for (size_t i = 0; i < s.size(); i++)
+  {
+    const char c = s[i];
+    if (c == '"')
+    {
+      inQuote = !inQuote;
+      continue;
+    }
+    if (c == ' ' && !inQuote)
+    {
+      if (!cur.empty())
+      {
+        out.push_back(cur);
+        cur.clear();
+      }
+      continue;
+    }
+    cur.push_back(c);
+  }
+  if (!cur.empty())
+  {
+    out.push_back(cur);
+  }
+  return out;
+}
+
+/**
+ * @brief Collects launchable GUI applications from the standard
+ *        freedesktop .desktop directories.
+ *
+ * Scans $XDG_DATA_HOME/applications (or ~/.local/share/applications)
+ * and each entry of $XDG_DATA_DIRS/applications. Duplicate desktop-file
+ * ids keep the first occurrence. The result is sorted by display name.
+ *
+ * @return Vector of MenuItem, one per launchable application.
+ */
+static std::vector<MenuItem> collectOpenWithApps()
+{
+  std::vector<std::string> dirs;
+  const char* xdgHome = std::getenv("XDG_DATA_HOME");
+  if (xdgHome != nullptr && xdgHome[0] != '\0')
+  {
+    dirs.push_back(std::string(xdgHome) + "/applications");
+  }
+  else
+  {
+    const char* home = std::getenv("HOME");
+    if (home != nullptr)
+    {
+      dirs.push_back(std::string(home) + "/.local/share/applications");
+    }
+  }
+  const char* xdgDirs = std::getenv("XDG_DATA_DIRS");
+  std::string dirList = (xdgDirs != nullptr && xdgDirs[0] != '\0')
+    ? std::string(xdgDirs)
+    : std::string("/usr/local/share:/usr/share");
+  size_t start = 0;
+  while (start <= dirList.size())
+  {
+    size_t colon = dirList.find(':', start);
+    if (colon == std::string::npos)
+    {
+      colon = dirList.size();
+    }
+    std::string d = dirList.substr(start, colon - start);
+    if (!d.empty())
+    {
+      dirs.push_back(d + "/applications");
+    }
+    if (colon == dirList.size())
+    {
+      break;
+    }
+    start = colon + 1;
+  }
+
+  std::error_code ec;
+  std::vector<std::string> seenIds;
+  std::vector<MenuItem> apps;
+  for (size_t di = 0; di < dirs.size(); di++)
+  {
+    if (!std::filesystem::is_directory(dirs[di], ec))
+    {
+      ec.clear();
+      continue;
+    }
+    std::vector<std::filesystem::path> files;
+    for (const auto& entry : std::filesystem::directory_iterator(dirs[di], ec))
+    {
+      if (ec)
+      {
+        break;
+      }
+      if (!entry.is_regular_file())
+      {
+        continue;
+      }
+      std::string p = entry.path().string();
+      if (p.size() < 8 || p.compare(p.size() - 8, 8, ".desktop") != 0)
+      {
+        continue;
+      }
+      files.push_back(entry.path());
+    }
+    ec.clear();
+
+    for (size_t fi = 0; fi < files.size(); fi++)
+    {
+      std::string id = files[fi].filename().string();
+      bool duplicate = false;
+      for (size_t si = 0; si < seenIds.size(); si++)
+      {
+        if (seenIds[si] == id)
+        {
+          duplicate = true;
+          break;
+        }
+      }
+      if (duplicate)
+      {
+        continue;
+      }
+      seenIds.push_back(id);
+
+      std::string appName;
+      std::string appExec;
+      if (!parseDesktopFile(files[fi].string(), appName, appExec))
+      {
+        continue;
+      }
+      MenuItem item;
+      item.label = appName;
+      item.action = MenuAction::OpenWith;
+      item.enabled = true;
+      item.exec = appExec;
+      apps.push_back(item);
+    }
+  }
+
+  std::sort(apps.begin(), apps.end(),
+    [](const MenuItem& a, const MenuItem& b)
+    {
+      std::string la = a.label;
+      std::string lb = b.label;
+      for (char& c : la) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+      for (char& c : lb) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+      return la < lb;
+    });
+  return apps;
+}
+
+/**
+ * @brief Launches @p execLine with @p filePath appended as the last argument.
+ *
+ * The command is split into argv tokens and executed via execvp without
+ * a shell, so no quoting or glob expansion is performed on the file path.
+ *
+ * @param execLine Command line from a .desktop Exec= entry.
+ * @param filePath Absolute path of the file to open.
+ * @return True if fork succeeded.
+ */
+static bool launchWith(const std::string& execLine, const std::string& filePath)
+{
+  std::vector<std::string> argv = splitCommand(execLine);
+  if (argv.empty())
+  {
+    return false;
+  }
+  argv.push_back(filePath);
+  pid_t pid = fork();
+  if (pid < 0)
+  {
+    return false;
+  }
+  if (pid == 0)
+  {
+    std::vector<char*> cargv;
+    for (size_t i = 0; i < argv.size(); i++)
+    {
+      cargv.push_back(const_cast<char*>(argv[i].c_str()));
+    }
+    cargv.push_back(nullptr);
+    execvp(cargv[0], cargv.data());
+    _exit(127);
+  }
+  return true;
+}
+
 /**
  * @brief Tests whether the point (mx, my) lies inside the axis-aligned rectangle.
  * @param mx Point X.
@@ -4492,20 +4796,26 @@ static bool isInsideTrash(const AppState& app)
 static std::vector<MenuItem> buildRowMenuItems(const AppState& app)
 {
   std::vector<MenuItem> items;
-  items.push_back({"Open", MenuAction::Open, true});
-  items.push_back({"Edit Here", MenuAction::EditHere, true});
-  items.push_back({"Extract", MenuAction::Extract, true});
+  items.push_back({"Open", MenuAction::Open, true, std::string(), std::vector<MenuItem>()});
+  MenuItem openWith;
+  openWith.label = "Open With";
+  openWith.action = MenuAction::OpenWith;
+  openWith.enabled = true;
+  openWith.submenu = collectOpenWithApps();
+  items.push_back(openWith);
+  items.push_back({"Edit Here", MenuAction::EditHere, true, std::string(), std::vector<MenuItem>()});
+  items.push_back({"Extract", MenuAction::Extract, true, std::string(), std::vector<MenuItem>()});
   if (isInsideTrash(app))
   {
-    items.push_back({"Restore", MenuAction::Restore, true});
+    items.push_back({"Restore", MenuAction::Restore, true, std::string(), std::vector<MenuItem>()});
   }
-  items.push_back({"Copy", MenuAction::Copy, true});
-  items.push_back({"Cut", MenuAction::Cut, true});
-  items.push_back({"Rename", MenuAction::Rename, true});
-  items.push_back({"Delete", MenuAction::Delete, true});
-  items.push_back({"Properties", MenuAction::Properties, true});
-  items.push_back({"Add to Bookmarks", MenuAction::AddBookmark, true});
-  items.push_back({"Remove from Bookmarks", MenuAction::RemoveBookmark, true});
+  items.push_back({"Copy", MenuAction::Copy, true, std::string(), std::vector<MenuItem>()});
+  items.push_back({"Cut", MenuAction::Cut, true, std::string(), std::vector<MenuItem>()});
+  items.push_back({"Rename", MenuAction::Rename, true, std::string(), std::vector<MenuItem>()});
+  items.push_back({"Delete", MenuAction::Delete, true, std::string(), std::vector<MenuItem>()});
+  items.push_back({"Properties", MenuAction::Properties, true, std::string(), std::vector<MenuItem>()});
+  items.push_back({"Add to Bookmarks", MenuAction::AddBookmark, true, std::string(), std::vector<MenuItem>()});
+  items.push_back({"Remove from Bookmarks", MenuAction::RemoveBookmark, true, std::string(), std::vector<MenuItem>()});
   return items;
 }
 
@@ -4517,15 +4827,15 @@ static std::vector<MenuItem> buildRowMenuItems(const AppState& app)
 static std::vector<MenuItem> buildEmptyMenuItems(const AppState& app)
 {
   std::vector<MenuItem> items;
-  items.push_back({"Paste", MenuAction::Paste, true});
-  items.push_back({"New Folder", MenuAction::NewFolder, true});
-  items.push_back({"New File", MenuAction::NewFile, true});
+  items.push_back({"Paste", MenuAction::Paste, true, std::string(), std::vector<MenuItem>()});
+  items.push_back({"New Folder", MenuAction::NewFolder, true, std::string(), std::vector<MenuItem>()});
+  items.push_back({"New File", MenuAction::NewFile, true, std::string(), std::vector<MenuItem>()});
   if (isInsideTrash(app))
   {
-    items.push_back({"Empty Trash", MenuAction::EmptyTrash, true});
+    items.push_back({"Empty Trash", MenuAction::EmptyTrash, true, std::string(), std::vector<MenuItem>()});
   }
-  items.push_back({"Toggle Symlink Following", MenuAction::ToggleFollowSymlinks, true});
-  items.push_back({"Refresh", MenuAction::Refresh, true});
+  items.push_back({"Toggle Symlink Following", MenuAction::ToggleFollowSymlinks, true, std::string(), std::vector<MenuItem>()});
+  items.push_back({"Refresh", MenuAction::Refresh, true, std::string(), std::vector<MenuItem>()});
   return items;
 }
 
@@ -4581,7 +4891,25 @@ static MenuAction handleMenuClick(const AppState& app, float w, float h)
     float iy = my + kMenuPadY + static_cast<float>(i) * kMenuItemHeight;
     if (inRect(g_mouseX, g_mouseY, mx, iy, kMenuWidth, kMenuItemHeight))
     {
-      return menuItemEnabled(app, items[i], app.menuRowIndex) ? items[i].action : MenuAction::None;
+      if (items[i].submenu.empty())
+      {
+        return menuItemEnabled(app, items[i], app.menuRowIndex) ? items[i].action : MenuAction::None;
+      }
+      float subX = mx + kMenuWidth;
+      if (subX + kMenuWidth > w)
+      {
+        subX = mx - kMenuWidth;
+      }
+      const int subCount = static_cast<int>(items[i].submenu.size());
+      for (int k = 0; k < subCount; k++)
+      {
+        float sy = iy + kMenuPadY + static_cast<float>(k) * kMenuItemHeight;
+        if (inRect(g_mouseX, g_mouseY, subX, sy, kMenuWidth, kMenuItemHeight))
+        {
+          return items[i].submenu[k].enabled ? items[i].submenu[k].action : MenuAction::None;
+        }
+      }
+      return MenuAction::None;
     }
   }
   return MenuAction::None;
@@ -4901,6 +5229,21 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
       app.toast.show(app.fm.followSymlinks() ? "Symlink following: on" : "Symlink following: off");
       saveConfig(app);
       break;
+    case MenuAction::OpenWith:
+      if (rowIdx >= 0 && !app.pendingOpenWithExec.empty())
+      {
+        const auto& entries = app.fm.entries();
+        if (rowIdx < static_cast<int>(entries.size()))
+        {
+          std::string full = joinPath(app.fm.currentPath(), entries[rowIdx].name);
+          if (!launchWith(app.pendingOpenWithExec, full))
+          {
+            app.modal.openInfo("Error", "Could not launch application.");
+          }
+        }
+        app.pendingOpenWithExec.clear();
+      }
+      break;
     default:
       break;
   }
@@ -4973,6 +5316,67 @@ static void drawContextMenu(
     nvgFillColor(vg, enabled ? nvgRGBf(0.9f, 0.9f, 0.9f)
                              : nvgRGBf(0.5f, 0.5f, 0.5f));
     nvgText(vg, mx + 10.0f, iy + kMenuItemHeight * 0.5f, items[i].label.c_str(), nullptr);
+    if (!items[i].submenu.empty())
+    {
+      nvgFillColor(vg, nvgRGBf(0.7f, 0.7f, 0.7f));
+      nvgTextAlign(vg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+      nvgText(vg, mx + kMenuWidth - 10.0f, iy + kMenuItemHeight * 0.5f, ">", nullptr);
+      nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+    }
+  }
+
+  for (int i = 0; i < count; i++)
+  {
+    if (items[i].submenu.empty())
+    {
+      continue;
+    }
+    float iy = my + kMenuPadY + static_cast<float>(i) * kMenuItemHeight;
+    if (!inRect(g_mouseX, g_mouseY, mx, iy, kMenuWidth, kMenuItemHeight))
+    {
+      continue;
+    }
+    const int subCount = static_cast<int>(items[i].submenu.size());
+    float subH = kMenuPadY * 2.0f + kMenuItemHeight * static_cast<float>(subCount);
+    float subX = mx + kMenuWidth;
+    float subY = iy;
+    if (subX + kMenuWidth > w)
+    {
+      subX = mx - kMenuWidth;
+    }
+    if (subY + subH > h)
+    {
+      subY = h - subH;
+    }
+    if (subX < 0.0f) subX = 0.0f;
+    if (subY < 0.0f) subY = 0.0f;
+
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, subX, subY, kMenuWidth, subH, 4.0f);
+    nvgFillColor(vg, nvgRGBf(0.22f, 0.22f, 0.22f));
+    nvgFill(vg);
+    nvgStrokeColor(vg, nvgRGBf(0.1f, 0.1f, 0.1f));
+    nvgStrokeWidth(vg, 1.0f);
+    nvgStroke(vg);
+
+    for (int k = 0; k < subCount; k++)
+    {
+      float sy = subY + kMenuPadY + static_cast<float>(k) * kMenuItemHeight;
+      bool sHover = inRect(g_mouseX, g_mouseY, subX, sy, kMenuWidth, kMenuItemHeight);
+      bool sEnabled = items[i].submenu[k].enabled;
+      if (sHover && sEnabled)
+      {
+        nvgBeginPath(vg);
+        nvgRect(vg, subX + 1.0f, sy, kMenuWidth - 2.0f, kMenuItemHeight);
+        nvgFillColor(vg, nvgRGBf(0.3f, 0.3f, 0.3f));
+        nvgFill(vg);
+      }
+      nvgFillColor(vg, sEnabled ? nvgRGBf(0.9f, 0.9f, 0.9f)
+                                : nvgRGBf(0.5f, 0.5f, 0.5f));
+      std::string subLabel = truncateToWidth(vg, items[i].submenu[k].label, kMenuWidth - 20.0f);
+      nvgText(vg, subX + 10.0f, sy + kMenuItemHeight * 0.5f, subLabel.c_str(), nullptr);
+    }
+    break;
   }
 }
 
@@ -5453,6 +5857,33 @@ int main(int argc, char** argv)
       else if (hadMenu && g_mouseClicked)
       {
         MenuAction menuAction = handleMenuClick(app, w, h);
+        if (menuAction == MenuAction::OpenWith)
+        {
+          std::vector<MenuItem> topItems = menuItemsFor(app, app.menuKind);
+          for (size_t i = 0; i < topItems.size(); i++)
+          {
+            if (topItems[i].submenu.empty())
+            {
+              continue;
+            }
+            float iy = app.menuY + kMenuPadY + static_cast<float>(i) * kMenuItemHeight;
+            float subX = app.menuX + kMenuWidth;
+            if (subX + kMenuWidth > w)
+            {
+              subX = app.menuX - kMenuWidth;
+            }
+            for (size_t k = 0; k < topItems[i].submenu.size(); k++)
+            {
+              float sy = iy + kMenuPadY + static_cast<float>(k) * kMenuItemHeight;
+              if (inRect(g_mouseX, g_mouseY, subX, sy, kMenuWidth, kMenuItemHeight))
+              {
+                app.pendingOpenWithExec = topItems[i].submenu[k].exec;
+                break;
+              }
+            }
+            break;
+          }
+        }
         if (menuAction != MenuAction::None)
         {
           executeMenuAction(app, menuAction, app.menuRowIndex);
