@@ -181,13 +181,64 @@ if [ "$ANDROID_BUILD" = "1" ]; then
     echo "  ${C_DIM}>>> DEX app up to date${C_RESET}"
   fi
 
+  ICON_SRC="assets/icon.svg"
+  ICON_CACHE="build/android_cache"
+  ICON_DIR="$ICON_CACHE/res_icons"
+  ICON_ZIP="$ICON_CACHE/res_icons.zip"
+  if [ -f "$ICON_SRC" ]; then
+    if [ -f "$ICON_ZIP" ] && [ ! "$ICON_SRC" -nt "$ICON_ZIP" ]; then
+      echo "  ${C_DIM}>>> Launcher icons up to date${C_RESET}"
+    else
+      _RSVG="$(command -v rsvg-convert || true)"
+      _INK="$(command -v inkscape || true)"
+      _CVT="$(command -v convert || true)"
+      _CONV=""
+      if [ -n "$_RSVG" ]; then _CONV="rsvg"
+      elif [ -n "$_INK" ]; then _CONV="inkscape"
+      elif [ -n "$_CVT" ]; then _CONV="convert"
+      fi
+      if [ -z "$_CONV" ]; then
+        echo "  ${C_RED}error:${C_RESET} no SVG-to-PNG converter found." >&2
+        echo "  Install one: sudo xbps-install -Su librsvg" >&2
+        exit 1
+      fi
+      echo "  ${C_CYAN}>>> Generating launcher icons from $ICON_SRC${C_RESET}"
+      rm -rf "$ICON_DIR"
+      for pair in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+        _d="${pair%%:*}"; _s="${pair##*:}"
+        mkdir -p "$ICON_DIR/mipmap-$_d"
+        case "$_CONV" in
+          rsvg)     "$_RSVG" -w "$_s" -h "$_s" -o "$ICON_DIR/mipmap-$_d/ic_launcher.png" "$ICON_SRC" ;;
+          inkscape) "$_INK" "$ICON_SRC" --export-type=png \
+                      --export-filename="$ICON_DIR/mipmap-$_d/ic_launcher.png" \
+                      -w "$_s" -h "$_s" 2>/dev/null ;;
+          convert)  "$_CVT" -background none -density 384 -resize "${_s}x${_s}" \
+                      "$ICON_SRC" "$ICON_DIR/mipmap-$_d/ic_launcher.png" ;;
+        esac
+      done
+      rm -f "$ICON_ZIP"
+      "$BUILD_TOOLS/aapt2" compile --dir "$ICON_DIR" -o "$ICON_ZIP"
+      if [ $? -ne 0 ]; then echo "Icon resource compile failed." >&2; exit 1; fi
+    fi
+  else
+    echo "  ${C_YELLOW}warning:${C_RESET} $ICON_SRC not found, APK will use default icon." >&2
+  fi
+
   echo "  ${C_CYAN}>>> Packaging resources and manifest${C_RESET}"
+  AAPT_INPUTS=()
+  if [ -f "$ICON_CACHE/res_icons.zip" ]; then
+    AAPT_INPUTS+=("$ICON_CACHE/res_icons.zip")
+  fi
+  if [ -f "$ICON_CACHE/res_base.zip" ]; then
+    AAPT_INPUTS+=("$ICON_CACHE/res_base.zip")
+  fi
   "$BUILD_TOOLS/aapt2" link \
     -o build/android/app-unsigned.apk \
     -I "$PLATFORM" \
     --manifest android/AndroidManifest.xml \
     --min-sdk-version 33 \
-    --target-sdk-version 33
+    --target-sdk-version 33 \
+    ${AAPT_INPUTS[@]+"${AAPT_INPUTS[@]}"}
     
   if [ $? -ne 0 ]; then echo "aapt2 link failed." >&2; exit 1; fi
 

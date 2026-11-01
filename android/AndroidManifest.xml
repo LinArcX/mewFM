@@ -8,6 +8,7 @@
 
     <application
         android:label="mewFM"
+        android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
         android:hardwareAccelerated="true">
         <activity
