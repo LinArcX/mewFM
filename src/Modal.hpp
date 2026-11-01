@@ -56,6 +56,7 @@ struct Modal
   std::vector<std::string> openWithDesktopIds; ///< Desktop file IDs of candidate applications.
   std::string openWithMime;                    ///< MIME type of the file being opened.
   std::string openWithDefaultId;               ///< Desktop file ID of the default app.
+  std::string openWithFilter;                  ///< Search filter string.
 
   /**
    * @brief Opens an informational modal with a single OK button.
@@ -112,6 +113,7 @@ struct Modal
     openWithDesktopIds = desktopIds;
     openWithMime = mime;
     openWithDefaultId = defaultId;
+    openWithFilter.clear();
     openWithSelected = labels.empty() ? -1 : 0;
     openWithScroll = 0;
     openWithScrollToSelected = true;

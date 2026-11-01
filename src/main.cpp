@@ -1147,6 +1147,8 @@ static void handleEditorKey(AppState& app, int key, int mods)
  * @param action   GLFW_PRESS, GLFW_RELEASE, or GLFW_REPEAT.
  * @param mods     Modifier flags.
  */
+static std::vector<int> getFilteredOpenWithIndices(const Modal& modal);
+
 static void keyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
 {
   (void)scancode;
@@ -1272,23 +1274,47 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
     }
     else if (app->modal.type == ModalType::OpenWith)
     {
-      const int count = static_cast<int>(app->modal.openWithLabels.size());
+      std::vector<int> filtered = getFilteredOpenWithIndices(app->modal);
+      const int count = static_cast<int>(filtered.size());
       if (count > 0)
       {
-        if (key == GLFW_KEY_UP && app->modal.openWithSelected > 0)
+        int selPos = -1;
+        for (int i = 0; i < count; i++)
         {
-          app->modal.openWithSelected--;
+          if (filtered[i] == app->modal.openWithSelected)
+          {
+            selPos = i;
+            break;
+          }
+        }
+        if (key == GLFW_KEY_UP)
+        {
+          if (selPos > 0) selPos--;
+          else if (selPos == -1) selPos = 0;
+          app->modal.openWithSelected = filtered[selPos];
           app->modal.openWithScrollToSelected = true;
         }
-        else if (key == GLFW_KEY_DOWN && app->modal.openWithSelected + 1 < count)
+        else if (key == GLFW_KEY_DOWN)
         {
-          app->modal.openWithSelected++;
+          if (selPos >= 0 && selPos + 1 < count) selPos++;
+          else if (selPos == -1) selPos = 0;
+          app->modal.openWithSelected = filtered[selPos];
           app->modal.openWithScrollToSelected = true;
         }
         else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER)
         {
           app->modal.result = ModalResult::Pick;
           app->modal.active = false;
+        }
+      }
+      if (key == GLFW_KEY_BACKSPACE)
+      {
+        if (!app->modal.openWithFilter.empty())
+        {
+          app->modal.openWithFilter.pop_back();
+          filtered = getFilteredOpenWithIndices(app->modal);
+          app->modal.openWithSelected = filtered.empty() ? -1 : filtered[0];
+          app->modal.openWithScroll = 0;
         }
       }
     }
@@ -1356,6 +1382,17 @@ static void charCallback(GLFWwindow* window, unsigned int codepoint)
   AppState* app = static_cast<AppState*>(glfwGetWindowUserPointer(window));
   if (app == nullptr)
   {
+    return;
+  }
+  if (app->modal.active && app->modal.type == ModalType::OpenWith)
+  {
+    if (codepoint >= 32 && codepoint <= 126)
+    {
+      app->modal.openWithFilter += static_cast<char>(codepoint);
+      std::vector<int> filtered = getFilteredOpenWithIndices(app->modal);
+      app->modal.openWithSelected = filtered.empty() ? -1 : filtered[0];
+      app->modal.openWithScroll = 0;
+    }
     return;
   }
   if (app->editor.active)
@@ -2515,6 +2552,36 @@ static void drawSeparator(NVGcontext* vg, float x1, float y1, float x2, float y2
 
 static std::string truncateToWidth(NVGcontext* vg, const std::string& text, float maxWidth);
 
+static std::vector<int> getFilteredOpenWithIndices(const Modal& modal)
+{
+  std::vector<int> res;
+  std::string lowerFilter = modal.openWithFilter;
+  for (char& c : lowerFilter)
+  {
+    c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  }
+  for (size_t i = 0; i < modal.openWithLabels.size(); i++)
+  {
+    if (lowerFilter.empty())
+    {
+      res.push_back(static_cast<int>(i));
+    }
+    else
+    {
+      std::string lowerLabel = modal.openWithLabels[i];
+      for (char& c : lowerLabel)
+      {
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+      }
+      if (lowerLabel.find(lowerFilter) != std::string::npos)
+      {
+        res.push_back(static_cast<int>(i));
+      }
+    }
+  }
+  return res;
+}
+
 static constexpr float kModalWidth  = 380.0f;
 static constexpr float kModalHeight = 150.0f;
 static constexpr float kModalBtnW   =  90.0f;
@@ -2593,11 +2660,9 @@ static void drawModal(
   if (modal.type == ModalType::OpenWith)
   {
     const float owW = 480.0f;
-    const float owH = 420.0f;
+    const float owH = 460.0f;
     const float owX = (w - owW) * 0.5f;
     const float owY = (h - owH) * 0.5f;
-    const float listTop = owY + 48.0f;
-    const float listH = owH - 48.0f - 56.0f;
     const float listItemH = 26.0f;
 
     nvgBeginPath(vg);
@@ -2614,27 +2679,70 @@ static void drawModal(
     nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
     nvgText(vg, owX + owW * 0.5f, owY + 26.0f, "Open With", nullptr);
 
-    const int count = static_cast<int>(modal.openWithLabels.size());
+    const float filterH = 26.0f;
+    const float filterX = owX + 8.0f;
+    const float filterY = owY + 48.0f;
+    const float filterW = owW - 16.0f;
+    const float listTop = filterY + filterH + 6.0f;
+    const float listH = owH - (listTop - owY) - 56.0f;
+
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, filterX, filterY, filterW, filterH, 3.0f);
+    nvgFillColor(vg, nvgRGBf(0.15f, 0.15f, 0.15f));
+    nvgFill(vg);
+    nvgStrokeColor(vg, nvgRGBf(0.35f, 0.35f, 0.35f));
+    nvgStrokeWidth(vg, 1.0f);
+    nvgStroke(vg);
+
+    nvgFontSize(vg, g_fontSize - 1.0f);
+    nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
+    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+    if (modal.openWithFilter.empty())
+    {
+      nvgFillColor(vg, nvgRGBf(0.5f, 0.5f, 0.5f));
+      nvgText(vg, filterX + 8.0f, filterY + filterH * 0.5f, "Search...", nullptr);
+    }
+    else
+    {
+      std::string shown = truncateToWidth(vg, modal.openWithFilter, filterW - 16.0f);
+      nvgText(vg, filterX + 8.0f, filterY + filterH * 0.5f, shown.c_str(), nullptr);
+    }
+
+    std::vector<int> filtered = getFilteredOpenWithIndices(modal);
+    const int filteredCount = static_cast<int>(filtered.size());
+
     const int visibleItems = static_cast<int>(listH / listItemH);
     int scroll = modal.openWithScroll;
     if (modal.openWithScrollToSelected && modal.openWithSelected >= 0)
     {
-      if (modal.openWithSelected < scroll)
+      int selPos = -1;
+      for (int i = 0; i < filteredCount; i++)
       {
-        scroll = modal.openWithSelected;
+        if (filtered[i] == modal.openWithSelected)
+        {
+          selPos = i;
+          break;
+        }
       }
-      else if (modal.openWithSelected >= scroll + visibleItems)
+      if (selPos >= 0)
       {
-        scroll = modal.openWithSelected - visibleItems + 1;
+        if (selPos < scroll)
+        {
+          scroll = selPos;
+        }
+        else if (selPos >= scroll + visibleItems)
+        {
+          scroll = selPos - visibleItems + 1;
+        }
       }
     }
     if (scroll < 0)
     {
       scroll = 0;
     }
-    if (count > visibleItems && scroll > count - visibleItems)
+    if (filteredCount > visibleItems && scroll > filteredCount - visibleItems)
     {
-      scroll = count - visibleItems;
+      scroll = filteredCount - visibleItems;
     }
     if (scroll < 0)
     {
@@ -2646,15 +2754,16 @@ static void drawModal(
     nvgScissor(vg, owX + 4.0f, listTop, owW - 8.0f, listH);
     nvgFontSize(vg, g_fontSize);
     nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
-    for (int i = scroll; i < count && i < scroll + visibleItems + 1; i++)
+    for (int i = scroll; i < filteredCount && i < scroll + visibleItems + 1; i++)
     {
+      int originalIdx = filtered[i];
       float iy = listTop + static_cast<float>(i - scroll) * listItemH;
       if (iy + listItemH < listTop || iy > listTop + listH)
       {
         continue;
       }
       bool hover = inRect(g_mouseX, g_mouseY, owX + 8.0f, iy, owW - 16.0f, listItemH);
-      bool selected = (i == modal.openWithSelected);
+      bool selected = (originalIdx == modal.openWithSelected);
       if ((i % 2) == 0)
       {
         nvgBeginPath(vg);
@@ -2662,23 +2771,25 @@ static void drawModal(
         nvgFillColor(vg, nvgRGBAf(1.0f, 1.0f, 1.0f, 0.04f));
         nvgFill(vg);
       }
-      if (selected || hover)
+      if (selected)
       {
         nvgBeginPath(vg);
         nvgRect(vg, owX + 8.0f, iy, owW - 16.0f, listItemH);
-        nvgFillColor(vg, selected ? nvgRGBf(0.35f, 0.45f, 0.6f) : nvgRGBf(0.3f, 0.3f, 0.3f));
+        nvgFillColor(vg, nvgRGBf(0.35f, 0.45f, 0.6f));
         nvgFill(vg);
       }
-      if (hover)
+      else if (hover)
       {
-        modal.openWithSelected = i;
-        modal.openWithScrollToSelected = false;
+        nvgBeginPath(vg);
+        nvgRect(vg, owX + 8.0f, iy, owW - 16.0f, listItemH);
+        nvgFillColor(vg, nvgRGBf(0.3f, 0.3f, 0.3f));
+        nvgFill(vg);
       }
-      std::string shownLabel = truncateToWidth(vg, modal.openWithLabels[static_cast<size_t>(i)], owW - 16.0f - 80.0f);
+      std::string shownLabel = truncateToWidth(vg, modal.openWithLabels[static_cast<size_t>(originalIdx)], owW - 16.0f - 80.0f);
       nvgFillColor(vg, nvgRGBf(0.92f, 0.92f, 0.92f));
       nvgText(vg, owX + 16.0f, iy + listItemH * 0.5f, shownLabel.c_str(), nullptr);
 
-      if (i < static_cast<int>(modal.openWithDesktopIds.size()) && modal.openWithDesktopIds[i] == modal.openWithDefaultId)
+      if (originalIdx < static_cast<int>(modal.openWithDesktopIds.size()) && modal.openWithDesktopIds[originalIdx] == modal.openWithDefaultId)
       {
         nvgSave(vg);
         nvgTranslate(vg, owX + owW - 16.0f, iy + listItemH * 0.5f);
@@ -2695,16 +2806,16 @@ static void drawModal(
 
       if (hover && g_rightClicked)
       {
-        std::string cmd = "xdg-mime default " + modal.openWithDesktopIds[i] + " " + modal.openWithMime + " 2>/dev/null";
+        std::string cmd = "xdg-mime default " + modal.openWithDesktopIds[originalIdx] + " " + modal.openWithMime + " 2>/dev/null";
         system(cmd.c_str());
-        modal.openWithDefaultId = modal.openWithDesktopIds[i];
+        modal.openWithDefaultId = modal.openWithDesktopIds[originalIdx];
         g_rightClicked = false;
       }
 
       if (hover && g_mouseClicked)
       {
-        modal.result = ModalResult::Pick;
-        modal.active = false;
+        modal.openWithSelected = originalIdx;
+        modal.openWithScrollToSelected = false;
       }
     }
     nvgRestore(vg);
