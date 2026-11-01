@@ -1490,6 +1490,16 @@ static void windowCloseCallback(GLFWwindow* window)
  * @brief Tests whether the point (mx, my) lies inside the axis-aligned rectangle.
  * @return True if the point is inside [x, x+w) x [y, y+h).
  */
+/**
+ * @brief Tests whether the point (mx, my) lies inside the axis-aligned rectangle.
+ * @param mx Point X.
+ * @param my Point Y.
+ * @param x  Rectangle X.
+ * @param y  Rectangle Y.
+ * @param w  Rectangle width.
+ * @param h  Rectangle height.
+ * @return True if the point is inside [x, x+w) x [y, y+h).
+ */
 static bool inRect(float mx, float my, float x, float y, float w, float h)
 {
   return mx >= x && mx < x + w && my >= y && my < y + h;
@@ -2004,6 +2014,14 @@ static void showProperties(AppState& app, int index)
  * @param x2 End X.
  * @param y2 End Y.
  */
+/**
+ * @brief Draws a 1-pixel separator line using the current NanoVG context.
+ * @param vg NanoVG context.
+ * @param x1 Start X.
+ * @param y1 Start Y.
+ * @param x2 End X.
+ * @param y2 End Y.
+ */
 static void drawSeparator(NVGcontext* vg, float x1, float y1, float x2, float y2)
 {
   nvgBeginPath(vg);
@@ -2285,6 +2303,13 @@ static void drawTextInput(NVGcontext* vg, TextInput& t, float w, float h)
   }
 }
 
+/**
+ * @brief Truncates @p text to fit inside @p maxWidth, appending "..." when needed.
+ * @param vg       NanoVG context (for text measurement).
+ * @param text     Text to truncate.
+ * @param maxWidth Maximum allowed width in pixels.
+ * @return Possibly-truncated string.
+ */
 static std::string truncateToWidth(NVGcontext* vg, const std::string& text, float maxWidth);
 
 /**

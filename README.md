@@ -87,6 +87,32 @@ Runtime (for archive extraction and "open with default app"):
 sudo xbps-install -Su unzip tar xdg-utils
 ```
 
+## Project layout
+
+```
+src/
+  main.cpp          Application state, drawing, input handling, main loop
+  FileManager.hpp   Entry, ClipboardMode, SortField, FileOpStatus,
+                    FileOpProgress, and the FileManager class API
+  FileManager.cpp   Directory listing, navigation, copy/move/trash/restore,
+                    archive extraction, filtering, sorting, and the chunked
+                    file-operation state machine
+  Modal.hpp         ModalType, ModalResult, and the Modal dialog state
+  TextInput.hpp     TextInputResult and the TextInput dialog state
+scripts/
+  build.sh          Incremental build + install script
+  extractFiles.py   JSON patch validator / applier (symlinked from a shared
+                    AI tooling directory, not committed to this repo)
+third_party/
+  nanovg/           NanoVG 2D vector graphics
+  oui-blendish/     oui-blendish widgets and the Blender icon atlas
+  impl.c            Single-TU build glue for the third-party C sources
+assets/
+  fonts/            Embedded fonts (Hermit via `xxd`; Sofia Sans is unused)
+  icon.svg          Application icon
+  mewFM.desktop     Desktop entry
+```
+
 Optional (only for regenerating `compile_commands.json` for the LSP):
 ```sh
 sudo xbps-install -Su bear
