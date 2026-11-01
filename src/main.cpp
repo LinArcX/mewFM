@@ -2737,7 +2737,7 @@ static void drawModal(
 
     const int visibleItems = static_cast<int>(listH / listItemH);
     int scroll = modal.openWithScroll;
-    if (modal.openWithScrollToSelected && modal.openWithSelected >= 0)
+    if (modal.openWithSelected >= 0)
     {
       int selPos = -1;
       for (int i = 0; i < filteredCount; i++)
@@ -2750,13 +2750,21 @@ static void drawModal(
       }
       if (selPos >= 0)
       {
-        if (selPos < scroll)
+        if (modal.openWithScrollToCenter)
         {
-          scroll = selPos;
+          scroll = selPos - (visibleItems / 2);
+          modal.openWithScrollToCenter = false;
         }
-        else if (selPos >= scroll + visibleItems)
+        else if (modal.openWithScrollToSelected)
         {
-          scroll = selPos - visibleItems + 1;
+          if (selPos < scroll)
+          {
+            scroll = selPos;
+          }
+          else if (selPos >= scroll + visibleItems)
+          {
+            scroll = selPos - visibleItems + 1;
+          }
         }
       }
     }

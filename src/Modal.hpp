@@ -53,6 +53,7 @@ struct Modal
   int openWithSelected = -1;                   ///< Highlighted item (-1 = none).
   int openWithScroll = 0;                      ///< Index of the first visible item.
   bool openWithScrollToSelected = true;        ///< Auto-scroll to keep selection visible.
+  bool openWithScrollToCenter = false;         ///< Auto-scroll to center the initial selection.
   std::vector<std::string> openWithDesktopIds; ///< Desktop file IDs of candidate applications.
   std::string openWithMime;                    ///< MIME type of the file being opened.
   std::string openWithDefaultId;               ///< Desktop file ID of the default app.
@@ -125,6 +126,7 @@ struct Modal
     }
     openWithScroll = 0;
     openWithScrollToSelected = true;
+    openWithScrollToCenter = true;
   }
 
   /**
