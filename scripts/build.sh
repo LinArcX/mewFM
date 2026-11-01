@@ -50,6 +50,19 @@ if [ "$ANDROID_BUILD" = "1" ]; then
     exit 1
   fi
   
+  KOTLINC_BIN="$(command -v kotlinc || true)"
+  if [ -z "$KOTLINC_BIN" ]; then
+    echo "Error: kotlinc not found in PATH." >&2
+    exit 1
+  fi
+  KOTLINC_REAL="$(readlink -f "$KOTLINC_BIN")"
+  KOTLIN_HOME="$(dirname "$(dirname "$KOTLINC_REAL")")"
+  KOTLIN_STDLIB="$KOTLIN_HOME/lib/kotlin-stdlib.jar"
+  if [ ! -f "$KOTLIN_STDLIB" ]; then
+    echo "Error: kotlin-stdlib.jar not found at $KOTLIN_STDLIB" >&2
+    exit 1
+  fi
+  rm -rf build/android
   mkdir -p build/android/classes build/android/dex
   
   echo "  ${C_CYAN}>>> Compiling Kotlin${C_RESET}"
@@ -60,7 +73,9 @@ if [ "$ANDROID_BUILD" = "1" ]; then
   if [ $? -ne 0 ]; then echo "Kotlin compilation failed." >&2; exit 1; fi
 
   echo "  ${C_CYAN}>>> Converting to DEX${C_RESET}"
-  "$BUILD_TOOLS/d8" --lib "$PLATFORM" --output build/android/dex build/android/classes/com/mewfm/*.class
+  jar cf build/android/classes.jar -C build/android/classes .
+  if [ $? -ne 0 ]; then echo "jar failed." >&2; exit 1; fi
+  "$BUILD_TOOLS/d8" --lib "$PLATFORM" --min-api 33 --output build/android/dex build/android/classes.jar "$KOTLIN_STDLIB"
   if [ $? -ne 0 ]; then echo "DEX conversion failed." >&2; exit 1; fi
 
   echo "  ${C_CYAN}>>> Packaging resources and manifest${C_RESET}"
@@ -68,15 +83,14 @@ if [ "$ANDROID_BUILD" = "1" ]; then
     -o build/android/app-unsigned.apk \
     -I "$PLATFORM" \
     --manifest android/AndroidManifest.xml \
-    --min-sdk-version 24 \
+    --min-sdk-version 33 \
     --target-sdk-version 34
     
   if [ $? -ne 0 ]; then echo "aapt2 link failed." >&2; exit 1; fi
 
   echo "  ${C_CYAN}>>> Adding DEX to APK${C_RESET}"
-  cd build/android/dex
-  zip -q ../app-unsigned.apk classes.dex
-  cd ../../../
+  ( cd build/android/dex && zip -q ../app-unsigned.apk classes.dex )
+  if [ $? -ne 0 ]; then echo "Adding DEX failed." >&2; exit 1; fi
 
   echo "  ${C_CYAN}>>> Aligning and Signing${C_RESET}"
   "$BUILD_TOOLS/zipalign" -f -p 4 build/android/app-unsigned.apk build/android/app-aligned.apk

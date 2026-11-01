@@ -57,6 +57,20 @@ MEWFM_BEAR=1 ./scripts/build.sh --debug
 Bear is skipped on normal builds to keep iteration fast. It runs
 automatically the first time (when `compile_commands.json` is missing).
 
+## Android build
+
+Requires the Android SDK (`ANDROID_HOME` or `ANDROID_SDK_ROOT`) with
+`build-tools/34.0.0` and `platforms/android-34`, plus `kotlinc` in `PATH`.
+
+```sh
+./scripts/build.sh --android
+```
+
+Output: `build/android/mewFM.apk`. Minimum Android version: 13 (API 33).
+Full-storage access is declared in the manifest; on Android 11+ the user
+must grant "All files access" manually in Settings until the in-app
+permission prompt is added.
+
 ## Run
 
 ```sh
