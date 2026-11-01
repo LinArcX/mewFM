@@ -50,8 +50,11 @@ struct Modal
   std::string openWithPath;                ///< Path of the file being opened.
   std::vector<std::string> openWithLabels; ///< Display names of candidate applications.
   std::vector<std::string> openWithExecs;  ///< Exec commands matching openWithLabels.
-  int openWithSelected = -1;               ///< Highlighted item (-1 = none).
-  int openWithScroll = 0;                  ///< Index of the first visible item.
+  int openWithSelected = -1;                   ///< Highlighted item (-1 = none).
+  int openWithScroll = 0;                      ///< Index of the first visible item.
+  std::vector<std::string> openWithDesktopIds; ///< Desktop file IDs of candidate applications.
+  std::string openWithMime;                    ///< MIME type of the file being opened.
+  std::string openWithDefaultId;               ///< Desktop file ID of the default app.
 
   /**
    * @brief Opens an informational modal with a single OK button.
@@ -91,7 +94,10 @@ struct Modal
    */
   void openOpenWith(const std::string& path,
                     const std::vector<std::string>& labels,
-                    const std::vector<std::string>& execs)
+                    const std::vector<std::string>& execs,
+                    const std::vector<std::string>& desktopIds,
+                    const std::string& mime,
+                    const std::string& defaultId)
   {
     active = true;
     type = ModalType::OpenWith;
@@ -102,6 +108,9 @@ struct Modal
     openWithPath = path;
     openWithLabels = labels;
     openWithExecs = execs;
+    openWithDesktopIds = desktopIds;
+    openWithMime = mime;
+    openWithDefaultId = defaultId;
     openWithSelected = labels.empty() ? -1 : 0;
     openWithScroll = 0;
   }

@@ -2481,6 +2481,8 @@ static void drawSeparator(NVGcontext* vg, float x1, float y1, float x2, float y2
   nvgStroke(vg);
 }
 
+static std::string truncateToWidth(NVGcontext* vg, const std::string& text, float maxWidth);
+
 static constexpr float kModalWidth  = 380.0f;
 static constexpr float kModalHeight = 150.0f;
 static constexpr float kModalBtnW   =  90.0f;
@@ -2639,9 +2641,33 @@ static void drawModal(
       {
         modal.openWithSelected = i;
       }
+      std::string shownLabel = truncateToWidth(vg, modal.openWithLabels[static_cast<size_t>(i)], owW - 16.0f - 80.0f);
       nvgFillColor(vg, nvgRGBf(0.92f, 0.92f, 0.92f));
-      nvgText(vg, owX + 16.0f, iy + listItemH * 0.5f,
-              modal.openWithLabels[static_cast<size_t>(i)].c_str(), nullptr);
+      nvgText(vg, owX + 16.0f, iy + listItemH * 0.5f, shownLabel.c_str(), nullptr);
+
+      if (i < static_cast<int>(modal.openWithDesktopIds.size()) && modal.openWithDesktopIds[i] == modal.openWithDefaultId)
+      {
+        nvgSave(vg);
+        nvgTranslate(vg, owX + owW - 16.0f, iy + listItemH * 0.5f);
+        nvgTransform(vg, 1.0f, 0.0f, -0.2f, 1.0f, 0.0f, 0.0f);
+        nvgFontSize(vg, g_fontSize - 1.0f);
+        nvgFillColor(vg, nvgRGBf(0.4f, 0.7f, 1.0f));
+        nvgTextAlign(vg, NVG_ALIGN_RIGHT | NVG_ALIGN_MIDDLE);
+        nvgText(vg, 0.0f, 0.0f, "(default)", nullptr);
+        nvgText(vg, 0.5f, 0.0f, "(default)", nullptr);
+        nvgRestore(vg);
+        nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+        nvgFontSize(vg, g_fontSize);
+      }
+
+      if (hover && g_rightClicked)
+      {
+        std::string cmd = "xdg-mime default " + modal.openWithDesktopIds[i] + " " + modal.openWithMime + " 2>/dev/null";
+        system(cmd.c_str());
+        modal.openWithDefaultId = modal.openWithDesktopIds[i];
+        g_rightClicked = false;
+      }
+
       if (hover && g_mouseClicked)
       {
         modal.result = ModalResult::Pick;
@@ -5528,14 +5554,17 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
           }
           std::vector<std::string> labels;
           std::vector<std::string> execs;
+          std::vector<std::string> desktopIds;
           labels.reserve(apps.size());
           execs.reserve(apps.size());
+          desktopIds.reserve(apps.size());
           for (size_t i = 0; i < apps.size(); i++)
           {
             labels.push_back(apps[i].label);
             execs.push_back(apps[i].exec);
+            desktopIds.push_back(apps[i].desktopId);
           }
-          app.modal.openOpenWith(full, labels, execs);
+          app.modal.openOpenWith(full, labels, execs, desktopIds, mime, defaultId);
           app.pendingConfirm = PendingConfirm::OpenWith;
         }
       }
