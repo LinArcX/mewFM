@@ -3331,6 +3331,18 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
   float x = kPadX;
 
   {
+    const bool hover = inRect(g_mouseX, g_mouseY, x, kBtnY, kBtnSize, kBtnSize);
+    bndToolButton(vg, x, kBtnY, kBtnSize, kBtnSize, BND_CENTER,
+                  hover ? BND_HOVER : BND_DEFAULT,
+                  BND_ICON_SCRIPT, "");
+    if (hover)
+    {
+      g_tooltip = "Settings";
+    }
+  }
+  x += kBtnSize + kBtnGap;
+
+  {
     const bool toggleHover = inRect(g_mouseX, g_mouseY, x, kBtnY, kBtnSize, kBtnSize);
     nvgBeginPath(vg);
     nvgRoundedRect(vg, x, kBtnY, kBtnSize, kBtnSize, 4.0f);
