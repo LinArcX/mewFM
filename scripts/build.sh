@@ -245,6 +245,7 @@ if [ "$ANDROID_BUILD" = "1" ]; then
   echo "  ${C_CYAN}>>> Adding DEX to APK${C_RESET}"
   ( cd build/android/dex_user && zip -q ../app-unsigned.apk classes.dex )
   if [ $? -ne 0 ]; then echo "Adding app DEX failed." >&2; exit 1; fi
+  cp -f build/android/dex_lib/classes.dex build/android/dex_lib/classes2.dex
   ( cd build/android/dex_lib && zip -q ../app-unsigned.apk classes2.dex )
   if [ $? -ne 0 ]; then echo "Adding stdlib DEX failed." >&2; exit 1; fi
 
