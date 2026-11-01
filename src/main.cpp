@@ -270,7 +270,7 @@ namespace
     std::string lastPath;                              ///< Last observed path (used to reset state on navigation).
     double lastClickTime = 0.0;                        ///< Timestamp of the last click.
     int lastClickIndex = -1;                           ///< Row index of the last click.
-    float colWidths[kNumCols] = {260.0f, 90.0f, 110.0f, 100.0f, 110.0f, 130.0f, 130.0f}; ///< Column widths, persisted to disk.
+    float colWidths[kNumCols] = {260.0f, 90.0f, 110.0f, 100.0f, 110.0f, 160.0f, 160.0f}; ///< Column widths, persisted to disk.
     int dragColumn = -1;                               ///< Column currently being resized (-1 = none).
     int hoveredSep = -1;                               ///< Separator currently hovered (-1 = none).
     float dragStartMouseX = 0.0f;                      ///< Mouse X at the start of a column drag.
@@ -495,6 +495,10 @@ static void loadConfig(AppState& app)
         float w = static_cast<float>(std::atof(val.c_str()));
         if (w >= kMinColWidth)
         {
+          if ((idx == 5 || idx == 6) && w < 160.0f)
+          {
+            w = 160.0f;
+          }
           app.colWidths[idx] = w;
         }
       }
