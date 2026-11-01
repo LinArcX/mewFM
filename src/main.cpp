@@ -5408,6 +5408,15 @@ static bool menuItemEnabled(const AppState& app, const MenuItem& item, int rowId
     }
     return false;
   }
+  if (item.action == MenuAction::OpenWith)
+  {
+    const auto& entries = app.fm.entries();
+    if (rowIdx < 0 || rowIdx >= static_cast<int>(entries.size()))
+    {
+      return false;
+    }
+    return !entries[rowIdx].isDirectory;
+  }
   if (item.action == MenuAction::EditHere)
   {
     const auto& entries = app.fm.entries();
