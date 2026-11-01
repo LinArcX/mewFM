@@ -145,6 +145,7 @@ namespace
     AddBookmark,    ///< Add the selected folder to Bookmarks.
     RemoveBookmark, ///< Remove the selected folder from Bookmarks.
     ToggleFollowSymlinks, ///< Toggle whether navigating into a symlink follows it.
+    OpenWith,       ///< Open the selection with a chosen application.
   };
 
   /**
@@ -152,9 +153,11 @@ namespace
    */
   struct MenuItem
   {
-    const char* label;   ///< Text shown to the user.
-    MenuAction action;   ///< Action triggered when the item is clicked.
-    bool enabled;        ///< Statically enabled flag (may be overridden at runtime).
+    std::string label;                  ///< Text shown to the user.
+    MenuAction action;                  ///< Action triggered when the item is clicked.
+    bool enabled;                       ///< Statically enabled flag (may be overridden at runtime).
+    std::string exec;                   ///< Application command for OpenWith items.
+    std::vector<MenuItem> submenu;      ///< Nested submenu items (empty when none).
   };
 
   /**
@@ -4969,7 +4972,7 @@ static void drawContextMenu(
     }
     nvgFillColor(vg, enabled ? nvgRGBf(0.9f, 0.9f, 0.9f)
                              : nvgRGBf(0.5f, 0.5f, 0.5f));
-    nvgText(vg, mx + 10.0f, iy + kMenuItemHeight * 0.5f, items[i].label, nullptr);
+    nvgText(vg, mx + 10.0f, iy + kMenuItemHeight * 0.5f, items[i].label.c_str(), nullptr);
   }
 }
 
