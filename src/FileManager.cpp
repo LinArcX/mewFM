@@ -835,13 +835,13 @@ bool FileManager::buildFileOpPlan(const std::string& srcDir,
       {
         return false;
       }
-      std::string srcStr = src.string();
-      if (dstDir.size() > srcStr.size() &&
-          dstDir.compare(0, srcStr.size(), srcStr) == 0 &&
-          dstDir[srcStr.size()] == '/')
-      {
-        return false;
-      }
+    }
+    std::string srcStr = src.string();
+    if (dstDir.size() > srcStr.size() &&
+        dstDir.compare(0, srcStr.size(), srcStr) == 0 &&
+        dstDir[srcStr.size()] == '/')
+    {
+      return false;
     }
     fs::path dst = fs::path(dstDir) / dstName;
 
