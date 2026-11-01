@@ -3,6 +3,8 @@ build/*
 gmon.out
 garbage/*
 patches/*
+tree.txt
+sources.txt
 cppcheck
 skills.txt
 package.json
