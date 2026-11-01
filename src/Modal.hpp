@@ -65,6 +65,9 @@ struct Modal
   size_t sizeIdx = 3;                          ///< Index of the selected font size.
   int settingsDropdown = -1;                   ///< Which Settings dropdown is open (-1 = none).
   float settingsScroll = 0.0f;                 ///< Scroll offset for the font dropdown.
+  std::string settingsFilter;                  ///< Search filter for the font dropdown.
+  int settingsSelectedItem = -1;               ///< Highlighted item in the font dropdown.
+  bool applyFontPending = false;               ///< Set to true when the user selects a font.
 
   /**
    * @brief Opens an informational modal with a single OK button.

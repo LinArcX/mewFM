@@ -1323,6 +1323,121 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
     }
     else if (app->modal.type == ModalType::Info || app->modal.type == ModalType::Settings)
     {
+      if (app->modal.type == ModalType::Settings && app->modal.settingsDropdown == 0)
+      {
+        if (key == GLFW_KEY_ESCAPE)
+        {
+          app->modal.settingsDropdown = -1;
+          return;
+        }
+        if (key == GLFW_KEY_BACKSPACE)
+        {
+          if (!app->modal.settingsFilter.empty())
+          {
+            app->modal.settingsFilter.pop_back();
+            app->modal.settingsScroll = 0.0f;
+            std::string filter = app->modal.settingsFilter;
+            std::transform(filter.begin(), filter.end(), filter.begin(), ::tolower);
+            int firstMatch = -1;
+            for (size_t i = 0; i < app->modal.availFonts.size(); i++)
+            {
+              std::string name = app->modal.availFonts[i];
+              if (name != "Default (Embedded)")
+              {
+                name = std::filesystem::path(name).filename().string();
+              }
+              std::string lowerName = name;
+              std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+              if (filter.empty() || lowerName.find(filter) != std::string::npos)
+              {
+                firstMatch = static_cast<int>(i);
+                break;
+              }
+            }
+            app->modal.settingsSelectedItem = firstMatch;
+          }
+          return;
+        }
+        if (key == GLFW_KEY_UP || key == GLFW_KEY_DOWN)
+        {
+          std::vector<int> filtered;
+          std::string filter = app->modal.settingsFilter;
+          std::transform(filter.begin(), filter.end(), filter.begin(), ::tolower);
+          for (size_t i = 0; i < app->modal.availFonts.size(); i++)
+          {
+            std::string name = app->modal.availFonts[i];
+            if (name != "Default (Embedded)")
+            {
+              name = std::filesystem::path(name).filename().string();
+            }
+            std::string lowerName = name;
+            std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+            if (filter.empty() || lowerName.find(filter) != std::string::npos)
+            {
+              filtered.push_back(static_cast<int>(i));
+            }
+          }
+          if (!filtered.empty())
+          {
+            int currentPos = -1;
+            for (size_t i = 0; i < filtered.size(); i++)
+            {
+              if (filtered[i] == app->modal.settingsSelectedItem)
+              {
+                currentPos = static_cast<int>(i);
+                break;
+              }
+            }
+            if (key == GLFW_KEY_UP)
+            {
+              if (currentPos > 0) app->modal.settingsSelectedItem = filtered[currentPos - 1];
+              else if (currentPos == -1) app->modal.settingsSelectedItem = filtered.back();
+            }
+            else if (key == GLFW_KEY_DOWN)
+            {
+              if (currentPos >= 0 && currentPos < static_cast<int>(filtered.size()) - 1) app->modal.settingsSelectedItem = filtered[currentPos + 1];
+              else if (currentPos == -1) app->modal.settingsSelectedItem = filtered.front();
+            }
+            if (app->modal.settingsSelectedItem >= 0)
+            {
+              int newPos = -1;
+              for (size_t i = 0; i < filtered.size(); i++)
+              {
+                if (filtered[i] == app->modal.settingsSelectedItem)
+                {
+                  newPos = static_cast<int>(i);
+                  break;
+                }
+              }
+              if (newPos >= 0)
+              {
+                float itemH = 24.0f;
+                int maxItems = 8;
+                float listH = std::min(static_cast<float>(filtered.size()), static_cast<float>(maxItems)) * itemH;
+                float maxScroll = static_cast<float>(filtered.size()) * itemH - listH;
+                if (maxScroll < 0.0f) maxScroll = 0.0f;
+                float itemY = newPos * itemH;
+                if (itemY < app->modal.settingsScroll) app->modal.settingsScroll = itemY;
+                else if (itemY + itemH > app->modal.settingsScroll + listH) app->modal.settingsScroll = itemY + itemH - listH;
+                if (app->modal.settingsScroll < 0.0f) app->modal.settingsScroll = 0.0f;
+                if (app->modal.settingsScroll > maxScroll) app->modal.settingsScroll = maxScroll;
+              }
+            }
+          }
+          return;
+        }
+        if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER)
+        {
+          if (app->modal.settingsSelectedItem >= 0)
+          {
+            app->modal.fontIdx = static_cast<size_t>(app->modal.settingsSelectedItem);
+            app->modal.applyFontPending = true;
+          }
+          app->modal.settingsDropdown = -1;
+          return;
+        }
+        return;
+      }
       if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER)
       {
         app->modal.result = ModalResult::Ok;
@@ -1463,6 +1578,34 @@ static void charCallback(GLFWwindow* window, unsigned int codepoint)
   {
     return;
   }
+  if (app->modal.active && app->modal.type == ModalType::Settings && app->modal.settingsDropdown == 0)
+  {
+    if (codepoint >= 32 && codepoint <= 126)
+    {
+      app->modal.settingsFilter += static_cast<char>(codepoint);
+      app->modal.settingsScroll = 0.0f;
+      std::string filter = app->modal.settingsFilter;
+      std::transform(filter.begin(), filter.end(), filter.begin(), ::tolower);
+      int firstMatch = -1;
+      for (size_t i = 0; i < app->modal.availFonts.size(); i++)
+      {
+        std::string name = app->modal.availFonts[i];
+        if (name != "Default (Embedded)")
+        {
+          name = std::filesystem::path(name).filename().string();
+        }
+        std::string lowerName = name;
+        std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+        if (lowerName.find(filter) != std::string::npos)
+        {
+          firstMatch = static_cast<int>(i);
+          break;
+        }
+      }
+      app->modal.settingsSelectedItem = firstMatch;
+    }
+    return;
+  }
   if (app->modal.active && app->modal.type == ModalType::OpenWith)
   {
     app->modal.focus = 2;
@@ -1578,6 +1721,23 @@ static void scrollCallback(GLFWwindow* window, double x, double y)
   {
     if (app->modal.settingsDropdown == 0)
     {
+      std::vector<int> filtered;
+      std::string filter = app->modal.settingsFilter;
+      std::transform(filter.begin(), filter.end(), filter.begin(), ::tolower);
+      for (size_t i = 0; i < app->modal.availFonts.size(); i++)
+      {
+        std::string name = app->modal.availFonts[i];
+        if (name != "Default (Embedded)")
+        {
+          name = std::filesystem::path(name).filename().string();
+        }
+        std::string lowerName = name;
+        std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+        if (filter.empty() || lowerName.find(filter) != std::string::npos)
+        {
+          filtered.push_back(static_cast<int>(i));
+        }
+      }
       app->modal.settingsScroll -= static_cast<float>(y) * 40.0f;
       if (app->modal.settingsScroll < 0.0f)
       {
@@ -1585,8 +1745,8 @@ static void scrollCallback(GLFWwindow* window, double x, double y)
       }
       float itemH = 24.0f;
       int maxItems = 8;
-      float listH = std::min(static_cast<float>(app->modal.availFonts.size()), static_cast<float>(maxItems)) * itemH;
-      float maxScroll = static_cast<float>(app->modal.availFonts.size()) * itemH - listH;
+      float listH = std::min(static_cast<float>(filtered.size()), static_cast<float>(maxItems)) * itemH;
+      float maxScroll = static_cast<float>(filtered.size()) * itemH - listH;
       if (maxScroll < 0.0f)
       {
         maxScroll = 0.0f;
@@ -2757,6 +2917,32 @@ static void drawModal(
     return;
   }
 
+  if (modal.applyFontPending)
+  {
+    if (modal.fontIdx == 0)
+    {
+      int newFont = nvgCreateFontMem(vg, "sans", fontData, fontData_len, 0);
+      if (newFont >= 0)
+      {
+        g_activeFontId = newFont;
+        bndSetFont(g_activeFontId);
+      }
+      app.savedFontPath = "Default (Embedded)";
+    }
+    else
+    {
+      int newFont = nvgCreateFont(vg, "sans", modal.availFonts[modal.fontIdx].c_str());
+      if (newFont >= 0)
+      {
+        g_activeFontId = newFont;
+        bndSetFont(g_activeFontId);
+      }
+      app.savedFontPath = modal.availFonts[modal.fontIdx];
+    }
+    saveConfig(app);
+    modal.applyFontPending = false;
+  }
+
   nvgBeginPath(vg);
   nvgRect(vg, 0.0f, 0.0f, w, h);
   nvgFillColor(vg, nvgRGBAf(0.0f, 0.0f, 0.0f, 0.55f));
@@ -3046,8 +3232,23 @@ static void drawModal(
 
     if (inRect(g_mouseX, g_mouseY, boxX, fontY - bH * 0.5f, bW, bH) && g_mouseClicked)
     {
-      modal.settingsDropdown = (modal.settingsDropdown == 0) ? -1 : 0;
-      modal.settingsScroll = 0.0f;
+      if (modal.settingsDropdown == 0)
+      {
+        modal.settingsDropdown = -1;
+      }
+      else
+      {
+        modal.settingsDropdown = 0;
+        modal.settingsFilter.clear();
+        modal.settingsSelectedItem = static_cast<int>(modal.fontIdx);
+        float itemH = 24.0f;
+        int maxItems = 8;
+        float listH = std::min(static_cast<float>(modal.availFonts.size()), static_cast<float>(maxItems)) * itemH;
+        float itemY = modal.settingsSelectedItem * itemH;
+        if (itemY < modal.settingsScroll) modal.settingsScroll = itemY;
+        else if (itemY + itemH > modal.settingsScroll + listH) modal.settingsScroll = itemY + itemH - listH;
+        if (modal.settingsScroll < 0.0f) modal.settingsScroll = 0.0f;
+      }
       g_mouseClicked = false;
     }
 
@@ -3071,56 +3272,86 @@ static void drawModal(
     {
       float listY = fontY + bH * 0.5f;
       float itemH = 24.0f;
+      float inputH = 24.0f;
       int maxItems = 8;
-      float listH = std::min(static_cast<float>(modal.availFonts.size()), static_cast<float>(maxItems)) * itemH;
+      
+      nvgBeginPath(vg); 
+      nvgRoundedRect(vg, boxX, listY, bW, inputH, 3.0f);
+      nvgFillColor(vg, nvgRGBf(0.15f, 0.15f, 0.15f)); nvgFill(vg);
+      nvgStrokeColor(vg, nvgRGBf(0.55f, 0.65f, 0.85f)); nvgStrokeWidth(vg, 1.5f); nvgStroke(vg);
+      
+      nvgFontSize(vg, g_fontSize - 2.0f);
+      std::string inputText = modal.settingsFilter.empty() ? "Search..." : modal.settingsFilter;
+      if (modal.settingsFilter.empty()) nvgFillColor(vg, nvgRGBf(0.5f, 0.5f, 0.5f));
+      else nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
+      nvgText(vg, boxX + 8.0f, listY + inputH * 0.5f, truncateToWidth(vg, inputText, bW - 16.0f).c_str(), nullptr);
+      
+      listY += inputH + 2.0f;
+      
+      std::vector<int> filtered;
+      std::string filter = modal.settingsFilter;
+      std::transform(filter.begin(), filter.end(), filter.begin(), ::tolower);
+      for (size_t i = 0; i < modal.availFonts.size(); i++)
+      {
+        std::string name = modal.availFonts[i];
+        if (name != "Default (Embedded)")
+        {
+          name = std::filesystem::path(name).filename().string();
+        }
+        std::string lowerName = name;
+        std::transform(lowerName.begin(), lowerName.end(), lowerName.begin(), ::tolower);
+        if (filter.empty() || lowerName.find(filter) != std::string::npos)
+        {
+          filtered.push_back(static_cast<int>(i));
+        }
+      }
+      
+      float listH = std::min(static_cast<float>(filtered.size()), static_cast<float>(maxItems)) * itemH;
+      float maxScroll = static_cast<float>(filtered.size()) * itemH - listH;
+      if (maxScroll < 0.0f) maxScroll = 0.0f;
+      if (modal.settingsScroll > maxScroll) modal.settingsScroll = maxScroll;
       
       nvgBeginPath(vg); nvgRoundedRect(vg, boxX, listY, bW, listH, 3.0f);
       nvgFillColor(vg, nvgRGBf(0.2f, 0.2f, 0.2f)); nvgFill(vg);
-      nvgStrokeColor(vg, nvgRGBf(0.35f, 0.35f, 0.35f)); nvgStroke(vg);
-
+      nvgStrokeColor(vg, nvgRGBf(0.35f, 0.35f, 0.35f)); nvgStrokeWidth(vg, 1.0f); nvgStroke(vg);
+      
       nvgSave(vg);
       nvgScissor(vg, boxX + 1, listY + 1, bW - 2, listH - 2);
-
+      
       int startIdx = static_cast<int>(modal.settingsScroll / itemH);
-      int endIdx = std::min(static_cast<int>(modal.availFonts.size()), startIdx + maxItems + 1);
-
+      int endIdx = std::min(static_cast<int>(filtered.size()), startIdx + maxItems + 1);
+      
+      nvgFontSize(vg, g_fontSize);
       for (int i = startIdx; i < endIdx; i++)
       {
+        int originalIdx = filtered[i];
         float iy = listY + i * itemH - modal.settingsScroll;
-        if (inRect(g_mouseX, g_mouseY, boxX, iy, bW, itemH))
+        if (iy + itemH < listY || iy > listY + listH) continue;
+        
+        bool hover = inRect(g_mouseX, g_mouseY, boxX, iy, bW, itemH);
+        bool selected = (originalIdx == modal.settingsSelectedItem);
+        
+        if (selected)
+        {
+          nvgBeginPath(vg); nvgRect(vg, boxX + 1, iy, bW - 2, itemH);
+          nvgFillColor(vg, nvgRGBf(0.35f, 0.45f, 0.6f)); nvgFill(vg);
+        }
+        else if (hover)
         {
           nvgBeginPath(vg); nvgRect(vg, boxX + 1, iy, bW - 2, itemH);
           nvgFillColor(vg, nvgRGBf(0.3f, 0.3f, 0.3f)); nvgFill(vg);
-          if (g_mouseClicked)
-          {
-            modal.fontIdx = i;
-            modal.settingsDropdown = -1;
-            g_mouseClicked = false;
-            if (i == 0)
-            {
-              int newFont = nvgCreateFontMem(vg, "sans", fontData, fontData_len, 0);
-              if (newFont >= 0)
-              {
-                g_activeFontId = newFont;
-                bndSetFont(g_activeFontId);
-              }
-              app.savedFontPath = "Default (Embedded)";
-            }
-            else
-            {
-              int newFont = nvgCreateFont(vg, "sans", modal.availFonts[i].c_str());
-              if (newFont >= 0)
-              {
-                g_activeFontId = newFont;
-                bndSetFont(g_activeFontId);
-              }
-              app.savedFontPath = modal.availFonts[i];
-            }
-            saveConfig(app);
-          }
         }
+        
+        if (hover && g_mouseClicked)
+        {
+          modal.fontIdx = originalIdx;
+          modal.settingsDropdown = -1;
+          g_mouseClicked = false;
+          modal.applyFontPending = true;
+        }
+        
         nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
-        std::string itemLabel = modal.availFonts[i];
+        std::string itemLabel = modal.availFonts[originalIdx];
         if (itemLabel != "Default (Embedded)")
         {
           itemLabel = std::filesystem::path(itemLabel).filename().string();
