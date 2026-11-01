@@ -293,12 +293,18 @@ namespace
     float sidebarScrollY = 0.0f;                       ///< Vertical scroll offset of the sidebar.
     GLFWwindow* window = nullptr;                      ///< Owning GLFW window (set once at startup).
     std::string menuTargetPath;                        ///< Path of the target for the current context menu.
+    bool isDragging = false;                           ///< True when an internal drag operation is active.
+    int dragSourceIndex = -1;                          ///< Row index of the dragged item.
+    int dragTargetIndex = -1;                          ///< Row index of the hovered target folder.
+    float dragRowStartX = 0.0f;                        ///< Mouse X at drag start.
+    float dragRowStartY = 0.0f;                        ///< Mouse Y at drag start.
   };
 
   float g_mouseX = 0.0f;
   float g_mouseY = 0.0f;
   bool  g_mouseClicked = false;
   bool  g_mouseDown = false;
+  bool  g_mouseReleased = false;
   float g_scrollY = 0.0f;
   bool  g_navUp = false;
   bool  g_navDown = false;
@@ -1703,6 +1709,7 @@ static void mouseButtonCallback(GLFWwindow* window, int button, int action, int 
     else if (action == GLFW_RELEASE)
     {
       g_mouseDown = false;
+      g_mouseReleased = true;
     }
   }
   else if (button == GLFW_MOUSE_BUTTON_RIGHT && action == GLFW_PRESS)
@@ -4995,6 +5002,9 @@ static void drawRows(NVGcontext* vg,
     }
     bool selected = isEntrySelected(app, static_cast<int>(i));
     bool hover = inRect(g_mouseX, g_mouseY, x, rowY, w, g_rowHeight);
+    bool isTarget = (app.isDragging && static_cast<int>(i) == app.dragTargetIndex);
+    bool isSource = (app.isDragging && isEntrySelected(app, static_cast<int>(i)));
+
     if (selected)
     {
       nvgBeginPath(vg);
@@ -5007,6 +5017,24 @@ static void drawRows(NVGcontext* vg,
       nvgBeginPath(vg);
       nvgRect(vg, x, rowY, w, g_rowHeight);
       nvgFillColor(vg, app.theme.rowHover);
+      nvgFill(vg);
+    }
+
+    if (isTarget)
+    {
+      nvgBeginPath(vg);
+      nvgRect(vg, x, rowY, w, g_rowHeight);
+      nvgFillColor(vg, nvgRGBAf(0.2f, 0.6f, 0.2f, 0.4f));
+      nvgFill(vg);
+      nvgStrokeColor(vg, nvgRGBf(0.4f, 0.8f, 0.4f));
+      nvgStrokeWidth(vg, 1.5f);
+      nvgStroke(vg);
+    }
+    else if (isSource)
+    {
+      nvgBeginPath(vg);
+      nvgRect(vg, x, rowY, w, g_rowHeight);
+      nvgFillColor(vg, nvgRGBAf(0.0f, 0.0f, 0.0f, 0.2f));
       nvgFill(vg);
     }
     const Entry& e = entries[i];
@@ -5278,6 +5306,10 @@ static void handleListClick(AppState& app, float listX, float listTop, float lis
     return;
   }
   setSingleSelection(app, idx);
+  app.dragSourceIndex = idx;
+  app.dragRowStartX = g_mouseX;
+  app.dragRowStartY = g_mouseY;
+  app.isDragging = false;
 }
 
 /**
@@ -7131,6 +7163,99 @@ int main(int argc, char** argv)
     {
       handleKeyboardNav(app, listH);
     }
+
+    if (g_mouseDown && app.dragSourceIndex >= 0 && !popupActive)
+    {
+      if (!app.isDragging)
+      {
+        float dx = g_mouseX - app.dragRowStartX;
+        float dy = g_mouseY - app.dragRowStartY;
+        if (dx * dx + dy * dy > 16.0f)
+        {
+          app.isDragging = true;
+        }
+      }
+      if (app.isDragging)
+      {
+        int targetIdx = -1;
+        if (inRect(g_mouseX, g_mouseY, mainX, listTop, mainW, listH))
+        {
+          targetIdx = static_cast<int>((g_mouseY - listTop + app.scrollOffset) / g_rowHeight);
+        }
+        if (targetIdx >= 0 && targetIdx < static_cast<int>(app.fm.entries().size()) && targetIdx != app.dragSourceIndex)
+        {
+          const auto& entries = app.fm.entries();
+          if (entries[targetIdx].isDirectory && !entries[targetIdx].isBrokenLink)
+          {
+            app.dragTargetIndex = targetIdx;
+          }
+          else
+          {
+            app.dragTargetIndex = -1;
+          }
+        }
+        else
+        {
+          app.dragTargetIndex = -1;
+        }
+      }
+    }
+
+    if (g_mouseReleased && !popupActive)
+    {
+      if (app.isDragging)
+      {
+        if (app.dragTargetIndex >= 0)
+        {
+          const auto& entries = app.fm.entries();
+          std::string dstDir = joinPath(app.fm.currentPath(), entries[app.dragTargetIndex].name);
+          std::vector<std::string> srcPaths;
+          
+          if (!app.selectedIndices.empty())
+          {
+            for (int sel : app.selectedIndices)
+            {
+              if (sel >= 0 && sel < static_cast<int>(entries.size()))
+              {
+                srcPaths.push_back(joinPath(app.fm.currentPath(), entries[sel].name));
+              }
+            }
+          }
+          else
+          {
+            srcPaths.push_back(joinPath(app.fm.currentPath(), entries[app.dragSourceIndex].name));
+          }
+
+          bool invalid = false;
+          for (const auto& s : srcPaths)
+          {
+            if (s == dstDir)
+            {
+              invalid = true;
+              break;
+            }
+          }
+
+          if (!invalid)
+          {
+            if (!app.fm.startDropMove(srcPaths, dstDir))
+            {
+              app.modal.openInfo("Move failed", "Could not move the selected items.");
+            }
+            else
+            {
+              app.toast.show("Moving...");
+              clearSelection(app);
+              app.scrollOffset = 0.0f;
+            }
+          }
+        }
+        app.isDragging = false;
+        app.dragSourceIndex = -1;
+        app.dragTargetIndex = -1;
+      }
+      g_mouseReleased = false;
+    }
     handleTextInputResult(app);
 
     updatePreview(app, vg);
@@ -7219,6 +7344,7 @@ int main(int argc, char** argv)
 
     g_mouseClicked = false;
     g_rightClicked = false;
+    g_mouseReleased = false;
   }
 
   saveConfig(app);

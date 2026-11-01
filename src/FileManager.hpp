@@ -279,6 +279,15 @@ public:
                                    const std::string& dstDir);
 
   /**
+   * @brief Starts a move from internal drag-and-drop into @p dstDir.
+   * @param srcPaths Absolute paths of the dropped items.
+   * @param dstDir   Absolute destination directory.
+   * @return True if the move operation was accepted and is now running.
+   */
+  [[nodiscard]] bool startDropMove(const std::vector<std::string>& srcPaths,
+                                   const std::string& dstDir);
+
+  /**
    * @brief Advances the currently running file operation by a small time slice.
    * @return Current FileOpStatus after the step.
    */
