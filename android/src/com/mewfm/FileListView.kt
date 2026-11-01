@@ -86,11 +86,17 @@ class FileListView(context: Context) : View(context) {
     fun showToast(msg: String) { toastMsg = msg; toastT = SystemClock.uptimeMillis(); invalidate() }
 
     fun navigateTo(path: String) {
-        if (fm.setPath(path)) { selIdx = -1; scrollY = 0f; dirFadeT = SystemClock.uptimeMillis(); invalidate() }
+        fm.setPathAsync(path) { success ->
+            if (success) {
+                selIdx = -1; scrollY = 0f; dirFadeT = SystemClock.uptimeMillis(); invalidate()
+            } else {
+                showToast("Cannot open $path")
+            }
+        }
     }
 
-    fun goUp() { if (fm.goUp()) { selIdx = -1; scrollY = 0f; dirFadeT = SystemClock.uptimeMillis(); invalidate() } }
-    fun goBack() { if (fm.goBack()) { selIdx = -1; scrollY = 0f; dirFadeT = SystemClock.uptimeMillis(); invalidate() } }
+    fun goUp() { fm.goUpAsync { success -> if (success) { selIdx = -1; scrollY = 0f; dirFadeT = SystemClock.uptimeMillis(); invalidate() } } }
+    fun goBack() { fm.goBackAsync { success -> if (success) { selIdx = -1; scrollY = 0f; dirFadeT = SystemClock.uptimeMillis(); invalidate() } } }
 
     override fun onTouchEvent(e: MotionEvent): Boolean {
         if (vt == null) vt = VelocityTracker.obtain()

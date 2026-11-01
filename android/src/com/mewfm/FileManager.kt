@@ -1,5 +1,7 @@
 package com.mewfm
 
+import android.os.Handler
+import android.os.Looper
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -7,6 +9,7 @@ import java.nio.file.attribute.PosixFilePermission
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.concurrent.Executors
 
 /**
  * Column used to sort the entries of the current directory.
@@ -47,6 +50,9 @@ data class Entry(
  * NOT thread-safe: all calls must happen on the same thread (the UI thread).
  */
 class FileManager {
+    private val executor = Executors.newSingleThreadExecutor()
+    private val handler = Handler(Looper.getMainLooper())
+
     var currentPath: String = "/"
         private set
 
@@ -80,6 +86,50 @@ class FileManager {
         backStack.addLast(old)
         forwardStack.clear()
         return true
+    }
+
+    fun setPathAsync(path: String, onComplete: (Boolean) -> Unit) {
+        if (path == currentPath) {
+            onComplete(true)
+            return
+        }
+        val old = currentPath
+        executor.execute {
+            val success = loadPath(path)
+            handler.post {
+                if (success) {
+                    backStack.addLast(old)
+                    forwardStack.clear()
+                    onComplete(true)
+                } else {
+                    onComplete(false)
+                }
+            }
+        }
+    }
+
+    fun goBackAsync(onComplete: (Boolean) -> Unit) {
+        if (backStack.isEmpty()) { onComplete(false); return }
+        val target = backStack.removeLast()
+        val old = currentPath
+        executor.execute {
+            val success = loadPath(target)
+            handler.post {
+                if (success) {
+                    forwardStack.addLast(old)
+                    onComplete(true)
+                } else {
+                    backStack.addLast(target)
+                    onComplete(false)
+                }
+            }
+        }
+    }
+
+    fun goUpAsync(onComplete: (Boolean) -> Unit) {
+        val parent = parentOf(currentPath) ?: run { onComplete(false); return }
+        if (parent == currentPath) { onComplete(false); return }
+        setPathAsync(parent, onComplete)
     }
 
     fun resetTo(path: String) {
