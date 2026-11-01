@@ -1769,6 +1769,98 @@ static std::string joinPath(const std::string& base, const std::string& name)
 }
 
 /**
+ * @brief GLFW drop callback; copies externally dropped files into the
+ *        current directory, or into the folder row under the drop cursor.
+ * @param window GLFW window handle.
+ * @param count  Number of entries in @p paths.
+ * @param paths  Array of null-terminated absolute paths.
+ */
+static void dropCallback(GLFWwindow* window, int count, const char** paths)
+{
+  AppState* app = static_cast<AppState*>(glfwGetWindowUserPointer(window));
+  if (app == nullptr || count <= 0)
+  {
+    return;
+  }
+  if (app->editor.active)
+  {
+    app->toast.show("Close the editor first");
+    return;
+  }
+  if (app->modal.active || app->textInput.active)
+  {
+    app->toast.show("Close the dialog first");
+    return;
+  }
+  if (app->fm.fileOpProgress().active)
+  {
+    app->toast.show("Operation in progress");
+    return;
+  }
+  if (app->menuKind != MenuKind::None)
+  {
+    app->menuKind = MenuKind::None;
+  }
+
+  std::vector<std::string> srcPaths;
+  srcPaths.reserve(static_cast<size_t>(count));
+  for (int i = 0; i < count; i++)
+  {
+    if (paths[i] != nullptr && paths[i][0] != '\0')
+    {
+      srcPaths.push_back(paths[i]);
+    }
+  }
+  if (srcPaths.empty())
+  {
+    return;
+  }
+
+  std::string dstDir = app->fm.currentPath();
+
+  int winW = 0;
+  int winH = 0;
+  glfwGetWindowSize(window, &winW, &winH);
+  const float w = static_cast<float>(winW);
+  const float h = static_cast<float>(winH);
+  const bool previewAllowed = app->previewVisible && !app->editor.active;
+  const float previewW = kPreviewWidth * (previewAllowed ? app->previewAnim : 0.0f);
+  const float sidebarW = kSidebarWidth * app->sidebarAnim;
+  const float mainX = sidebarW;
+  const float mainY = kTopBarHeight;
+  const float mainW = w - sidebarW - previewW;
+  const float listTop = mainY + kHeaderHeight;
+  const float listH = h - listTop - kStatusBarHeight;
+
+  double mx = 0.0;
+  double my = 0.0;
+  glfwGetCursorPos(window, &mx, &my);
+
+  if (inRect(static_cast<float>(mx), static_cast<float>(my), mainX, listTop, mainW, listH))
+  {
+    const int idx = static_cast<int>(
+      (static_cast<float>(my) - listTop + app->scrollOffset) / g_rowHeight);
+    const int cnt = static_cast<int>(app->fm.entries().size());
+    if (idx >= 0 && idx < cnt)
+    {
+      const Entry& e = app->fm.entries()[idx];
+      if (e.isDirectory && !e.isBrokenLink)
+      {
+        dstDir = joinPath(app->fm.currentPath(), e.name);
+      }
+    }
+  }
+
+  if (!app->fm.startDropCopy(srcPaths, dstDir))
+  {
+    app->modal.openInfo("Drop failed", "Could not start the copy operation.");
+    return;
+  }
+  app->toast.show("Copying " + std::to_string(srcPaths.size()) +
+                  (srcPaths.size() == 1 ? " item" : " items"));
+}
+
+/**
  * @brief Chooses a Blender icon id based on the entry type and extension.
  * @param e Directory entry.
  * @return Icon identifier understood by bndIcon().
@@ -5117,6 +5209,7 @@ int main(int argc, char** argv)
   glfwSetMouseButtonCallback(window, mouseButtonCallback);
   glfwSetScrollCallback(window, scrollCallback);
   glfwSetWindowCloseCallback(window, windowCloseCallback);
+  glfwSetDropCallback(window, dropCallback);
 
   NVGcontext* vg = nvgCreateGL2(NVG_ANTIALIAS | NVG_STENCIL_STROKES);
   if (!vg)

@@ -1043,6 +1043,111 @@ bool FileManager::startPaste()
   return true;
 }
 
+bool FileManager::startDropCopy(const std::vector<std::string>& srcPaths,
+                                const std::string& dstDir)
+{
+  if (srcPaths.empty())
+  {
+    return false;
+  }
+  if (m_opProgress.active)
+  {
+    return false;
+  }
+  std::error_code ec;
+  if (!fs::is_directory(dstDir, ec))
+  {
+    return false;
+  }
+
+  clearFileOp();
+  m_opDstDir = dstDir;
+  m_opBuffer.resize(64 * 1024);
+  m_opKind = FileOpKind::Copy;
+  m_opStage = FileOpStage::MakeDirs;
+
+  size_t added = 0;
+  for (size_t i = 0; i < srcPaths.size(); i++)
+  {
+    fs::path src(srcPaths[i]);
+    const fs::file_status lst = fs::symlink_status(src, ec);
+    if (ec || lst.type() == fs::file_type::not_found)
+    {
+      return false;
+    }
+    const bool srcIsLink = fs::is_symlink(lst);
+
+    const std::string baseName = src.filename().string();
+    if (baseName.empty())
+    {
+      return false;
+    }
+    const std::string dstName = uniqueNameIn(dstDir, baseName);
+    if (dstName.empty())
+    {
+      return false;
+    }
+    const fs::path dst = fs::path(dstDir) / dstName;
+
+    const std::string srcStr = src.string();
+    const std::string dstStr = dst.string();
+    if (dstStr.size() > srcStr.size() &&
+        dstStr.compare(0, srcStr.size(), srcStr) == 0 &&
+        dstStr[srcStr.size()] == '/')
+    {
+      return false;
+    }
+
+    if (srcIsLink)
+    {
+      FileOpSymlink link;
+      link.src = srcStr;
+      link.dst = dstStr;
+      m_opSymlinks.push_back(link);
+      added++;
+    }
+    else if (fs::is_directory(src, ec))
+    {
+      if (!collectDirPlan(srcStr, dstStr))
+      {
+        return false;
+      }
+      added++;
+    }
+    else if (fs::is_regular_file(src, ec))
+    {
+      std::uintmax_t sz = fs::file_size(src, ec);
+      if (ec)
+      {
+        ec.clear();
+        sz = 0;
+      }
+      FileOpFile f;
+      f.src = srcStr;
+      f.dst = dstStr;
+      f.size = static_cast<unsigned long long>(sz);
+      m_opFiles.push_back(f);
+      m_opTotalBytes += f.size;
+      added++;
+    }
+    ec.clear();
+  }
+
+  if (added == 0)
+  {
+    return false;
+  }
+
+  m_opLabel = "Copying " + std::to_string(added) +
+              (added == 1 ? " item" : " items");
+  m_opProgress.active = true;
+  m_opProgress.failed = false;
+  m_opProgress.label = m_opLabel;
+  m_opProgress.totalBytes = m_opTotalBytes;
+  m_opProgress.doneBytes = 0;
+  return true;
+}
+
 bool FileManager::stepCopyChunk()
 {
   if (m_opSrcFd < 0)

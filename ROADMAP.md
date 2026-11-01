@@ -24,11 +24,12 @@
 ☑ Preview panel (image / text)
 ☑ Integrated text editor
 ☑ Symlink handling (broken-link marker, link-preserving copy/move, follow toggle)
+☑ Drag and drop: external in (drop files from the OS into the file list or a folder row)
 
 ## TODO
 □ Submenu for "Open With"
 □ "Open With" chooser dialog
 □ Mount / unmount detection for removable devices
 □ List / grid view toggle
-□ Drag and drop (internal move, external in / out)
+□ Drag and drop (internal move, external out)
 □ Permission editor in Properties

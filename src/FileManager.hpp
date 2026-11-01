@@ -258,6 +258,20 @@ public:
   [[nodiscard]] bool startPaste();
 
   /**
+   * @brief Starts a copy from external dropped paths into @p dstDir.
+   *
+   * Used by drag-and-drop from other applications. Each source path is
+   * copied (never moved, never followed if it is a symlink) into @p dstDir
+   * under a collision-free name.
+   *
+   * @param srcPaths Absolute paths of the dropped files or directories.
+   * @param dstDir   Absolute destination directory.
+   * @return True if the copy operation was accepted and is now running.
+   */
+  [[nodiscard]] bool startDropCopy(const std::vector<std::string>& srcPaths,
+                                   const std::string& dstDir);
+
+  /**
    * @brief Advances the currently running file operation by a small time slice.
    * @return Current FileOpStatus after the step.
    */
