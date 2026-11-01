@@ -2668,10 +2668,11 @@ static void drawModalButton(
  */
 static void drawModal(
   NVGcontext* vg,
-  Modal& modal,
+  AppState& app,
   float w,
   float h)
 {
+  Modal& modal = app.modal;
   if (!modal.active || modal.type == ModalType::None)
   {
     return;
@@ -2908,24 +2909,25 @@ static void drawModal(
     return;
   }
 
-  float px = (w - kModalWidth) * 0.5f;
+  float boxW = (modal.type == ModalType::Settings) ? 440.0f : kModalWidth;
+  float px = (w - boxW) * 0.5f;
 
-  nvgFontFace(vg, "sans");
-  nvgFontSize(vg, g_fontSize);
-  nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
-  float bounds[4];
-  nvgTextBoxBounds(vg, px + 16.0f, 0.0f, kModalWidth - 32.0f, modal.message.c_str(), nullptr, bounds);
-  float textH = bounds[3] - bounds[1];
-
-  float boxH = 94.0f + textH;
-  if (boxH < kModalHeight)
+  float boxH = (modal.type == ModalType::Settings) ? 380.0f : kModalHeight;
+  if (modal.type != ModalType::Settings)
   {
-    boxH = kModalHeight;
+    float bounds[4];
+    nvgTextBoxBounds(vg, px + 16.0f, 0.0f, boxW - 32.0f, modal.message.c_str(), nullptr, bounds);
+    float textH = bounds[3] - bounds[1];
+    boxH = 94.0f + textH;
+    if (boxH < kModalHeight)
+    {
+      boxH = kModalHeight;
+    }
   }
   float py = (h - boxH) * 0.5f;
 
   nvgBeginPath(vg);
-  nvgRoundedRect(vg, px, py, kModalWidth, boxH, 6.0f);
+  nvgRoundedRect(vg, px, py, boxW, boxH, 6.0f);
   nvgFillColor(vg, nvgRGBf(0.22f, 0.22f, 0.22f));
   nvgFill(vg);
   nvgStrokeColor(vg, nvgRGBf(0.1f, 0.1f, 0.1f));
@@ -2936,12 +2938,104 @@ static void drawModal(
   nvgFontSize(vg, g_fontSize + 1.0f);
   nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.95f));
   nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-  nvgText(vg, px + kModalWidth * 0.5f, py + 26.0f, modal.title.c_str(), nullptr);
+  nvgText(vg, px + boxW * 0.5f, py + 26.0f, modal.title.c_str(), nullptr);
 
-  nvgFontSize(vg, g_fontSize);
-  nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
-  nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
-  nvgTextBox(vg, px + 16.0f, py + 50.0f, kModalWidth - 32.0f, modal.message.c_str(), nullptr);
+  if (modal.type == ModalType::Settings)
+  {
+    const float labelX = px + 30.0f;
+    const float boxX = px + 130.0f;
+    const float bW = 240.0f;
+    const float bH = 26.0f;
+
+    nvgFontSize(vg, g_fontSize);
+    nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
+    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+
+    float fontY = py + 60.0f;
+    nvgText(vg, labelX, fontY, "Font:", nullptr);
+    nvgBeginPath(vg); nvgRoundedRect(vg, boxX, fontY - bH * 0.5f, bW, bH, 3.0f);
+    nvgFillColor(vg, nvgRGBf(0.15f, 0.15f, 0.15f)); nvgFill(vg);
+    nvgStrokeColor(vg, nvgRGBf(0.35f, 0.35f, 0.35f)); nvgStroke(vg);
+    nvgText(vg, boxX + 8.0f, fontY, modal.availFonts[modal.fontIdx].c_str(), nullptr);
+
+    if (inRect(g_mouseX, g_mouseY, boxX, fontY - bH * 0.5f, bW, bH) && g_mouseClicked)
+    {
+      modal.settingsDropdown = (modal.settingsDropdown == 0) ? -1 : 0;
+      g_mouseClicked = false;
+    }
+
+    float sizeY = py + 110.0f;
+    nvgText(vg, labelX, sizeY, "Font Size:", nullptr);
+    nvgBeginPath(vg); nvgRoundedRect(vg, boxX, sizeY - bH * 0.5f, bW, bH, 3.0f);
+    nvgFillColor(vg, nvgRGBf(0.15f, 0.15f, 0.15f)); nvgFill(vg);
+    nvgStrokeColor(vg, nvgRGBf(0.35f, 0.35f, 0.35f)); nvgStroke(vg);
+    nvgText(vg, boxX + 8.0f, sizeY, modal.availSizes[modal.sizeIdx].c_str(), nullptr);
+
+    if (inRect(g_mouseX, g_mouseY, boxX, sizeY - bH * 0.5f, bW, bH) && g_mouseClicked)
+    {
+      modal.settingsDropdown = (modal.settingsDropdown == 1) ? -1 : 1;
+      g_mouseClicked = false;
+    }
+
+    if (modal.settingsDropdown == 0)
+    {
+      float listY = fontY + bH * 0.5f;
+      float itemH = 24.0f;
+      nvgBeginPath(vg); nvgRoundedRect(vg, boxX, listY, bW, modal.availFonts.size() * itemH, 3.0f);
+      nvgFillColor(vg, nvgRGBf(0.2f, 0.2f, 0.2f)); nvgFill(vg);
+      nvgStrokeColor(vg, nvgRGBf(0.35f, 0.35f, 0.35f)); nvgStroke(vg);
+      for (size_t i = 0; i < modal.availFonts.size(); i++)
+      {
+        float iy = listY + i * itemH;
+        if (inRect(g_mouseX, g_mouseY, boxX, iy, bW, itemH))
+        {
+          nvgBeginPath(vg); nvgRect(vg, boxX + 1, iy, bW - 2, itemH);
+          nvgFillColor(vg, nvgRGBf(0.3f, 0.3f, 0.3f)); nvgFill(vg);
+          if (g_mouseClicked)
+          {
+            modal.fontIdx = i;
+            modal.settingsDropdown = -1;
+            g_mouseClicked = false;
+          }
+        }
+        nvgText(vg, boxX + 8.0f, iy + itemH * 0.5f, modal.availFonts[i].c_str(), nullptr);
+      }
+    }
+    else if (modal.settingsDropdown == 1)
+    {
+      float listY = sizeY + bH * 0.5f;
+      float itemH = 24.0f;
+      nvgBeginPath(vg); nvgRoundedRect(vg, boxX, listY, bW, modal.availSizes.size() * itemH, 3.0f);
+      nvgFillColor(vg, nvgRGBf(0.2f, 0.2f, 0.2f)); nvgFill(vg);
+      nvgStrokeColor(vg, nvgRGBf(0.35f, 0.35f, 0.35f)); nvgStroke(vg);
+      for (size_t i = 0; i < modal.availSizes.size(); i++)
+      {
+        float iy = listY + i * itemH;
+        if (inRect(g_mouseX, g_mouseY, boxX, iy, bW, itemH))
+        {
+          nvgBeginPath(vg); nvgRect(vg, boxX + 1, iy, bW - 2, itemH);
+          nvgFillColor(vg, nvgRGBf(0.3f, 0.3f, 0.3f)); nvgFill(vg);
+          if (g_mouseClicked)
+          {
+            modal.sizeIdx = i;
+            modal.settingsDropdown = -1;
+            g_mouseClicked = false;
+            g_fontSize = static_cast<float>(std::atoi(modal.availSizes[i].c_str()));
+            g_rowHeight = g_fontSize + 10.0f;
+            saveConfig(app);
+          }
+        }
+        nvgText(vg, boxX + 8.0f, iy + itemH * 0.5f, modal.availSizes[i].c_str(), nullptr);
+      }
+    }
+  }
+  else
+  {
+    nvgFontSize(vg, g_fontSize);
+    nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
+    nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
+    nvgTextBox(vg, px + 16.0f, py + 50.0f, boxW - 32.0f, modal.message.c_str(), nullptr);
+  }
 
   float by = py + boxH - kModalBtnH - 16.0f;
   ModalResult clicked = ModalResult::None;
@@ -2949,7 +3043,7 @@ static void drawModal(
   if (modal.type == ModalType::Confirm)
   {
     float total = kModalBtnW * 2.0f + kModalBtnGap;
-    float bx = px + (kModalWidth - total) * 0.5f;
+    float bx = px + (boxW - total) * 0.5f;
 
     bool hoverNo = inRect(g_mouseX, g_mouseY, bx, by, kModalBtnW, kModalBtnH);
     if (hoverNo)
@@ -2976,7 +3070,7 @@ static void drawModal(
   }
   else
   {
-    float bx = px + (kModalWidth - kModalBtnW) * 0.5f;
+    float bx = px + (boxW - kModalBtnW) * 0.5f;
     bool hoverOk = inRect(g_mouseX, g_mouseY, bx, by, kModalBtnW, kModalBtnH);
     if (hoverOk)
     {
@@ -6698,7 +6792,7 @@ int main(int argc, char** argv)
       g_mouseX = saveMouseX;
       g_mouseY = saveMouseY;
       g_mouseClicked = clickBefore;
-      drawModal(vg, app.modal, w, h);
+      drawModal(vg, app, w, h);
       drawTextInput(vg, app.textInput, w, h);
     }
 

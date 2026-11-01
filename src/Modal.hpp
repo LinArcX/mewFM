@@ -59,6 +59,11 @@ struct Modal
   std::string openWithMime;                    ///< MIME type of the file being opened.
   std::string openWithDefaultId;               ///< Desktop file ID of the default app.
   std::string openWithFilter;                  ///< Search filter string.
+  std::vector<std::string> availFonts = {"Sans"}; ///< Selectable font names in the Settings dialog.
+  size_t fontIdx = 0;                          ///< Index of the selected font.
+  std::vector<std::string> availSizes = {"12", "14", "16", "18", "20", "24"}; ///< Selectable font sizes (as strings).
+  size_t sizeIdx = 2;                          ///< Index of the selected font size.
+  int settingsDropdown = -1;                   ///< Which Settings dropdown is open (-1 = none).
 
   /**
    * @brief Opens an informational modal with a single OK button.
