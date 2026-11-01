@@ -29,8 +29,6 @@ Concrete, verified-open items. Keep this list in sync with `ROADMAP.md`
 
 - [ ] `FileManager::pollFileOp()` writes to `/tmp/mewFM.log` on every frame.
       Remove this block.
-- [ ] `FileManager::startPaste()` has a `fprintf(stderr, ...)` diagnostic.
-      Remove it.
 
 ## Code quality
 
