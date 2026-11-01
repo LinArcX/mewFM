@@ -115,6 +115,14 @@ struct Modal
     openWithDefaultId = defaultId;
     openWithFilter.clear();
     openWithSelected = labels.empty() ? -1 : 0;
+    for (size_t i = 0; i < desktopIds.size(); i++)
+    {
+      if (!defaultId.empty() && desktopIds[i] == defaultId)
+      {
+        openWithSelected = static_cast<int>(i);
+        break;
+      }
+    }
     openWithScroll = 0;
     openWithScrollToSelected = true;
   }

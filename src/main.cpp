@@ -2704,8 +2704,32 @@ static void drawModal(
     }
     else
     {
-      std::string shown = truncateToWidth(vg, modal.openWithFilter, filterW - 16.0f);
+      std::string shown = truncateToWidth(vg, modal.openWithFilter, filterW - 32.0f);
       nvgText(vg, filterX + 8.0f, filterY + filterH * 0.5f, shown.c_str(), nullptr);
+
+      const float btnSize = 16.0f;
+      const float btnX = filterX + filterW - btnSize - 4.0f;
+      const float btnY = filterY + (filterH - btnSize) * 0.5f;
+
+      bool btnHover = inRect(g_mouseX, g_mouseY, btnX, btnY, btnSize, btnSize);
+      nvgBeginPath(vg);
+      nvgRoundedRect(vg, btnX, btnY, btnSize, btnSize, 2.0f);
+      nvgFillColor(vg, btnHover ? nvgRGBf(0.4f, 0.4f, 0.4f) : nvgRGBf(0.25f, 0.25f, 0.25f));
+      nvgFill(vg);
+
+      nvgFontSize(vg, g_fontSize - 2.0f);
+      nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
+      nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+      nvgText(vg, btnX + btnSize * 0.5f, btnY + btnSize * 0.5f, "x", nullptr);
+
+      if (btnHover && g_mouseClicked)
+      {
+        modal.openWithFilter.clear();
+        std::vector<int> filtered = getFilteredOpenWithIndices(modal);
+        modal.openWithSelected = filtered.empty() ? -1 : filtered[0];
+        modal.openWithScroll = 0;
+        g_mouseClicked = false;
+      }
     }
 
     std::vector<int> filtered = getFilteredOpenWithIndices(modal);
