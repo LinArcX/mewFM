@@ -57,9 +57,6 @@ menu () {
     # release
     "build(release)" "run(release)" "clean(release)"
   
-    # tests
-    "build(tests)" "run(tests)" "gdb(tests)" "clean(tests)"
-
     "start xephyr" "stop xephyr"
  
     # documentation
@@ -215,36 +212,6 @@ menu () {
         mpg123 -f 3000 /home/linarcx/VoidConf/assets/success.mp3 > /dev/null 2>&1 
       fi
       ;;
-    "build(tests)")
-      clear
-      echo ">>> creating build/tests directory"
-      mkdir -p build/tests
- 
-      # cmock library is here: /usr/local/lib64/
-      echo ">>> compiling (tests)"
-      cc -g -pg -O0 -DDEBUG -std=c11 --coverage \
-        -Wformat=2 -Wall -Wextra -Wpedantic -Wexceptions -fno-exceptions -Wno-unused-parameter \
-        -Wshadow -Wwrite-strings -Wstrict-prototypes \
-        -Wold-style-definition -Wredundant-decls -Wnested-externs -Wmissing-include-dirs -Wjump-misses-init -Wlogical-op \
-        -lc -lcmocka -lmagic -o ./build/tests/mewFMt \
-        $(pkg-config --cflags notcurses) ./tests/*.c ./src/linarcx*.c  ./src/linux*.c $(pkg-config --libs notcurses) $(pkg-config --cflags --libs vips)
-      ;;
-    "run(tests)")
-      clear
-      cd build/tests
-      ./mewFMt
-      cd ../..
-      ;;
-    "gdb(tests)")
-      cd build/tests
-      gdb --tui mewFMt
-      cd ../..
-      ;;
-    "clean(tests)")
-      echo ">>> cleaning build/tests directory"
-      rm -r build/tests/*
-      ;;
-
     "start xephyr")
       #./start_xephyr.sh 
       Xephyr :1 -screen 1280x800 -ac &

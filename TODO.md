@@ -16,11 +16,6 @@ Concrete, verified-open items. Keep this list in sync with `ROADMAP.md`
 - [ ] `doxygen(generate)` target in `./p` runs `doxygen`, but there is no
       `Doxyfile` and no `docs/` directory in the repository. Either add a
       `Doxyfile` or remove the menu entry.
-- [ ] `build(tests)` / `run(tests)` / `gdb(tests)` / `clean(tests)` in `./p`
-      reference `./tests/*.c`, `./src/linarcx*.c`, `./src/linux*.c`, cmocka,
-      libmagic, notcurses and vips. None of those exist in this project
-      (the sources are `.cpp` and there is no `tests/` directory). Either
-      add a real test suite or remove the menu entries.
 
 ## Code quality
 
