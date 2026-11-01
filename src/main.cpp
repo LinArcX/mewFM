@@ -118,9 +118,10 @@ namespace
    */
   enum class MenuKind
   {
-    None,  ///< No context menu is open.
-    Row,   ///< Context menu opened on a file/folder row.
-    Empty, ///< Context menu opened on empty space.
+    None,            ///< No context menu is open.
+    Row,             ///< Context menu opened on a file/folder row.
+    Empty,           ///< Context menu opened on empty space.
+    SidebarBookmark, ///< Context menu opened on a sidebar bookmark.
   };
 
   /**
@@ -289,6 +290,7 @@ namespace
     float previewAnim = 1.0f;                          ///< Preview panel slide animation progress (0..1).
     float sidebarScrollY = 0.0f;                       ///< Vertical scroll offset of the sidebar.
     GLFWwindow* window = nullptr;                      ///< Owning GLFW window (set once at startup).
+    std::string menuTargetPath;                        ///< Path of the target for the current context menu.
   };
 
   float g_mouseX = 0.0f;
@@ -5400,13 +5402,11 @@ static bool menuItemEnabled(const AppState& app, const MenuItem& item, int rowId
   }
   if (item.action == MenuAction::RemoveBookmark)
   {
-    const auto& entries = app.fm.entries();
-    if (rowIdx < 0 || rowIdx >= static_cast<int>(entries.size()))
+    if (app.menuKind == MenuKind::SidebarBookmark)
     {
-      return false;
+      return !app.menuTargetPath.empty();
     }
-    std::string full = joinPath(app.fm.currentPath(), entries[rowIdx].name);
-    return isBookmarked(app, full);
+    return false;
   }
   if (item.action == MenuAction::EditHere)
   {
@@ -5479,7 +5479,6 @@ static std::vector<MenuItem> buildRowMenuItems(const AppState& app)
   items.push_back({"Delete", MenuAction::Delete, true, std::string(), std::vector<MenuItem>()});
   items.push_back({"Properties", MenuAction::Properties, true, std::string(), std::vector<MenuItem>()});
   items.push_back({"Add to Bookmarks", MenuAction::AddBookmark, true, std::string(), std::vector<MenuItem>()});
-  items.push_back({"Remove from Bookmarks", MenuAction::RemoveBookmark, true, std::string(), std::vector<MenuItem>()});
   return items;
 }
 
@@ -5518,6 +5517,12 @@ static std::vector<MenuItem> menuItemsFor(const AppState& app, MenuKind kind)
   if (kind == MenuKind::Empty)
   {
     return buildEmptyMenuItems(app);
+  }
+  if (kind == MenuKind::SidebarBookmark)
+  {
+    std::vector<MenuItem> items;
+    items.push_back({"Remove from bookmark", MenuAction::RemoveBookmark, true, std::string(), std::vector<MenuItem>()});
+    return items;
   }
   return std::vector<MenuItem>();
 }
@@ -5601,11 +5606,56 @@ static void openContextMenu(
   float listX,
   float listTop,
   float listW,
-  float listH)
+  float listH,
+  float sidebarW)
 {
   app.menuX = g_mouseX;
   app.menuY = g_mouseY;
   app.menuRowIndex = -1;
+  app.menuTargetPath.clear();
+  app.menuKind = MenuKind::None;
+
+  if (sidebarW > 1.0f && g_mouseX >= 0.0f && g_mouseX < sidebarW && g_mouseY >= kTopBarHeight)
+  {
+    float shift = sidebarW - kSidebarWidth;
+    float mx = g_mouseX - shift;
+
+    const float itemX = 8.0f;
+    const float itemW = kSidebarWidth - 16.0f;
+    const float headerH = 24.0f;
+    const float itemH = 26.0f;
+    const float itemGap = 2.0f;
+    const float contentTop = kTopBarHeight + 6.0f;
+
+    float y = contentTop - app.sidebarScrollY;
+    for (const auto& sec : app.sections)
+    {
+      if (sec.items.empty())
+      {
+        continue;
+      }
+      y += headerH + 2.0f;
+      if (sec.collapsed)
+      {
+        y += 4.0f;
+        continue;
+      }
+      for (const auto& p : sec.items)
+      {
+        bool hover = inRect(mx, g_mouseY, itemX, y, itemW, itemH);
+        if (hover && sec.key == "bookmarks")
+        {
+          app.menuKind = MenuKind::SidebarBookmark;
+          app.menuTargetPath = p.path;
+          return;
+        }
+        y += itemH + itemGap;
+      }
+      y += 6.0f;
+    }
+    return;
+  }
+
   if (inRect(g_mouseX, g_mouseY, listX, listTop, listW, listH))
   {
     int idx = static_cast<int>((g_mouseY - listTop + app.scrollOffset) / g_rowHeight);
@@ -5886,15 +5936,11 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
       }
       break;
     case MenuAction::RemoveBookmark:
-      if (rowIdx >= 0)
+      if (!app.menuTargetPath.empty())
       {
-        const auto& entries = app.fm.entries();
-        if (rowIdx < static_cast<int>(entries.size()))
-        {
-          std::string full = joinPath(app.fm.currentPath(), entries[rowIdx].name);
-          removeBookmark(app, full);
-          saveConfig(app);
-        }
+        removeBookmark(app, app.menuTargetPath);
+        saveConfig(app);
+        app.menuTargetPath.clear();
       }
       break;
     case MenuAction::ToggleFollowSymlinks:
@@ -6542,7 +6588,7 @@ int main(int argc, char** argv)
     {
       if (g_rightClicked)
       {
-        openContextMenu(app, mainX, listTop, mainW, listH);
+        openContextMenu(app, mainX, listTop, mainW, listH, sidebarW);
         g_rightClicked = false;
       }
       else if (hadMenu && g_mouseClicked)
