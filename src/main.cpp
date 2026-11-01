@@ -1688,6 +1688,7 @@ static void closeTab(AppState& app, int index)
 {
   if (app.tabs.size() <= 1)
   {
+    app.toast.show("Cannot close the last tab");
     return;
   }
   if (index < 0 || index >= static_cast<int>(app.tabs.size()))
