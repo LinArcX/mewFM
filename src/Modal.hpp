@@ -6,15 +6,17 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 /**
  * @brief Enumerates the kinds of modal dialogs the application can show.
  */
 enum class ModalType
 {
-  None,    ///< No modal is active.
-  Info,    ///< Informational modal with a single OK button.
-  Confirm, ///< Confirmation modal with Yes/No buttons.
+  None,     ///< No modal is active.
+  Info,     ///< Informational modal with a single OK button.
+  Confirm,  ///< Confirmation modal with Yes/No buttons.
+  OpenWith, ///< Application chooser with a scrollable list.
 };
 
 /**
@@ -26,6 +28,7 @@ enum class ModalResult
   Ok,   ///< The user pressed the OK button.
   Yes,  ///< The user confirmed with Yes.
   No,   ///< The user declined with No.
+  Pick, ///< The user picked an item from a list.
 };
 
 /**
@@ -42,8 +45,13 @@ struct Modal
   ModalType type = ModalType::None;       ///< Kind of modal currently being shown.
   std::string title;                      ///< Window title text.
   std::string message;                    ///< Body text shown to the user.
-  ModalResult result = ModalResult::None; ///< Latest result chosen by the user.
-  int focus = -1;                         ///< Index of the focused button (-1 = none).
+  ModalResult result = ModalResult::None;  ///< Latest result chosen by the user.
+  int focus = -1;                          ///< Index of the focused button (-1 = none).
+  std::string openWithPath;                ///< Path of the file being opened.
+  std::vector<std::string> openWithLabels; ///< Display names of candidate applications.
+  std::vector<std::string> openWithExecs;  ///< Exec commands matching openWithLabels.
+  int openWithSelected = -1;               ///< Highlighted item (-1 = none).
+  int openWithScroll = 0;                  ///< Index of the first visible item.
 
   /**
    * @brief Opens an informational modal with a single OK button.
@@ -73,6 +81,29 @@ struct Modal
     message = msg;
     result = ModalResult::None;
     focus = 0;
+  }
+
+  /**
+   * @brief Opens the Open With chooser dialog.
+   * @param path   Absolute path of the file to open.
+   * @param labels Display names of the candidate applications.
+   * @param execs  Exec commands matching @p labels.
+   */
+  void openOpenWith(const std::string& path,
+                    const std::vector<std::string>& labels,
+                    const std::vector<std::string>& execs)
+  {
+    active = true;
+    type = ModalType::OpenWith;
+    title = "Open With";
+    message.clear();
+    result = ModalResult::None;
+    focus = 0;
+    openWithPath = path;
+    openWithLabels = labels;
+    openWithExecs = execs;
+    openWithSelected = labels.empty() ? -1 : 0;
+    openWithScroll = 0;
   }
 
   /**

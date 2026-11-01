@@ -172,6 +172,7 @@ namespace
     EmptyTrash,   ///< Confirming an Empty Trash operation.
     EditorClose,  ///< Confirming that unsaved editor changes may be discarded.
     WindowClose,  ///< Confirming that unsaved editor changes may be discarded when closing the window.
+    OpenWith,     ///< Choosing an application for the Open With dialog.
   };
 
   /**
@@ -286,7 +287,6 @@ namespace
     float sidebarAnim = 1.0f;                          ///< Sidebar slide animation progress (0..1).
     float previewAnim = 1.0f;                          ///< Preview panel slide animation progress (0..1).
     float sidebarScrollY = 0.0f;                       ///< Vertical scroll offset of the sidebar.
-    std::string pendingOpenWithExec;                   ///< Exec command of the OpenWith item being invoked.
     GLFWwindow* window = nullptr;                      ///< Owning GLFW window (set once at startup).
   };
 
@@ -1267,6 +1267,26 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
       {
         app->modal.result = ModalResult::Ok;
         app->modal.active = false;
+      }
+    }
+    else if (app->modal.type == ModalType::OpenWith)
+    {
+      const int count = static_cast<int>(app->modal.openWithLabels.size());
+      if (count > 0)
+      {
+        if (key == GLFW_KEY_UP && app->modal.openWithSelected > 0)
+        {
+          app->modal.openWithSelected--;
+        }
+        else if (key == GLFW_KEY_DOWN && app->modal.openWithSelected + 1 < count)
+        {
+          app->modal.openWithSelected++;
+        }
+        else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER)
+        {
+          app->modal.result = ModalResult::Pick;
+          app->modal.active = false;
+        }
       }
     }
     return;
@@ -2413,6 +2433,116 @@ static void drawModal(
   nvgRect(vg, 0.0f, 0.0f, w, h);
   nvgFillColor(vg, nvgRGBAf(0.0f, 0.0f, 0.0f, 0.55f));
   nvgFill(vg);
+
+  if (modal.type == ModalType::OpenWith)
+  {
+    const float owW = 480.0f;
+    const float owH = 420.0f;
+    const float owX = (w - owW) * 0.5f;
+    const float owY = (h - owH) * 0.5f;
+    const float listTop = owY + 48.0f;
+    const float listH = owH - 48.0f - 56.0f;
+    const float listItemH = 26.0f;
+
+    nvgBeginPath(vg);
+    nvgRoundedRect(vg, owX, owY, owW, owH, 6.0f);
+    nvgFillColor(vg, nvgRGBf(0.22f, 0.22f, 0.22f));
+    nvgFill(vg);
+    nvgStrokeColor(vg, nvgRGBf(0.1f, 0.1f, 0.1f));
+    nvgStrokeWidth(vg, 1.0f);
+    nvgStroke(vg);
+
+    nvgFontFace(vg, "sans");
+    nvgFontSize(vg, g_fontSize + 1.0f);
+    nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.95f));
+    nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
+    nvgText(vg, owX + owW * 0.5f, owY + 26.0f, "Open With", nullptr);
+
+    const int count = static_cast<int>(modal.openWithLabels.size());
+    const int visibleItems = static_cast<int>(listH / listItemH);
+    int scroll = modal.openWithScroll;
+    if (modal.openWithSelected >= 0)
+    {
+      if (modal.openWithSelected < scroll)
+      {
+        scroll = modal.openWithSelected;
+      }
+      else if (modal.openWithSelected >= scroll + visibleItems)
+      {
+        scroll = modal.openWithSelected - visibleItems + 1;
+      }
+    }
+    if (scroll < 0)
+    {
+      scroll = 0;
+    }
+    if (count > visibleItems && scroll > count - visibleItems)
+    {
+      scroll = count - visibleItems;
+    }
+    if (scroll < 0)
+    {
+      scroll = 0;
+    }
+    modal.openWithScroll = scroll;
+
+    nvgSave(vg);
+    nvgScissor(vg, owX + 4.0f, listTop, owW - 8.0f, listH);
+    nvgFontSize(vg, g_fontSize);
+    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
+    for (int i = scroll; i < count && i < scroll + visibleItems + 1; i++)
+    {
+      float iy = listTop + static_cast<float>(i - scroll) * listItemH;
+      if (iy + listItemH < listTop || iy > listTop + listH)
+      {
+        continue;
+      }
+      bool hover = inRect(g_mouseX, g_mouseY, owX + 8.0f, iy, owW - 16.0f, listItemH);
+      bool selected = (i == modal.openWithSelected);
+      if (selected || hover)
+      {
+        nvgBeginPath(vg);
+        nvgRect(vg, owX + 8.0f, iy, owW - 16.0f, listItemH);
+        nvgFillColor(vg, selected ? nvgRGBf(0.35f, 0.45f, 0.6f) : nvgRGBf(0.28f, 0.28f, 0.28f));
+        nvgFill(vg);
+      }
+      if (hover)
+      {
+        modal.openWithSelected = i;
+      }
+      nvgFillColor(vg, nvgRGBf(0.92f, 0.92f, 0.92f));
+      nvgText(vg, owX + 16.0f, iy + listItemH * 0.5f,
+              modal.openWithLabels[static_cast<size_t>(i)].c_str(), nullptr);
+      if (hover && g_mouseClicked)
+      {
+        modal.result = ModalResult::Pick;
+        modal.active = false;
+      }
+    }
+    nvgRestore(vg);
+
+    float by = owY + owH - 44.0f;
+    float total = kModalBtnW * 2.0f + kModalBtnGap;
+    float bx = owX + (owW - total) * 0.5f;
+
+    bool hoverCancel = inRect(g_mouseX, g_mouseY, bx, by, kModalBtnW, kModalBtnH);
+    drawModalButton(vg, bx, by, kModalBtnW, kModalBtnH, "Cancel", hoverCancel, false);
+    if (hoverCancel && g_mouseClicked)
+    {
+      modal.result = ModalResult::No;
+      modal.active = false;
+    }
+    bx += kModalBtnW + kModalBtnGap;
+
+    bool hoverOpen = inRect(g_mouseX, g_mouseY, bx, by, kModalBtnW, kModalBtnH);
+    drawModalButton(vg, bx, by, kModalBtnW, kModalBtnH, "Open", hoverOpen, false);
+    if (hoverOpen && g_mouseClicked && modal.openWithSelected >= 0)
+    {
+      modal.result = ModalResult::Pick;
+      modal.active = false;
+    }
+    return;
+  }
 
   float px = (w - kModalWidth) * 0.5f;
 
@@ -4531,6 +4661,22 @@ static void handleModalResult(AppState& app)
   PendingConfirm pending = app.pendingConfirm;
   app.pendingConfirm = PendingConfirm::None;
 
+  if (pending == PendingConfirm::OpenWith)
+  {
+    if (r == ModalResult::Pick)
+    {
+      const int idx = app.modal.openWithSelected;
+      if (idx >= 0 && idx < static_cast<int>(app.modal.openWithExecs.size()))
+      {
+        if (!launchWith(app.modal.openWithExecs[idx], app.modal.openWithPath))
+        {
+          app.modal.openInfo("Error", "Could not launch application.");
+        }
+      }
+    }
+    return;
+  }
+
   if (pending == PendingConfirm::EditorClose || pending == PendingConfirm::WindowClose)
   {
     if (r == ModalResult::Yes)
@@ -4798,10 +4944,9 @@ static std::vector<MenuItem> buildRowMenuItems(const AppState& app)
   std::vector<MenuItem> items;
   items.push_back({"Open", MenuAction::Open, true, std::string(), std::vector<MenuItem>()});
   MenuItem openWith;
-  openWith.label = "Open With";
+  openWith.label = "Open With...";
   openWith.action = MenuAction::OpenWith;
   openWith.enabled = true;
-  openWith.submenu = collectOpenWithApps();
   items.push_back(openWith);
   items.push_back({"Edit Here", MenuAction::EditHere, true, std::string(), std::vector<MenuItem>()});
   items.push_back({"Extract", MenuAction::Extract, true, std::string(), std::vector<MenuItem>()});
@@ -5239,18 +5384,25 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
       saveConfig(app);
       break;
     case MenuAction::OpenWith:
-      if (rowIdx >= 0 && !app.pendingOpenWithExec.empty())
+      if (rowIdx >= 0)
       {
         const auto& entries = app.fm.entries();
         if (rowIdx < static_cast<int>(entries.size()))
         {
-          std::string full = joinPath(app.fm.currentPath(), entries[rowIdx].name);
-          if (!launchWith(app.pendingOpenWithExec, full))
+          std::vector<MenuItem> apps = collectOpenWithApps();
+          std::vector<std::string> labels;
+          std::vector<std::string> execs;
+          labels.reserve(apps.size());
+          execs.reserve(apps.size());
+          for (size_t i = 0; i < apps.size(); i++)
           {
-            app.modal.openInfo("Error", "Could not launch application.");
+            labels.push_back(apps[i].label);
+            execs.push_back(apps[i].exec);
           }
+          std::string full = joinPath(app.fm.currentPath(), entries[rowIdx].name);
+          app.modal.openOpenWith(full, labels, execs);
+          app.pendingConfirm = PendingConfirm::OpenWith;
         }
-        app.pendingOpenWithExec.clear();
       }
       break;
     default:
@@ -5866,33 +6018,6 @@ int main(int argc, char** argv)
       else if (hadMenu && g_mouseClicked)
       {
         MenuAction menuAction = handleMenuClick(app, w, h);
-        if (menuAction == MenuAction::OpenWith)
-        {
-          std::vector<MenuItem> topItems = menuItemsFor(app, app.menuKind);
-          for (size_t i = 0; i < topItems.size(); i++)
-          {
-            if (topItems[i].submenu.empty())
-            {
-              continue;
-            }
-            float iy = app.menuY + kMenuPadY + static_cast<float>(i) * kMenuItemHeight;
-            float subX = app.menuX + kMenuWidth;
-            if (subX + kMenuWidth > w)
-            {
-              subX = app.menuX - kMenuWidth;
-            }
-            for (size_t k = 0; k < topItems[i].submenu.size(); k++)
-            {
-              float sy = iy + kMenuPadY + static_cast<float>(k) * kMenuItemHeight;
-              if (inRect(g_mouseX, g_mouseY, subX, sy, kMenuWidth, kMenuItemHeight))
-              {
-                app.pendingOpenWithExec = topItems[i].submenu[k].exec;
-                break;
-              }
-            }
-            break;
-          }
-        }
         if (menuAction != MenuAction::None)
         {
           executeMenuAction(app, menuAction, app.menuRowIndex);
