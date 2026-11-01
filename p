@@ -60,7 +60,6 @@ menu () {
     "start xephyr" "stop xephyr"
  
     # documentation
-    "doxygen(generate)" 
     "doxygen(show)" 
  
     # static analyzer
@@ -220,9 +219,6 @@ menu () {
       ;;
     "stop xephyr")
       ./scripts/stop_xephyr.sh
-      ;;
-    "doxygen(generate)")
-      doxygen
       ;;
     "doxygen(show)")
       ~/software/brave/brave-browser-1.86.142-linux-amd64/brave ./docs/doxygen/html/index.html

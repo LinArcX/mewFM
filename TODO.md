@@ -13,9 +13,6 @@ Concrete, verified-open items. Keep this list in sync with `ROADMAP.md`
 
 ## Build / tooling
 
-- [ ] `doxygen(generate)` target in `./p` runs `doxygen`, but there is no
-      `Doxyfile` and no `docs/` directory in the repository. Either add a
-      `Doxyfile` or remove the menu entry.
 
 ## Code quality
 
