@@ -49,6 +49,7 @@ namespace
   constexpr float kStatusBarHeight = 22.0f;
   float g_fontSize  = 16.0f;
   float g_rowHeight = 24.0f;
+  int   g_activeFontId = -1;
   constexpr float kPadX         =   8.0f;
   constexpr float kBtnSize      =  28.0f;
   constexpr float kBtnGap       =   4.0f;
@@ -2712,7 +2713,7 @@ static void drawModalButton(
     nvgStroke(vg);
   }
 
-  nvgFontFace(vg, "sans");
+  nvgFontFaceId(vg, g_activeFontId);
   nvgFontSize(vg, g_fontSize);
   nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.95f));
   nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -2759,7 +2760,7 @@ static void drawModal(
     nvgStrokeWidth(vg, 2.0f);
     nvgStroke(vg);
 
-    nvgFontFace(vg, "sans");
+    nvgFontFaceId(vg, g_activeFontId);
     nvgFontSize(vg, g_fontSize + 1.0f);
     nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.95f));
     nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -2994,7 +2995,7 @@ static void drawModal(
   nvgStrokeWidth(vg, 1.0f);
   nvgStroke(vg);
 
-  nvgFontFace(vg, "sans");
+  nvgFontFaceId(vg, g_activeFontId);
   nvgFontSize(vg, g_fontSize + 1.0f);
   nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.95f));
   nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -3079,13 +3080,21 @@ static void drawModal(
             g_mouseClicked = false;
             if (i == 0)
             {
-              int font = nvgCreateFontMem(vg, "sans", fontData, fontData_len, 0);
-              if (font >= 0) bndSetFont(font);
+              int newFont = nvgCreateFontMem(vg, "sans", fontData, fontData_len, 0);
+              if (newFont >= 0)
+              {
+                g_activeFontId = newFont;
+                bndSetFont(g_activeFontId);
+              }
             }
             else
             {
-              int font = nvgCreateFont(vg, "sans", modal.availFonts[i].c_str());
-              if (font >= 0) bndSetFont(font);
+              int newFont = nvgCreateFont(vg, "sans", modal.availFonts[i].c_str());
+              if (newFont >= 0)
+              {
+                g_activeFontId = newFont;
+                bndSetFont(g_activeFontId);
+              }
             }
             saveConfig(app);
           }
@@ -3223,7 +3232,7 @@ static void drawTextInput(NVGcontext* vg, TextInput& t, float w, float h)
   nvgStrokeWidth(vg, 1.0f);
   nvgStroke(vg);
 
-  nvgFontFace(vg, "sans");
+  nvgFontFaceId(vg, g_activeFontId);
   nvgFontSize(vg, g_fontSize + 1.0f);
   nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.95f));
   nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
@@ -3317,7 +3326,7 @@ static void drawTabBar(NVGcontext* vg, AppState& app, float w)
 {
   bndBackground(vg, 0.0f, 0.0f, w, kTabBarHeight);
 
-  nvgFontFace(vg, "sans");
+  nvgFontFaceId(vg, g_activeFontId);
   nvgFontSize(vg, g_fontSize - 1.0f);
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
 
@@ -3705,7 +3714,7 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
     i = j + 1;
   }
 
-  nvgFontFace(vg, "sans");
+  nvgFontFaceId(vg, g_activeFontId);
   nvgFontSize(vg, g_fontSize);
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
   float cy = kTabBarHeight + kToolBarHeight * 0.5f;
@@ -3778,7 +3787,7 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
     nvgStrokeWidth(vg, 1.0f);
     nvgStroke(vg);
 
-    nvgFontFace(vg, "sans");
+    nvgFontFaceId(vg, g_activeFontId);
     nvgFontSize(vg, g_fontSize - 1.0f);
     nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
     const std::string& filterText = fm.filter();
@@ -4086,7 +4095,7 @@ static void drawSidebar(NVGcontext* vg, AppState& app, float h, float visibleW)
     float triCy = y + headerH * 0.5f;
     drawTriangle(vg, triCx, triCy, triSize, !sec.collapsed);
 
-    nvgFontFace(vg, "sans");
+    nvgFontFaceId(vg, g_activeFontId);
     nvgFontSize(vg, g_fontSize - 1.0f);
     nvgFillColor(vg, nvgRGBf(0.7f, 0.7f, 0.7f));
     nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
@@ -4113,7 +4122,7 @@ static void drawSidebar(NVGcontext* vg, AppState& app, float h, float visibleW)
       BNDwidgetState st = BND_DEFAULT;
       if (current) st = BND_ACTIVE;
       else if (hover) st = BND_HOVER;
-      nvgFontFace(vg, "sans");
+      nvgFontFaceId(vg, g_activeFontId);
       nvgFontSize(vg, g_fontSize - 1.0f);
       std::string shownLabel = truncateToWidth(vg, p.label, itemW - 40.0f);
       bndToolButton(vg, itemX, y, itemW, itemH, BND_LEFT, st, p.icon, shownLabel.c_str());
@@ -4328,7 +4337,7 @@ static void drawMainHeader(NVGcontext* vg, AppState& app, float x, float y, floa
     }
   }
 
-  nvgFontFace(vg, "sans");
+  nvgFontFaceId(vg, g_activeFontId);
   nvgFontSize(vg, g_fontSize - 1.0f);
   nvgFillColor(vg, nvgRGBf(0.7f, 0.7f, 0.7f));
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
@@ -4590,7 +4599,7 @@ static void drawPreviewPanel(
   const float pad = 8.0f;
   const float headerH = 24.0f;
 
-  nvgFontFace(vg, "sans");
+  nvgFontFaceId(vg, g_activeFontId);
   nvgFontSize(vg, g_fontSize - 1.0f);
   nvgFillColor(vg, nvgRGBf(0.7f, 0.7f, 0.7f));
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
@@ -4701,7 +4710,7 @@ static void drawRows(NVGcontext* vg,
 {
   const auto& entries = app.fm.entries();
 
-  nvgFontFace(vg, "sans");
+  nvgFontFaceId(vg, g_activeFontId);
   nvgFontSize(vg, g_fontSize - 1.0f);
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
 
@@ -4797,7 +4806,7 @@ static void drawEditor(NVGcontext* vg, AppState& app, float x, float y, float w,
   nvgFillColor(vg, nvgRGBf(0.18f, 0.18f, 0.18f));
   nvgFill(vg);
 
-  nvgFontFace(vg, "sans");
+  nvgFontFaceId(vg, g_activeFontId);
   nvgFontSize(vg, g_fontSize - 1.0f);
   nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
@@ -6273,7 +6282,7 @@ static void drawContextMenu(
   nvgStrokeWidth(vg, 1.0f);
   nvgStroke(vg);
 
-  nvgFontFace(vg, "sans");
+  nvgFontFaceId(vg, g_activeFontId);
   nvgFontSize(vg, g_fontSize);
   nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_MIDDLE);
 
@@ -6395,7 +6404,7 @@ static void drawToast(NVGcontext* vg, const AppState& app, float w, float h)
   {
     return;
   }
-  nvgFontFace(vg, "sans");
+  nvgFontFaceId(vg, g_activeFontId);
   nvgFontSize(vg, g_fontSize - 1.0f);
   float bounds[4];
   nvgTextBounds(vg, 0.0f, 0.0f, app.toast.message.c_str(), nullptr, bounds);
@@ -6432,7 +6441,7 @@ static void drawTooltip(NVGcontext* vg, float w, float h)
   {
     return;
   }
-  nvgFontFace(vg, "sans");
+  nvgFontFaceId(vg, g_activeFontId);
   nvgFontSize(vg, g_fontSize - 2.0f);
   float bounds[4];
   nvgTextBounds(vg, 0.0f, 0.0f, g_tooltip.c_str(), nullptr, bounds);
@@ -6506,7 +6515,7 @@ static void drawStatusBar(NVGcontext* vg, AppState& app, float x, float y, float
     left = std::to_string(total) + " items";
   }
 
-  nvgFontFace(vg, "sans");
+  nvgFontFaceId(vg, g_activeFontId);
   nvgFontSize(vg, g_fontSize - 2.0f);
   nvgFillColor(vg, nvgRGBf(0.7f, 0.7f, 0.7f));
 
@@ -6697,12 +6706,12 @@ int main(int argc, char** argv)
     return 1;
   }
 
-  int font = nvgCreateFontMem(vg, "sans", fontData, fontData_len, 0);
-  if (font == -1)
+  g_activeFontId = nvgCreateFontMem(vg, "sans", fontData, fontData_len, 0);
+  if (g_activeFontId == -1)
   {
     std::cerr << "Could not load font." << std::endl;
   }
-  bndSetFont(font);
+  bndSetFont(g_activeFontId);
 
   int iconImage = nvgCreateImageMem(vg, 0, iconData, iconData_len);
   if (iconImage == -1)
