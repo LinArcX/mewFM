@@ -55,18 +55,67 @@ if [ "$ANDROID_BUILD" = "1" ]; then
     echo "Error: kotlinc not found in PATH." >&2
     exit 1
   fi
-  KOTLINC_REAL="$(readlink -f "$KOTLINC_BIN")"
-  KOTLIN_HOME="$(dirname "$(dirname "$KOTLINC_REAL")")"
-  KOTLIN_STDLIB="$KOTLIN_HOME/lib/kotlin-stdlib.jar"
-  if [ ! -f "$KOTLIN_STDLIB" ]; then
-    echo "Error: kotlin-stdlib.jar not found at $KOTLIN_STDLIB" >&2
+
+  KOTLIN_STDLIB=""
+  # 1. Explicit overrides
+  if [ -n "${KOTLIN_STDLIB_PATH:-}" ] && [ -f "$KOTLIN_STDLIB_PATH" ]; then
+    KOTLIN_STDLIB="$KOTLIN_STDLIB_PATH"
+  elif [ -n "${KOTLIN_HOME:-}" ] && [ -f "$KOTLIN_HOME/lib/kotlin-stdlib.jar" ]; then
+    KOTLIN_STDLIB="$KOTLIN_HOME/lib/kotlin-stdlib.jar"
+  fi
+
+  # 2. Common install locations (Void, Arch, Debian, SDKMAN, manual)
+  if [ -z "$KOTLIN_STDLIB" ]; then
+    for candidate in \
+      /usr/lib/kotlin/kotlin-stdlib.jar \
+      /usr/lib/kotlin/lib/kotlin-stdlib.jar \
+      /usr/share/kotlin/kotlin-stdlib.jar \
+      /usr/share/kotlin/lib/kotlin-stdlib.jar \
+      /usr/lib/kotlin-stdlib.jar \
+      /opt/kotlin/lib/kotlin-stdlib.jar \
+      "$HOME/.sdkman/candidates/kotlin/current/lib/kotlin-stdlib.jar" \
+    ; do
+      if [ -f "$candidate" ]; then
+        KOTLIN_STDLIB="$candidate"
+        break
+      fi
+    done
+  fi
+
+  # 3. Relative to the kotlinc binary (works when it is a real file or symlink)
+  if [ -z "$KOTLIN_STDLIB" ]; then
+    KOTLINC_REAL="$(readlink -f "$KOTLINC_BIN" 2>/dev/null || echo "$KOTLINC_BIN")"
+    for candidate in \
+      "$(dirname "$KOTLINC_REAL")/../lib/kotlin-stdlib.jar" \
+      "$(dirname "$KOTLINC_REAL")/kotlin-stdlib.jar" \
+    ; do
+      if [ -f "$candidate" ]; then
+        KOTLIN_STDLIB="$candidate"
+        break
+      fi
+    done
+  fi
+
+  # 4. Last-resort filesystem search
+  if [ -z "$KOTLIN_STDLIB" ]; then
+    found="$(find /usr /opt /usr/local -name 'kotlin-stdlib.jar' -type f 2>/dev/null | head -n 1)"
+    if [ -n "$found" ]; then
+      KOTLIN_STDLIB="$found"
+    fi
+  fi
+
+  if [ -z "$KOTLIN_STDLIB" ]; then
+    echo "Error: kotlin-stdlib.jar not found." >&2
+    echo "Set KOTLIN_STDLIB_PATH=/path/to/kotlin-stdlib.jar, or install the kotlin-stdlib package." >&2
     exit 1
   fi
+
+  echo "  ${C_CYAN}using kotlin-stdlib:${C_RESET} $KOTLIN_STDLIB"
   rm -rf build/android
   mkdir -p build/android/classes build/android/dex
   
   echo "  ${C_CYAN}>>> Compiling Kotlin${C_RESET}"
-  kotlinc android/src/com/mewfm/MainActivity.kt \
+  kotlinc android/src \
     -classpath "$PLATFORM" \
     -d build/android/classes
     
