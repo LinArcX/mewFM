@@ -894,6 +894,71 @@ static void handleEditorKey(AppState& app, int key, int mods)
     }
     return;
   }
+  if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_V)
+  {
+    const char* clip = (app.window != nullptr)
+      ? glfwGetClipboardString(app.window) : nullptr;
+    if (clip == nullptr || clip[0] == '\0')
+    {
+      return;
+    }
+    std::string raw(clip);
+    std::string normalized;
+    normalized.reserve(raw.size());
+    for (size_t i = 0; i < raw.size(); i++)
+    {
+      if (raw[i] == '\r')
+      {
+        if (i + 1 < raw.size() && raw[i + 1] == '\n')
+        {
+          continue;
+        }
+        normalized.push_back('\n');
+      }
+      else
+      {
+        normalized.push_back(raw[i]);
+      }
+    }
+    std::vector<std::string> parts;
+    size_t partStart = 0;
+    while (true)
+    {
+      size_t nl = normalized.find('\n', partStart);
+      if (nl == std::string::npos)
+      {
+        parts.push_back(normalized.substr(partStart));
+        break;
+      }
+      parts.push_back(normalized.substr(partStart, nl - partStart));
+      partStart = nl + 1;
+    }
+    const std::string prefix = line.substr(0, static_cast<size_t>(ed.cursorCol));
+    const std::string suffix = line.substr(static_cast<size_t>(ed.cursorCol));
+    if (parts.size() == 1)
+    {
+      line = prefix + parts[0] + suffix;
+      ed.cursorCol += static_cast<int>(parts[0].size());
+    }
+    else
+    {
+      ed.lines[static_cast<size_t>(ed.cursorLine)] = prefix + parts[0];
+      for (size_t i = 1; i + 1 < parts.size(); i++)
+      {
+        ed.lines.insert(ed.lines.begin() + ed.cursorLine + static_cast<long>(i),
+                        parts[i]);
+      }
+      const std::string& lastPart = parts.back();
+      ed.lines.insert(
+        ed.lines.begin() + ed.cursorLine + static_cast<long>(parts.size() - 1),
+        lastPart + suffix);
+      ed.cursorLine += static_cast<int>(parts.size()) - 1;
+      ed.cursorCol = static_cast<int>(lastPart.size());
+    }
+    ed.dirty = true;
+    ensureEditorCursorVisible(ed);
+    return;
+  }
   if (key == GLFW_KEY_ESCAPE)
   {
     if (ed.dirty)
