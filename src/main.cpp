@@ -2088,20 +2088,20 @@ static void drawModal(
   nvgFillColor(vg, nvgRGBAf(0.0f, 0.0f, 0.0f, 0.55f));
   nvgFill(vg);
 
-  int lineCount = 1;
-  for (size_t i = 0; i < modal.message.size(); i++)
-  {
-    if (modal.message[i] == '\n')
-    {
-      lineCount++;
-    }
-  }
-  float boxH = 94.0f + static_cast<float>(lineCount) * (g_fontSize + 6.0f);
+  float px = (w - kModalWidth) * 0.5f;
+
+  nvgFontFace(vg, "sans");
+  nvgFontSize(vg, g_fontSize);
+  nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
+  float bounds[4];
+  nvgTextBoxBounds(vg, px + 16.0f, 0.0f, kModalWidth - 32.0f, modal.message.c_str(), nullptr, bounds);
+  float textH = bounds[3] - bounds[1];
+
+  float boxH = 94.0f + textH;
   if (boxH < kModalHeight)
   {
     boxH = kModalHeight;
   }
-  float px = (w - kModalWidth) * 0.5f;
   float py = (h - boxH) * 0.5f;
 
   nvgBeginPath(vg);
@@ -2120,16 +2120,8 @@ static void drawModal(
 
   nvgFontSize(vg, g_fontSize);
   nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
-  if (lineCount > 1)
-  {
-    nvgTextAlign(vg, NVG_ALIGN_LEFT | NVG_ALIGN_TOP);
-    nvgTextBox(vg, px + 16.0f, py + 50.0f, kModalWidth - 32.0f, modal.message.c_str(), nullptr);
-  }
-  else
-  {
-    nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_MIDDLE);
-    nvgText(vg, px + kModalWidth * 0.5f, py + 64.0f, modal.message.c_str(), nullptr);
-  }
+  nvgTextAlign(vg, NVG_ALIGN_CENTER | NVG_ALIGN_TOP);
+  nvgTextBox(vg, px + 16.0f, py + 50.0f, kModalWidth - 32.0f, modal.message.c_str(), nullptr);
 
   float by = py + boxH - kModalBtnH - 16.0f;
   ModalResult clicked = ModalResult::None;
