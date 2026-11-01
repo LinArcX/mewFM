@@ -3631,6 +3631,163 @@ static void drawTriangle(NVGcontext* vg, float cx, float cy, float size, bool po
 }
 
 /**
+ * @brief Checks if a block device is removable (e.g., a USB drive).
+ * @param devPath Absolute path to the device node (e.g., "/dev/sdb1").
+ * @return True if the device is removable.
+ */
+static bool isRemovableDevice(const std::string& devPath)
+{
+  if (devPath.rfind("/dev/", 0) != 0)
+  {
+    return false;
+  }
+  std::string devName = devPath.substr(5);
+  std::string baseDev = devName;
+  while (!baseDev.empty() && std::isdigit(static_cast<unsigned char>(baseDev.back())))
+  {
+    baseDev.pop_back();
+  }
+  if (baseDev.empty())
+  {
+    return false;
+  }
+  std::string sysPath = "/sys/block/" + baseDev + "/removable";
+  std::ifstream f(sysPath);
+  if (f)
+  {
+    char c = 0;
+    f >> c;
+    return c == '1';
+  }
+  return false;
+}
+
+/**
+ * @brief Polls /proc/mounts and updates the "Devices" sidebar section
+ *        with currently mounted removable drives.
+ * @param app Application state.
+ */
+static void updateRemovableDevices(AppState& app)
+{
+  static double lastCheck = 0.0;
+  double now = glfwGetTime();
+  if (now - lastCheck < 2.0)
+  {
+    return;
+  }
+  lastCheck = now;
+
+  std::vector<Place> devices;
+  std::ifstream mounts("/proc/mounts");
+  if (mounts)
+  {
+    std::string line;
+    while (std::getline(mounts, line))
+    {
+      size_t sp1 = line.find(' ');
+      if (sp1 == std::string::npos)
+      {
+        continue;
+      }
+      size_t sp2 = line.find(' ', sp1 + 1);
+      if (sp2 == std::string::npos)
+      {
+        continue;
+      }
+      std::string dev = line.substr(0, sp1);
+      std::string mountPoint = line.substr(sp1 + 1, sp2 - sp1 - 1);
+
+      if (!isRemovableDevice(dev))
+      {
+        continue;
+      }
+
+      std::string decoded;
+      for (size_t i = 0; i < mountPoint.size(); i++)
+      {
+        if (mountPoint[i] == '\\' && i + 3 < mountPoint.size() &&
+            mountPoint[i + 1] >= '0' && mountPoint[i + 1] <= '7' &&
+            mountPoint[i + 2] >= '0' && mountPoint[i + 2] <= '7' &&
+            mountPoint[i + 3] >= '0' && mountPoint[i + 3] <= '7')
+        {
+          int val = (mountPoint[i + 1] - '0') * 64 +
+                    (mountPoint[i + 2] - '0') * 8 +
+                    (mountPoint[i + 3] - '0');
+          decoded.push_back(static_cast<char>(val));
+          i += 3;
+        }
+        else
+        {
+          decoded.push_back(mountPoint[i]);
+        }
+      }
+
+      std::filesystem::path mp(decoded);
+      Place p;
+      p.path = decoded;
+      p.label = mp.filename().string();
+      if (p.label.empty())
+      {
+        p.label = decoded;
+      }
+      p.icon = BND_ICON_DISK_DRIVE;
+      devices.push_back(p);
+    }
+  }
+
+  std::sort(devices.begin(), devices.end(),
+    [](const Place& a, const Place& b)
+    {
+      return a.label < b.label;
+    });
+
+  Section* pDevices = nullptr;
+  for (auto& s : app.sections)
+  {
+    if (s.key == "devices")
+    {
+      pDevices = &s;
+      break;
+    }
+  }
+
+  if (pDevices == nullptr && !devices.empty())
+  {
+    Section s;
+    s.key = "devices";
+    s.title = "Devices";
+    auto it = app.sections.begin();
+    while (it != app.sections.end() && it->key != "bookmarks")
+    {
+      ++it;
+    }
+    it = app.sections.insert(it, s);
+    pDevices = &(*it);
+  }
+
+  if (pDevices != nullptr)
+  {
+    bool changed = pDevices->items.size() != devices.size();
+    if (!changed)
+    {
+      for (size_t i = 0; i < devices.size(); i++)
+      {
+        if (pDevices->items[i].path != devices[i].path ||
+            pDevices->items[i].label != devices[i].label)
+        {
+          changed = true;
+          break;
+        }
+      }
+    }
+    if (changed)
+    {
+      pDevices->items = devices;
+    }
+  }
+}
+
+/**
  * @brief Draws the sidebar (Places and Bookmarks) and handles its clicks and scrolling.
  * @param vg       NanoVG context.
  * @param app      Application state.
@@ -6303,6 +6460,7 @@ int main(int argc, char** argv)
   while (!glfwWindowShouldClose(window))
   {
     glfwPollEvents();
+    updateRemovableDevices(app);
 
     const FileOpStatus opStatus = app.fm.pollFileOp();
     if (opStatus == FileOpStatus::FinishedCopy)

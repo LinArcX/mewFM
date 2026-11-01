@@ -6,7 +6,7 @@ A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and ou
 
 - File listing with Name, Size, Type, Owner, and Permissions columns
 - Top navigation bar: Home, Back, Forward, Up, and clickable breadcrumb
-- Collapsible sidebar with Places and Bookmarks sections
+- Collapsible sidebar with Places, Devices, and Bookmarks sections
 - Hideable sidebar (toolbar button, Ctrl+B, F9), animated slide
 - Multiple tabs (Ctrl+T, Ctrl+W, Ctrl+Tab / Ctrl+Shift+Tab)
 - Resizable columns (drag separator in the header row)

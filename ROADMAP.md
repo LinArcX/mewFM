@@ -19,6 +19,7 @@
 ☑ Tabs (new / close / next / prev), per-tab state
 ☑ User bookmarks (add / remove, persisted)
 ☑ Collapsible sidebar sections (collapsed state persisted)
+☑ Mount / unmount detection for removable devices in the sidebar
 ☑ Trash support: move to trash, restore, empty trash (freedesktop.org spec)
 ☑ Extract tar / zip archives
 ☑ Properties dialog
@@ -35,7 +36,6 @@
 ☑ Embedded font and icons
 
 ## TODO
-□ Mount / unmount detection for removable devices
 □ List / grid view toggle
 □ Drag and drop: internal move (drag a row onto a folder row)
 □ Drag and drop: external out (drag a row to another application)

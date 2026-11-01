@@ -5,7 +5,6 @@ Concrete, verified-open items. Keep this list in sync with `ROADMAP.md`
 
 ## Features
 
-- [ ] Mount / unmount detection for removable devices in the sidebar
 - [ ] List / grid view toggle
 - [ ] Drag and drop: internal move (drag a row onto a folder row)
 - [ ] Drag and drop: external out (drag a row to another application)
