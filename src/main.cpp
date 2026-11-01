@@ -1274,6 +1274,20 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
     }
     else if (app->modal.type == ModalType::OpenWith)
     {
+      if (key == GLFW_KEY_TAB)
+      {
+        if ((mods & GLFW_MOD_SHIFT) != 0)
+        {
+          if (app->modal.focus <= 0) app->modal.focus = 2;
+          else app->modal.focus--;
+        }
+        else
+        {
+          if (app->modal.focus >= 2) app->modal.focus = 0;
+          else app->modal.focus++;
+        }
+        return;
+      }
       std::vector<int> filtered = getFilteredOpenWithIndices(app->modal);
       const int count = static_cast<int>(filtered.size());
       if (count > 0)
@@ -1303,13 +1317,21 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
         }
         else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER)
         {
-          app->modal.result = ModalResult::Pick;
-          app->modal.active = false;
+          if (app->modal.focus == 0)
+          {
+            app->modal.result = ModalResult::No;
+            app->modal.active = false;
+          }
+          else if (app->modal.openWithSelected >= 0)
+          {
+            app->modal.result = ModalResult::Pick;
+            app->modal.active = false;
+          }
         }
       }
       if (key == GLFW_KEY_BACKSPACE)
       {
-        if (!app->modal.openWithFilter.empty())
+        if (app->modal.focus == 2 && !app->modal.openWithFilter.empty())
         {
           app->modal.openWithFilter.pop_back();
           filtered = getFilteredOpenWithIndices(app->modal);
@@ -1386,6 +1408,7 @@ static void charCallback(GLFWwindow* window, unsigned int codepoint)
   }
   if (app->modal.active && app->modal.type == ModalType::OpenWith)
   {
+    app->modal.focus = 2;
     if (codepoint >= 32 && codepoint <= 126)
     {
       app->modal.openWithFilter += static_cast<char>(codepoint);
@@ -2690,8 +2713,8 @@ static void drawModal(
     nvgRoundedRect(vg, filterX, filterY, filterW, filterH, 3.0f);
     nvgFillColor(vg, nvgRGBf(0.15f, 0.15f, 0.15f));
     nvgFill(vg);
-    nvgStrokeColor(vg, nvgRGBf(0.35f, 0.35f, 0.35f));
-    nvgStrokeWidth(vg, 1.0f);
+    nvgStrokeColor(vg, modal.focus == 2 ? nvgRGBf(0.55f, 0.65f, 0.85f) : nvgRGBf(0.35f, 0.35f, 0.35f));
+    nvgStrokeWidth(vg, modal.focus == 2 ? 1.5f : 1.0f);
     nvgStroke(vg);
 
     nvgFontSize(vg, g_fontSize - 1.0f);
@@ -2857,7 +2880,11 @@ static void drawModal(
     float bx = owX + (owW - total) * 0.5f;
 
     bool hoverCancel = inRect(g_mouseX, g_mouseY, bx, by, kModalBtnW, kModalBtnH);
-    drawModalButton(vg, bx, by, kModalBtnW, kModalBtnH, "Cancel", hoverCancel, false);
+    drawModalButton(vg, bx, by, kModalBtnW, kModalBtnH, "Cancel", hoverCancel, modal.focus == 0);
+    if (hoverCancel)
+    {
+      modal.focus = 0;
+    }
     if (hoverCancel && g_mouseClicked)
     {
       modal.result = ModalResult::No;
@@ -2866,7 +2893,11 @@ static void drawModal(
     bx += kModalBtnW + kModalBtnGap;
 
     bool hoverOpen = inRect(g_mouseX, g_mouseY, bx, by, kModalBtnW, kModalBtnH);
-    drawModalButton(vg, bx, by, kModalBtnW, kModalBtnH, "Open", hoverOpen, false);
+    drawModalButton(vg, bx, by, kModalBtnW, kModalBtnH, "Open", hoverOpen, modal.focus == 1);
+    if (hoverOpen)
+    {
+      modal.focus = 1;
+    }
     if (hoverOpen && g_mouseClicked && modal.openWithSelected >= 0)
     {
       modal.result = ModalResult::Pick;

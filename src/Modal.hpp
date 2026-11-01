@@ -107,7 +107,7 @@ struct Modal
     title = "Open With";
     message.clear();
     result = ModalResult::None;
-    focus = 0;
+    focus = 2;
     openWithPath = path;
     openWithLabels = labels;
     openWithExecs = execs;
