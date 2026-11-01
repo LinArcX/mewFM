@@ -10,6 +10,12 @@ Concrete, verified-open items. Keep this list in sync with `ROADMAP.md`
 - [ ] Drag and drop: external out (drag a row to another application)
 - [ ] Permission editor in the Properties dialog
 
+- [ ] Ability to view all copy/move history in mewFM from beginning till now.
+- [ ] Copy/Move shold be atomic operation.
+- [ ] When we copy/move files/dirs, we should be able to:
+  - to see the src/dst of copy/move operation.
+  - stop it(it should be atomic copy/move)
+
 ## Build / tooling
 
 
