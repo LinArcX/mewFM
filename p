@@ -35,6 +35,49 @@
 #     - zeal
 #     - www.devdocs.io 
 
+# Notification sounds are opt-in. Set these to absolute paths in
+# your shell rc to play a sound when a build succeeds or fails.
+# Default empty -> silent.
+export MEWFM_SOUND_SUCCESS="${MEWFM_SOUND_SUCCESS:-}"
+export MEWFM_SOUND_ERROR="${MEWFM_SOUND_ERROR:-}"
+
+# Plays an optional build-result sound. No-op when the matching
+# env var is empty, the file is missing, or mpg123 is unavailable.
+function playSound()
+{
+  local kind="$1"
+  local soundFile=""
+  if [ "$kind" = "error" ]; then
+    soundFile="$MEWFM_SOUND_ERROR"
+  elif [ "$kind" = "success" ]; then
+    soundFile="$MEWFM_SOUND_SUCCESS"
+  fi
+  if [ -z "$soundFile" ] || [ ! -f "$soundFile" ]; then
+    return
+  fi
+  if ! command -v mpg123 > /dev/null 2>&1; then
+    return
+  fi
+  mpg123 -f 3000 "$soundFile" > /dev/null 2>&1 || true
+}
+
+export MEWRM_DEVICE_IP="${MEWRM_DEVICE_IP:-}"
+
+# Returns the target device IP. Uses $MEWRM_DEVICE_IP when set,
+# otherwise prompts interactively. Prints the IP to stdout on success.
+function pickDeviceIp()
+{
+  local ip="$MEWRM_DEVICE_IP"
+  if [ -z "$ip" ]; then
+    read -r -p "Device IP: " ip
+  fi
+  if [ -z "$ip" ]; then
+    echo "No device IP provided (set MEWRM_DEVICE_IP or answer the prompt)." >&2
+    return 1
+  fi
+  printf '%s\n' "$ip"
+}
+
 function applyPatch() {
   if [ -n $1 ]; then
     if python3 scripts/extractFiles.py "$1"; then
@@ -50,6 +93,20 @@ menu () {
   commands=(
     # patch
     "create patch"
+    "apply patch"
+
+    # real device
+    "android-check"
+    "pair device"
+    "build android(arm64_v8a)"
+    "install on real device(arm64_v8a) with wifi"
+ 
+    # emulator
+    "build android(x86_64)"
+    "launch qemu emulator (android x86-64)" "connect to emulator"
+    "install .apk to emulator" "uninstall .apk from emulator"
+    "adb run" "adb log" "adb close apk" "adb reboot android OS" "adb poweroff android OS"
+
 
     # debug
     "build(debug)" "run(debug)"  "gf2" "gf2 attach" "rr record" "gf2 --rr-replay" "clean(debug)"
@@ -133,26 +190,246 @@ menu () {
         rm -f "$file"
       fi
       ;;
-    "build(android)")
+    "apply patch")
+      file=$(find patches/ -type f -printf '%f\n' | fzf)
+      [ -n "$file" ] && applyPatch "$file"
+      ;;
+    "android-check")
+      echo ">>> not implemented: android-check"
+      return
+      ./scripts/build.sh android-check
+      ;;
+    "pair device")
+      deviceIp=$(pickDeviceIp) || return
+      read -r -p "Port: " portNumber
+      read -r -p "Pair code: " pairCode
+      adb pair "${deviceIp}:${portNumber}" "${pairCode}"
+      ;;
+    "build android(arm64_v8a)")
+      #./scripts/build.sh --debug --android --arm64_v8a
       ./scripts/build.sh --android
-      if [ $? -eq 1 ]; then
+      if [ $? -ne 0 ]; then
         # error
-        mpg123 -f 3000 /home/linarcx/VoidConf/assets/error2.mp3 > /dev/null 2>&1 
+        playSound error
       else
         # success
-        mpg123 -f 3000 /home/linarcx/VoidConf/assets/success.mp3 > /dev/null 2>&1 
+        playSound success
       fi
       ;;
-    "install(android)")
-      adb install -r build/android/mewFM.apk
+    "install on real device(arm64_v8a) with wifi")
+      echo "Showing Devices"
+      output=$(adb devices | awk 'NR > 1 && $2 == "device" {print $1}')
+ 
+      # Sometimes you can't connect to your device, you need to check mdns first:
+      #   adb mdns check
+      #   adb mdns services
+      #   adb connect <IP>:<PORT>
+      #   adb pair <IP>:<PORT>
+      #   adb devices
+      #
+      # If you see your device is offline:
+      #  adb devices
+      #   List of devices attached
+      #   192.168.1.58:40347	offline
+      # do these things:
+      #   adb disconnect
+      #   adb kill-server
+      #   adb start-server
+      #   adb mdns services
+      #   adb pair <IP>:<PORT>
+
+      if [ -n "$output" ]; then
+        echo "Found an ADB device"
+      else
+        echo "No ADB device found"
+        deviceIp=$(pickDeviceIp) || return
+        echo "Enter the port"
+        read portNumber
+
+        echo "Enter the pair code"
+        read pairCode
+
+        echo "Pairing"
+        adb pair "${deviceIp}:${portNumber}" "${pairCode}"
+        output=$(adb devices | awk 'NR > 1 && $2 == "device" {print $1}')
+      fi
+
+      device=$(echo "$output" | head -n 1)
+      echo "Device: $device"
+
+      echo "Connecting to device"
+      adb connect $device
+
+      echo "Setting time-out for 1 day"
+      adb -s $device shell settings put system screen_off_timeout 86400000
+
+      # need to extract to separate function
+      PROJECT_DIR="$PWD"
+      DEBUG_DIR="$PROJECT_DIR/build/android"
+      RELEASE_DIR="$PROJECT_DIR/build/android-release"
+ 
+      APK_LIST=$(
+        find "$DEBUG_DIR" "$RELEASE_DIR" \
+          -type f \
+          -name 'mewFM*.apk' \
+          2>/dev/null
+      )
+      
+      if [ -z "$APK_LIST" ]; then
+        echo "No APK files found in:"
+        echo "  $DEBUG_DIR"
+        echo "  $RELEASE_DIR"
+        return 1
+      fi
+      
+      APK=$(printf '%s\n' "$APK_LIST" | fzf \
+        --height=40% \
+        --layout=reverse \
+        --border \
+        --prompt="Select APK: " \
+        --header="Choose an APK to install")
+      
+      if [ -z "$APK" ]; then
+        echo "Installation cancelled."
+        return 0
+      fi
+      # need to extract to separate function
+ 
+      echo "--> Installing:"
+      echo "  $APK"
+      adb -s $device install -r "$APK"
       ;;
-    "run(android)")
-      adb shell am start -n com.mewfm/.MainActivity
-      ;;
-    "clean(android)")
+    "clean android")
+      echo ">>> cleaning build/android"
       rm -rf build/android
-      echo ">>> cleaned build/android"
+      if [ $? -ne 0 ]; then
+        # error
+        playSound error
+      else
+        # success
+        playSound success
+      fi
       ;;
+    "build android(x86_64)")
+      ./scripts/build.sh android x86
+      if [ $? -ne 0 ]; then
+        # error
+        playSound error
+      else
+        # success
+        playSound success
+      fi
+      ;;
+    "launch qemu emulator (android x86-64)")
+      qemu-system-x86_64 \
+        -enable-kvm \
+        -m 6144 \
+        -smp cpus=4 \
+        -nic user,hostfwd=tcp:127.0.0.1:5555-:5555 \
+        -drive file=~/qemu/android.qcow2,format=qcow2 &
+      echo -e "Please first run these commands in Android X86 Shell, before trying to connect adb to it:\nsu\nsetprop service.adb.tcp.port 5555\nstop adbd\nstart adbd"
+      ;;
+    "connect to emulator")
+      # adb devices
+      # adb connect 127.0.0.1:5555
+      devices=$(adb devices | awk 'NR > 1 && $2 == "device" {print $1}')
+
+      if [ -z "$devices" ]; then
+        printf '\033[31m✗ Error:\033[0m No ADB devices found.\n' >&2
+        return 1
+      fi
+      
+      selected=$(printf '%s\n' "$devices" | fzf \
+        --height=40% \
+        --layout=reverse \
+        --border \
+        --prompt='ADB device > ')
+      
+      if [ -z "$selected" ]; then
+        return 0
+      fi
+      
+      printf '\033[36m→ Connecting to:\033[0m %s\n' "$selected"
+      
+      adb connect "$selected"
+      ;;
+    "install .apk to emulator")
+      PROJECT_DIR="$PWD"
+      DEBUG_DIR="$PROJECT_DIR/build/android"
+      RELEASE_DIR="$PROJECT_DIR/build/android-release"
+      
+      APK_LIST=$(
+        find "$DEBUG_DIR" "$RELEASE_DIR" \
+          -type f \
+          -name 'mewRM*.apk' \
+          2>/dev/null
+      )
+      
+      if [ -z "$APK_LIST" ]; then
+        echo "No APK files found in:"
+        echo "  $DEBUG_DIR"
+        echo "  $RELEASE_DIR"
+        return 1
+      fi
+      
+      APK=$(printf '%s\n' "$APK_LIST" | fzf \
+        --height=40% \
+        --layout=reverse \
+        --border \
+        --prompt="Select APK: " \
+        --header="Choose an APK to install")
+      
+      if [ -z "$APK" ]; then
+        echo "Installation cancelled."
+        return 0
+      fi
+      
+      echo "--> Installing:"
+      echo "  $APK"
+      adb -s 127.0.0.1:5555 install -r "$APK"
+
+      echo "--> Running mewRM..."
+      adb -s 127.0.0.1:5555 shell am start -n com.mewrm/.MainActivity
+      ;;
+    "uninstall .apk from emulator")
+      adb -s 127.0.0.1:5555 uninstall com.mewrm
+      ;;
+    "adb run")
+      adb -s 127.0.0.1:5555 shell am start -n com.mewrm/.MainActivity
+      ;;
+    "adb log")
+      adb -s 127.0.0.1:5555 logcat | grep -i mewRM
+      ;;
+    "adb close apk")
+      adb -s 127.0.0.1:5555 shell am force-stop com.mewrm
+      ;;
+    "adb reboot android OS")
+      adb -s 127.0.0.1:5555 reboot
+      ;;
+    "adb poweroff android OS")
+      adb -s 127.0.0.1:5555 shell reboot --poweroff
+      ;;
+
+    #"build(android)")
+    #  ./scripts/build.sh --android
+    #  if [ $? -eq 1 ]; then
+    #    # error
+    #    mpg123 -f 3000 /home/linarcx/VoidConf/assets/error2.mp3 > /dev/null 2>&1 
+    #  else
+    #    # success
+    #    mpg123 -f 3000 /home/linarcx/VoidConf/assets/success.mp3 > /dev/null 2>&1 
+    #  fi
+    #  ;;
+    #"install(android)")
+    #  adb install -r build/android/mewFM.apk
+    #  ;;
+    #"run(android)")
+    #  adb shell am start -n com.mewfm/.MainActivity
+    #  ;;
+    #"clean(android)")
+    #  rm -rf build/android
+    #  echo ">>> cleaned build/android"
+    #  ;;
     "build(debug)")
       ./scripts/build.sh --debug
       if [ $? -eq 1 ]; then
