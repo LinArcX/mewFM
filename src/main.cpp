@@ -1483,6 +1483,10 @@ static void scrollCallback(GLFWwindow* window, double x, double y)
     }
     return;
   }
+  if (app != nullptr && (app->modal.active || app->textInput.active))
+  {
+    return;
+  }
   if (app != nullptr && app->editor.active)
   {
     app->editor.scrollLine -= static_cast<int>(y);
@@ -6232,6 +6236,14 @@ int main(int argc, char** argv)
 
     updatePreview(app, vg);
 
+    float saveMouseX = g_mouseX;
+    float saveMouseY = g_mouseY;
+    if (popupActive)
+    {
+      g_mouseX = -1.0f;
+      g_mouseY = -1.0f;
+    }
+
     drawTabBar(vg, app, w);
     drawTopBar(vg, app, w);
     resetOnPathChange(app);
@@ -6260,6 +6272,8 @@ int main(int argc, char** argv)
 
     if (popupActive)
     {
+      g_mouseX = saveMouseX;
+      g_mouseY = saveMouseY;
       g_mouseClicked = clickBefore;
       drawModal(vg, app.modal, w, h);
       drawTextInput(vg, app.textInput, w, h);
