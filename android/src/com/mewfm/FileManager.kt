@@ -206,6 +206,29 @@ class FileManager {
 
     fun refresh(): Boolean = loadPath(currentPath)
 
+    fun createDirectory(name: String): Boolean {
+        if (name.isEmpty()) return false
+        val dir = File(currentPath, name)
+        if (dir.mkdirs()) {
+            return loadPath(currentPath)
+        }
+        return false
+    }
+
+    fun createFile(name: String): Boolean {
+        if (name.isEmpty()) return false
+        val file = File(currentPath, name)
+        return try {
+            if (file.createNewFile()) {
+                loadPath(currentPath)
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     private fun loadPath(path: String): Boolean {
         val dir = File(path)
         if (!dir.isDirectory) return false

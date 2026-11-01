@@ -1,11 +1,13 @@
 package com.mewfm
 
+import android.app.AlertDialog
 import android.content.Context
 import android.graphics.*
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
+import android.widget.EditText
 import android.widget.OverScroller
 import kotlin.math.abs
 import kotlin.math.max
@@ -186,6 +188,16 @@ class FileListView(context: Context) : View(context) {
             if (x < padX + 3 * btnSize + dp(8f)) { goUp(); return }
             return
         }
+        
+        val fabCx = width - dp(36f)
+        val fabCy = height - statusBarH - dp(36f)
+        val dx = x - fabCx
+        val dy = y - fabCy
+        if (dx * dx + dy * dy <= dp(30f) * dp(30f)) {
+            showFabMenu()
+            return
+        }
+        
         val idx = rowAt(y)
         if (idx < 0) return
         val now = SystemClock.uptimeMillis()
@@ -227,6 +239,7 @@ class FileListView(context: Context) : View(context) {
 
         if (dirFadeT > 0 && now - dirFadeT < 220) postInvalidateOnAnimation()
         if (sidebarP > 0.01f) drawSidebar(c)
+        if (!sidebarOpen) drawFab(c)
         if (toastMsg.isNotEmpty()) drawToast(c, now)
     }
 
@@ -312,6 +325,41 @@ class FileListView(context: Context) : View(context) {
             c.drawLine(x + w - fold, y, x + w - fold, y + fold, stroke)
             c.drawLine(x + w - fold, y + fold, x + w, y + fold, stroke)
         }
+    }
+
+    private fun drawFab(c: Canvas) {
+        val cx = width - dp(36f)
+        val cy = height - statusBarH - dp(36f)
+        fill.color = Color.rgb(76, 175, 80)
+        c.drawCircle(cx, cy, dp(24f), fill)
+        
+        fill.color = Color.WHITE
+        c.drawCircle(cx - dp(8f), cy, dp(2.5f), fill)
+        c.drawCircle(cx, cy, dp(2.5f), fill)
+        c.drawCircle(cx + dp(8f), cy, dp(2.5f), fill)
+    }
+
+    private fun showFabMenu() {
+        val options = arrayOf("New Folder", "New File", "Refresh")
+        AlertDialog.Builder(context)
+            .setItems(options) { _, which ->
+                when (which) {
+                    0 -> promptForName("New Folder") { fm.createDirectory(it); invalidate() }
+                    1 -> promptForName("New File") { fm.createFile(it); invalidate() }
+                    2 -> { fm.refresh(); invalidate() }
+                }
+            }
+            .show()
+    }
+
+    private fun promptForName(title: String, onOk: (String) -> Unit) {
+        val input = EditText(context)
+        AlertDialog.Builder(context)
+            .setTitle(title)
+            .setView(input)
+            .setPositiveButton("OK") { _, _ -> onOk(input.text.toString()) }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun drawStatusBar(c: Canvas) {
