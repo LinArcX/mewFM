@@ -984,11 +984,6 @@ bool FileManager::buildFileOpPlan(const std::string& srcDir,
 
 bool FileManager::startPaste()
 {
-   fprintf(stderr, "[startPaste] mode=%d clipSrc='%s' cur='%s' names=%zu active=%d\n",
-          static_cast<int>(m_clipboardMode), m_clipboardSource.c_str(),
-          m_currentPath.c_str(), m_clipboardNames.size(),
-          m_opProgress.active ? 1 : 0);
-
   if (m_clipboardMode == ClipboardMode::None || m_clipboardNames.empty())
   {
     return false;

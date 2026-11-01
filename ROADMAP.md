@@ -24,6 +24,7 @@
 ☑ Properties dialog
 ☑ Preview panel (image thumbnail / text excerpt, F3, animated slide)
 ☑ Integrated text editor (right-click → "Edit Here")
+☑ "Open With" chooser dialog with MIME-type filtering and default app setting
 ☑ Symlink handling (broken-link marker, link-preserving copy/move, follow toggle in the empty-space context menu)
 ☑ Drag and drop: external in (drop files from the OS into the file list or a folder row to copy them in)
 ☑ Chunked copy / move state machine with progress bar and pause / resume
@@ -34,8 +35,6 @@
 ☑ Embedded font and icons
 
 ## TODO
-□ Submenu for "Open With"
-□ "Open With" chooser dialog
 □ Mount / unmount detection for removable devices
 □ List / grid view toggle
 □ Drag and drop: internal move (drag a row onto a folder row)

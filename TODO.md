@@ -5,8 +5,6 @@ Concrete, verified-open items. Keep this list in sync with `ROADMAP.md`
 
 ## Features
 
-- [ ] "Open With" submenu on the row context menu
-- [ ] "Open With" chooser dialog (currently `xdg-open` is used directly)
 - [ ] Mount / unmount detection for removable devices in the sidebar
 - [ ] List / grid view toggle
 - [ ] Drag and drop: internal move (drag a row onto a folder row)

@@ -21,6 +21,7 @@ A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and ou
 - Single-click select, double-click open
 - Multi-selection: Ctrl+click, Shift+click, Ctrl+A
 - Right-click context menu (row and empty-space)
+- "Open With" chooser dialog with MIME-type filtering and default app setting
 - Trash support (freedesktop.org spec), restore, empty trash
 - Keyboard: arrows, Enter, Backspace, F2, Del, Shift+Del, Ctrl+C/X/V,
   Ctrl+N, Ctrl+Shift+N, Ctrl+F, Ctrl+L, Ctrl+H, F5, F3
