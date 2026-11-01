@@ -6,9 +6,14 @@
  * input handlers, and the GLFW/NanoVG render loop.
  */
 
+#define GLFW_EXPOSE_NATIVE_X11
 #include <GLFW/glfw3.h>
+#include <GLFW/glfw3native.h>
 #include <GL/gl.h>
 #include <GL/glext.h>
+#include <X11/Xlib.h>
+#include <X11/Xatom.h>
+#undef None
 
 #define NANOVG_GL2
 #include "../third_party/nanovg/nanovg.h"
@@ -339,6 +344,228 @@ namespace
  * @brief Builds the widget theme used by oui-blendish widgets.
  * @return A BNDwidgetTheme populated with the application's dark palette.
  */
+static Display* g_xdisplay = nullptr;
+static Window g_dragSourceWindow = 0;
+static Atom XdndSelection = 0;
+static Atom XdndAware = 0;
+static Atom XdndEnter = 0;
+static Atom XdndPosition = 0;
+static Atom XdndStatus = 0;
+static Atom XdndLeave = 0;
+static Atom XdndDrop = 0;
+static Atom XdndFinished = 0;
+static Atom XdndActionCopy = 0;
+static Atom TextUriList = 0;
+
+static bool g_xdndActive = false;
+static std::vector<std::string> g_xdndPaths;
+static Window g_xdndTarget = 0;
+
+static void initXdnd(GLFWwindow* window)
+{
+  g_xdisplay = glfwGetX11Display();
+  if (!g_xdisplay)
+  {
+    return;
+  }
+
+  g_dragSourceWindow = XCreateSimpleWindow(g_xdisplay, DefaultRootWindow(g_xdisplay), -100, -100, 1, 1, 0, 0, 0);
+  XSelectInput(g_xdisplay, g_dragSourceWindow, PropertyChangeMask | StructureNotifyMask);
+
+  XdndSelection = XInternAtom(g_xdisplay, "XdndSelection", False);
+  XdndAware = XInternAtom(g_xdisplay, "XdndAware", False);
+  XdndEnter = XInternAtom(g_xdisplay, "XdndEnter", False);
+  XdndPosition = XInternAtom(g_xdisplay, "XdndPosition", False);
+  XdndStatus = XInternAtom(g_xdisplay, "XdndStatus", False);
+  XdndLeave = XInternAtom(g_xdisplay, "XdndLeave", False);
+  XdndDrop = XInternAtom(g_xdisplay, "XdndDrop", False);
+  XdndFinished = XInternAtom(g_xdisplay, "XdndFinished", False);
+  XdndActionCopy = XInternAtom(g_xdisplay, "XdndActionCopy", False);
+  TextUriList = XInternAtom(g_xdisplay, "text/uri-list", False);
+}
+
+static void startXdndDrag(const std::vector<std::string>& paths)
+{
+  if (!g_xdisplay || paths.empty())
+  {
+    return;
+  }
+
+  g_xdndActive = true;
+  g_xdndPaths = paths;
+  g_xdndTarget = 0;
+
+  XSetSelectionOwner(g_xdisplay, XdndSelection, g_dragSourceWindow, CurrentTime);
+  XGrabPointer(g_xdisplay, DefaultRootWindow(g_xdisplay), False,
+               ButtonReleaseMask | PointerMotionMask,
+               GrabModeAsync, GrabModeAsync, 0, 0, CurrentTime);
+}
+
+static void updateXdndDrag()
+{
+  if (!g_xdndActive || !g_xdisplay)
+  {
+    return;
+  }
+
+  Window root, child;
+  int rootX, rootY, winX, winY;
+  unsigned int mask;
+  XQueryPointer(g_xdisplay, DefaultRootWindow(g_xdisplay), &root, &child, &rootX, &rootY, &winX, &winY, &mask);
+
+  Window target = child;
+  while (target != 0 && target != root)
+  {
+    Atom actualType;
+    int actualFormat;
+    unsigned long nitems, bytesAfter;
+    unsigned char* prop = nullptr;
+    if (XGetWindowProperty(g_xdisplay, target, XdndAware, 0, 1, False, XA_ATOM, &actualType, &actualFormat, &nitems, &bytesAfter, &prop) == Success && nitems > 0)
+    {
+      XFree(prop);
+      break;
+    }
+    XFree(prop);
+    Window parent, *children;
+    unsigned int nchildren;
+    if (!XQueryTree(g_xdisplay, target, &root, &parent, &children, &nchildren))
+    {
+      break;
+    }
+    if (children)
+    {
+      XFree(children);
+    }
+    if (parent == root)
+    {
+      break;
+    }
+    target = parent;
+  }
+
+  if (target != g_xdndTarget)
+  {
+    if (g_xdndTarget != 0)
+    {
+      XEvent ev = {0};
+      ev.xclient.type = ClientMessage;
+      ev.xclient.display = g_xdisplay;
+      ev.xclient.window = g_xdndTarget;
+      ev.xclient.message_type = XdndLeave;
+      ev.xclient.format = 32;
+      ev.xclient.data.l[0] = g_dragSourceWindow;
+      XSendEvent(g_xdisplay, g_xdndTarget, False, NoEventMask, &ev);
+    }
+    g_xdndTarget = target;
+    if (g_xdndTarget != 0)
+    {
+      XEvent ev = {0};
+      ev.xclient.type = ClientMessage;
+      ev.xclient.display = g_xdisplay;
+      ev.xclient.window = g_xdndTarget;
+      ev.xclient.message_type = XdndEnter;
+      ev.xclient.format = 32;
+      ev.xclient.data.l[0] = g_dragSourceWindow;
+      ev.xclient.data.l[1] = 5 << 24;
+      ev.xclient.data.l[2] = TextUriList;
+      XSendEvent(g_xdisplay, g_xdndTarget, False, NoEventMask, &ev);
+    }
+  }
+
+  if (g_xdndTarget != 0)
+  {
+    XEvent ev = {0};
+    ev.xclient.type = ClientMessage;
+    ev.xclient.display = g_xdisplay;
+    ev.xclient.window = g_xdndTarget;
+    ev.xclient.message_type = XdndPosition;
+    ev.xclient.format = 32;
+    ev.xclient.data.l[0] = g_dragSourceWindow;
+    ev.xclient.data.l[2] = (rootX << 16) | (rootY & 0xFFFF);
+    ev.xclient.data.l[3] = CurrentTime;
+    ev.xclient.data.l[4] = XdndActionCopy;
+    XSendEvent(g_xdisplay, g_xdndTarget, False, NoEventMask, &ev);
+  }
+}
+
+static void dropXdndDrag()
+{
+  if (!g_xdndActive || !g_xdisplay)
+  {
+    return;
+  }
+
+  if (g_xdndTarget != 0)
+  {
+    XEvent ev = {0};
+    ev.xclient.type = ClientMessage;
+    ev.xclient.display = g_xdisplay;
+    ev.xclient.window = g_xdndTarget;
+    ev.xclient.message_type = XdndDrop;
+    ev.xclient.format = 32;
+    ev.xclient.data.l[0] = g_dragSourceWindow;
+    ev.xclient.data.l[2] = CurrentTime;
+    XSendEvent(g_xdisplay, g_xdndTarget, False, NoEventMask, &ev);
+  }
+
+  XUngrabPointer(g_xdisplay, CurrentTime);
+  g_xdndActive = false;
+  g_xdndTarget = 0;
+  g_xdndPaths.clear();
+}
+
+static void processXdndEvents()
+{
+  if (!g_xdisplay)
+  {
+    return;
+  }
+
+  XEvent ev;
+  while (XCheckTypedWindowEvent(g_xdisplay, g_dragSourceWindow, SelectionRequest, &ev))
+  {
+    XSelectionRequestEvent* req = &ev.xselectionrequest;
+    XSelectionEvent notify = {0};
+    notify.type = SelectionNotify;
+    notify.requestor = req->requestor;
+    notify.selection = req->selection;
+    notify.target = req->target;
+    notify.time = req->time;
+    notify.property = 0;
+
+    if (req->target == TextUriList)
+    {
+      std::string uris;
+      for (const auto& p : g_xdndPaths)
+      {
+        std::string path = p;
+        if (path.size() > 0 && path[0] == '/')
+        {
+          path = "file://" + path;
+        }
+        uris += path + "\r\n";
+      }
+      XChangeProperty(g_xdisplay, req->requestor, req->property, TextUriList, 8, PropModeReplace, (const unsigned char*)uris.c_str(), uris.size());
+      notify.property = req->property;
+    }
+    XSendEvent(g_xdisplay, req->requestor, False, NoEventMask, (XEvent*)&notify);
+  }
+
+  if (!g_xdndActive)
+  {
+    return;
+  }
+
+  while (XCheckTypedWindowEvent(g_xdisplay, DefaultRootWindow(g_xdisplay), MotionNotify, &ev))
+  {
+    updateXdndDrag();
+  }
+  while (XCheckTypedWindowEvent(g_xdisplay, DefaultRootWindow(g_xdisplay), ButtonRelease, &ev))
+  {
+    dropXdndDrag();
+  }
+}
+
 static void scanFonts(AppState& app)
 {
   if (app.modal.availFonts.size() > 1)
@@ -7016,6 +7243,7 @@ int main(int argc, char** argv)
   bndSetIconImage(iconImage);
 
   applyTheme();
+  initXdnd(window);
 
   AppState app;
   glfwSetWindowUserPointer(window, &app);
@@ -7059,6 +7287,7 @@ int main(int argc, char** argv)
   while (!glfwWindowShouldClose(window))
   {
     glfwPollEvents();
+    processXdndEvents();
     updateRemovableDevices(app);
 
     const FileOpStatus opStatus = app.fm.pollFileOp();
@@ -7175,6 +7404,30 @@ int main(int argc, char** argv)
           app.isDragging = true;
         }
       }
+      if (app.isDragging && !glfwGetWindowAttrib(window, GLFW_HOVERED))
+      {
+        std::vector<std::string> paths;
+        const auto& entries = app.fm.entries();
+        if (!app.selectedIndices.empty())
+        {
+          for (int sel : app.selectedIndices)
+          {
+            if (sel >= 0 && sel < static_cast<int>(entries.size()))
+            {
+              paths.push_back(joinPath(app.fm.currentPath(), entries[sel].name));
+            }
+          }
+        }
+        else if (app.dragSourceIndex >= 0 && app.dragSourceIndex < static_cast<int>(entries.size()))
+        {
+          paths.push_back(joinPath(app.fm.currentPath(), entries[app.dragSourceIndex].name));
+        }
+        startXdndDrag(paths);
+        app.isDragging = false;
+        app.dragSourceIndex = -1;
+        app.dragTargetIndex = -1;
+      }
+
       if (app.isDragging)
       {
         int targetIdx = -1;

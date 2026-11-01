@@ -146,7 +146,7 @@ if [ "$link_needed" = "1" ]; then
   echo "${C_CYAN}>>> linking${C_RESET}"
   g++ "$OUT/impl.o" "$OUT/nanovg.o" "$OUT/main.o" "$OUT/FileManager.o" \
     $(pkg-config --cflags --libs glfw3 gl) \
-    -lm -o "$OUT/mewFM"
+    -lX11 -lm -o "$OUT/mewFM"
   echo "${C_GREEN}>>> done:${C_RESET} ${C_BOLD}$OUT/mewFM${C_RESET}"
 else
   echo "${C_DIM}>>> up to date: $OUT/mewFM${C_RESET}"
