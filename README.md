@@ -19,7 +19,7 @@ A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and ou
 - Right-click context menu (row and empty-space)
 - Trash support (freedesktop.org spec), restore, empty trash
 - Keyboard: arrows, Enter, Backspace, F2, Del, Shift+Del, Ctrl+C/X/V,
-  Ctrl+Shift+N, Ctrl+F, Ctrl+L, Ctrl+H, F5, F3
+  Ctrl+N, Ctrl+Shift+N, Ctrl+F, Ctrl+L, Ctrl+H, F5, F3
 - Internal clipboard: copy or cut entries, paste into current directory
 - Live name filter via Ctrl+F
 - Status bar: item count, selection count, free space, progress bar with

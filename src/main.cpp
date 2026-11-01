@@ -1204,6 +1204,10 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
   {
     g_newFolder = true;
   }
+  else if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_N)
+  {
+    g_newFile = true;
+  }
 
   if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_C) g_copy = true;
   if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_X) g_cut = true;
