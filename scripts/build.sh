@@ -123,21 +123,63 @@ if [ "$ANDROID_BUILD" = "1" ]; then
   fi
 
   echo "  ${C_CYAN}using kotlin-stdlib:${C_RESET} $KOTLIN_STDLIB"
-  rm -rf build/android
-  mkdir -p build/android/classes build/android/dex
+  if [ -f build/android/mewFM.apk ] \
+     && [ ! android/AndroidManifest.xml -nt build/android/mewFM.apk ] \
+     && [ ! build/android/dex_user/classes.dex -nt build/android/mewFM.apk ] \
+     && [ ! build/android/dex_lib/classes.dex -nt build/android/mewFM.apk ]; then
+    _NEEDS_BUILD=0
+    while IFS= read -r _f; do
+      if [ "$_f" -nt build/android/mewFM.apk ]; then _NEEDS_BUILD=1; break; fi
+    done < <(find android/src -name '*.kt' 2>/dev/null)
+    if [ "$_NEEDS_BUILD" = "0" ]; then
+      echo "${C_DIM}>>> Android APK up to date: build/android/mewFM.apk${C_RESET}"
+      exit 0
+    fi
+  fi
+  mkdir -p build/android/classes build/android/dex_user build/android/dex_lib
   
-  echo "  ${C_CYAN}>>> Compiling Kotlin${C_RESET}"
-  kotlinc android/src \
-    -classpath "$PLATFORM" \
-    -d build/android/classes
+  _NEED_KOTLINC=0
+  if [ ! -f build/android/classes.jar ]; then
+    _NEED_KOTLINC=1
+  else
+    while IFS= read -r _f; do
+      if [ "$_f" -nt build/android/classes.jar ]; then _NEED_KOTLINC=1; break; fi
+    done < <(find android/src -name '*.kt' 2>/dev/null)
+  fi
+  if [ "$_NEED_KOTLINC" = "1" ]; then
+    echo "  ${C_CYAN}>>> Compiling Kotlin${C_RESET}"
+    rm -rf build/android/classes && mkdir -p build/android/classes
+    kotlinc android/src \
+      -classpath "$PLATFORM" \
+      -d build/android/classes
+    if [ $? -ne 0 ]; then echo "Kotlin compilation failed." >&2; exit 1; fi
+    jar cf build/android/classes.jar -C build/android/classes .
+    if [ $? -ne 0 ]; then echo "jar failed." >&2; exit 1; fi
+  else
+    echo "  ${C_DIM}>>> Kotlin up to date${C_RESET}"
+  fi
     
   if [ $? -ne 0 ]; then echo "Kotlin compilation failed." >&2; exit 1; fi
 
-  echo "  ${C_CYAN}>>> Converting to DEX${C_RESET}"
-  jar cf build/android/classes.jar -C build/android/classes .
-  if [ $? -ne 0 ]; then echo "jar failed." >&2; exit 1; fi
-  "$BUILD_TOOLS/d8" --lib "$PLATFORM" --min-api 33 --output build/android/dex build/android/classes.jar "$KOTLIN_STDLIB"
-  if [ $? -ne 0 ]; then echo "DEX conversion failed." >&2; exit 1; fi
+  if [ ! -f build/android/dex_lib/classes.dex ] || [ "$KOTLIN_STDLIB" -nt build/android/dex_lib/classes.dex ]; then
+    echo "  ${C_CYAN}>>> DEX kotlin-stdlib (cached)${C_RESET}"
+    rm -rf build/android/dex_lib && mkdir -p build/android/dex_lib
+    "$BUILD_TOOLS/d8" --lib "$PLATFORM" --min-api 33 \
+      --output build/android/dex_lib "$KOTLIN_STDLIB"
+    if [ $? -ne 0 ]; then echo "DEX stdlib failed." >&2; exit 1; fi
+  else
+    echo "  ${C_DIM}>>> DEX kotlin-stdlib up to date${C_RESET}"
+  fi
+
+  if [ ! -f build/android/dex_user/classes.dex ] || [ build/android/classes.jar -nt build/android/dex_user/classes.dex ]; then
+    echo "  ${C_CYAN}>>> DEX app${C_RESET}"
+    rm -rf build/android/dex_user && mkdir -p build/android/dex_user
+    "$BUILD_TOOLS/d8" --lib "$PLATFORM" --classpath "$KOTLIN_STDLIB" --min-api 33 \
+      --output build/android/dex_user build/android/classes.jar
+    if [ $? -ne 0 ]; then echo "DEX app failed." >&2; exit 1; fi
+  else
+    echo "  ${C_DIM}>>> DEX app up to date${C_RESET}"
+  fi
 
   echo "  ${C_CYAN}>>> Packaging resources and manifest${C_RESET}"
   "$BUILD_TOOLS/aapt2" link \
@@ -150,8 +192,10 @@ if [ "$ANDROID_BUILD" = "1" ]; then
   if [ $? -ne 0 ]; then echo "aapt2 link failed." >&2; exit 1; fi
 
   echo "  ${C_CYAN}>>> Adding DEX to APK${C_RESET}"
-  ( cd build/android/dex && zip -q ../app-unsigned.apk classes.dex )
-  if [ $? -ne 0 ]; then echo "Adding DEX failed." >&2; exit 1; fi
+  ( cd build/android/dex_user && zip -q ../app-unsigned.apk classes.dex )
+  if [ $? -ne 0 ]; then echo "Adding app DEX failed." >&2; exit 1; fi
+  ( cd build/android/dex_lib && zip -q ../app-unsigned.apk classes2.dex )
+  if [ $? -ne 0 ]; then echo "Adding stdlib DEX failed." >&2; exit 1; fi
 
   echo "  ${C_CYAN}>>> Aligning and Signing${C_RESET}"
   "$BUILD_TOOLS/zipalign" -f -p 4 build/android/app-unsigned.apk build/android/app-aligned.apk
