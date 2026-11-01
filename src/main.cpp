@@ -2613,7 +2613,7 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
   int action = -1;
   for (int i = 0; i < 3; i++)
   {
-    bool hover = enabled[i] && inRect(g_mouseX, g_mouseY, x, kBtnY, kBtnSize, kBtnSize);
+    bool hover = inRect(g_mouseX, g_mouseY, x, kBtnY, kBtnSize, kBtnSize);
     BNDwidgetState st = BND_DEFAULT;
     if (enabled[i] && hover)
     {
@@ -2626,7 +2626,7 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
       else if (i == 1) g_tooltip = "Forward";
       else if (i == 2) g_tooltip = "Up";
     }
-    if (hover && g_mouseClicked)
+    if (enabled[i] && hover && g_mouseClicked)
     {
       action = i;
     }
