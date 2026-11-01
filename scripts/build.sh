@@ -21,17 +21,82 @@ else
   C_RESET=""; C_DIM=""; C_BOLD=""; C_CYAN=""; C_YELLOW=""; C_GREEN=""; C_RED=""
 fi
 
-MODE="debug"; MODE_SET=0; CLEAN=0; FILENAME=""
+MODE="debug"; MODE_SET=0; CLEAN=0; FILENAME=""; ANDROID_BUILD=0
 for arg in "$@"; do
   case "$arg" in
     --debug)   MODE="debug";   MODE_SET=1 ;;
     --release) MODE="release"; MODE_SET=1 ;;
     --clean)   CLEAN=1 ;;
-    -h|--help) echo "Usage: scripts/build.sh [--debug|--release|--clean] [filename]"; exit 0 ;;
+    --android) ANDROID_BUILD=1 ;;
+    -h|--help) echo "Usage: scripts/build.sh [--debug|--release|--clean|--android] [filename]"; exit 0 ;;
     -*) echo "${C_RED}build.sh: unknown option: $arg${C_RESET}" >&2; exit 1 ;;
     *)  FILENAME="$arg" ;;
   esac
 done
+
+if [ "$ANDROID_BUILD" = "1" ]; then
+  echo "${C_BOLD}${C_CYAN}>>> Building Android APK${C_RESET}"
+  
+  if [ -z "$ANDROID_HOME" ] && [ -z "$ANDROID_SDK_ROOT" ]; then
+    echo "Error: ANDROID_HOME or ANDROID_SDK_ROOT is not set." >&2
+    exit 1
+  fi
+  SDK_DIR=${ANDROID_HOME:-$ANDROID_SDK_ROOT}
+  BUILD_TOOLS="$SDK_DIR/build-tools/34.0.0"
+  PLATFORM="$SDK_DIR/platforms/android-34/android.jar"
+  
+  if [ ! -f "$PLATFORM" ]; then
+    echo "Error: android.jar not found at $PLATFORM" >&2
+    exit 1
+  fi
+  
+  mkdir -p build/android/classes build/android/dex
+  
+  echo "  ${C_CYAN}>>> Compiling Kotlin${C_RESET}"
+  kotlinc android/src/com/mewfm/MainActivity.kt \
+    -classpath "$PLATFORM" \
+    -d build/android/classes
+    
+  if [ $? -ne 0 ]; then echo "Kotlin compilation failed." >&2; exit 1; fi
+
+  echo "  ${C_CYAN}>>> Converting to DEX${C_RESET}"
+  "$BUILD_TOOLS/d8" --lib "$PLATFORM" --output build/android/dex build/android/classes/com/mewfm/*.class
+  if [ $? -ne 0 ]; then echo "DEX conversion failed." >&2; exit 1; fi
+
+  echo "  ${C_CYAN}>>> Packaging resources and manifest${C_RESET}"
+  "$BUILD_TOOLS/aapt2" link \
+    -o build/android/app-unsigned.apk \
+    -I "$PLATFORM" \
+    --manifest android/AndroidManifest.xml \
+    --min-sdk-version 24 \
+    --target-sdk-version 34
+    
+  if [ $? -ne 0 ]; then echo "aapt2 link failed." >&2; exit 1; fi
+
+  echo "  ${C_CYAN}>>> Adding DEX to APK${C_RESET}"
+  cd build/android/dex
+  zip -q ../app-unsigned.apk classes.dex
+  cd ../../../
+
+  echo "  ${C_CYAN}>>> Aligning and Signing${C_RESET}"
+  "$BUILD_TOOLS/zipalign" -f -p 4 build/android/app-unsigned.apk build/android/app-aligned.apk
+  
+  # Generate a debug keystore if one doesn't exist
+  if [ ! -f ~/.android/debug.keystore ]; then
+    mkdir -p ~/.android
+    keytool -genkey -v -keystore ~/.android/debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US" 2>/dev/null
+  fi
+
+  "$BUILD_TOOLS/apksigner" sign --ks ~/.android/debug.keystore --ks-pass pass:android --key-pass pass:android --out build/android/mewFM.apk build/android/app-aligned.apk
+  
+  if [ $? -eq 0 ]; then
+    echo "${C_GREEN}>>> done:${C_RESET} ${C_BOLD}build/android/mewFM.apk${C_RESET}"
+  else
+    echo "Signing failed." >&2
+    exit 1
+  fi
+  exit 0
+fi
 
 if [ "$CLEAN" = "1" ]; then
   echo "${C_BOLD}${C_CYAN}>>> clean mode${C_RESET}"
