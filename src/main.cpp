@@ -5467,6 +5467,7 @@ static std::vector<MenuItem> buildRowMenuItems(const AppState& app)
   openWith.action = MenuAction::OpenWith;
   openWith.enabled = true;
   items.push_back(openWith);
+  items.push_back({"Add to Bookmarks", MenuAction::AddBookmark, true, std::string(), std::vector<MenuItem>()});
   items.push_back({"Edit Here", MenuAction::EditHere, true, std::string(), std::vector<MenuItem>()});
   items.push_back({"Extract", MenuAction::Extract, true, std::string(), std::vector<MenuItem>()});
   if (isInsideTrash(app))
@@ -5478,7 +5479,6 @@ static std::vector<MenuItem> buildRowMenuItems(const AppState& app)
   items.push_back({"Rename", MenuAction::Rename, true, std::string(), std::vector<MenuItem>()});
   items.push_back({"Delete", MenuAction::Delete, true, std::string(), std::vector<MenuItem>()});
   items.push_back({"Properties", MenuAction::Properties, true, std::string(), std::vector<MenuItem>()});
-  items.push_back({"Add to Bookmarks", MenuAction::AddBookmark, true, std::string(), std::vector<MenuItem>()});
   return items;
 }
 
