@@ -1455,6 +1455,15 @@ static void scrollCallback(GLFWwindow* window, double x, double y)
 {
   (void)x;
   AppState* app = static_cast<AppState*>(glfwGetWindowUserPointer(window));
+  if (app != nullptr && app->modal.active && app->modal.type == ModalType::OpenWith)
+  {
+    app->modal.openWithScroll -= static_cast<int>(y);
+    if (app->modal.openWithScroll < 0)
+    {
+      app->modal.openWithScroll = 0;
+    }
+    return;
+  }
   if (app != nullptr && app->editor.active)
   {
     app->editor.scrollLine -= static_cast<int>(y);
