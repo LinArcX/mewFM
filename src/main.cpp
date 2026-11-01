@@ -361,6 +361,16 @@ static bool g_xdndActive = false;
 static std::vector<std::string> g_xdndPaths;
 static Window g_xdndTarget = 0;
 
+/**
+ * @brief Initializes the X11 Xdnd (drag-and-drop) subsystem.
+ *
+ * Creates a small hidden source window, interns the required Xdnd and
+ * text/uri-list atoms, and caches the X11 display pointer. Safe to call
+ * once at startup; becomes a no-op when the GLFW window has no X11
+ * display (e.g. when running on a non-X11 backend).
+ *
+ * @param window GLFW window whose X11 display will be used as the drag source.
+ */
 static void initXdnd(GLFWwindow* window)
 {
   g_xdisplay = glfwGetX11Display();
@@ -384,6 +394,16 @@ static void initXdnd(GLFWwindow* window)
   TextUriList = XInternAtom(g_xdisplay, "text/uri-list", False);
 }
 
+/**
+ * @brief Begins an Xdnd drag from this application to an external target.
+ *
+ * Takes ownership of the XdndSelection atom and grabs the pointer. Each
+ * subsequent pointer motion and button release is processed by
+ * processXdndEvents(), which sends XdndEnter, XdndPosition, and XdndDrop
+ * to whatever window the pointer is currently over.
+ *
+ * @param paths Absolute paths of the items being dragged.
+ */
 static void startXdndDrag(const std::vector<std::string>& paths)
 {
   if (!g_xdisplay || paths.empty())
@@ -401,6 +421,15 @@ static void startXdndDrag(const std::vector<std::string>& paths)
                GrabModeAsync, GrabModeAsync, 0, 0, CurrentTime);
 }
 
+/**
+ * @brief Finds the Xdnd-aware window under the pointer and sends it
+ *        an XdndPosition message.
+ *
+ * Walks up the X11 window tree from the current pointer window until it
+ * finds a window that advertises the XdndAware atom. When the target
+ * changes, sends XdndLeave to the previous target and XdndEnter to the
+ * new one. Called repeatedly while a drag is in progress.
+ */
 static void updateXdndDrag()
 {
   if (!g_xdndActive || !g_xdisplay)
@@ -488,6 +517,13 @@ static void updateXdndDrag()
   }
 }
 
+/**
+ * @brief Completes an Xdnd drag by sending XdndDrop to the current target.
+ *
+ * Releases the pointer grab and clears the drag state. The target will
+ * then request the dragged data through a SelectionRequest, which is
+ * handled by processXdndEvents().
+ */
 static void dropXdndDrag()
 {
   if (!g_xdndActive || !g_xdisplay)
@@ -514,6 +550,15 @@ static void dropXdndDrag()
   g_xdndPaths.clear();
 }
 
+/**
+ * @brief Services pending X11 Xdnd events for the current drag.
+ *
+ * Drains SelectionRequest events from the hidden source window (responding
+ * with a text/uri-list payload when asked) and, while a drag is in
+ * progress, forwards pointer motion and button-release events from the
+ * root window to the Xdnd state machine. Called once per frame from the
+ * main loop.
+ */
 static void processXdndEvents()
 {
   if (!g_xdisplay)
@@ -3026,14 +3071,6 @@ static void showProperties(AppState& app, int index)
   app.modal.openInfo("Properties", msg);
 }
 
-/**
- * @brief Draws a 1-pixel separator line using the current NanoVG context.
- * @param vg NanoVG context.
- * @param x1 Start X.
- * @param y1 Start Y.
- * @param x2 End X.
- * @param y2 End Y.
- */
 /**
  * @brief Draws a 1-pixel separator line using the current NanoVG context.
  * @param vg NanoVG context.

@@ -34,9 +34,9 @@
 ☑ Session persistence via `~/.config/mewFM/config`
 ☑ Command-line argument: `mewFM <path>`
 ☑ Embedded font and icons
+☑ Drag and drop: internal move (drag a row onto a folder row)
+☑ Drag and drop: external out (drag a row to another application)
 
 ## TODO
 □ List / grid view toggle
-□ Drag and drop: internal move (drag a row onto a folder row)
-□ Drag and drop: external out (drag a row to another application)
 □ Permission editor in Properties

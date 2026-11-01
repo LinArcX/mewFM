@@ -71,6 +71,9 @@ Full-storage access is declared in the manifest; on Android 11+ the user
 must grant "All files access" manually in Settings until the in-app
 permission prompt is added.
 
+See [ANDROID.md](ANDROID.md) for the current Android feature set and
+known issues.
+
 ## Run
 
 ```sh
@@ -122,10 +125,14 @@ third_party/
   nanovg/           NanoVG 2D vector graphics
   oui-blendish/     oui-blendish widgets and the Blender icon atlas
   impl.c            Single-TU build glue for the third-party C sources
+android/
+  AndroidManifest.xml  Manifest (package com.mewfm)
+  src/com/mewfm/       Kotlin sources (FileManager, FileListView, MainActivity)
 assets/
   fonts/            Embedded fonts (Hermit via `xxd`; Sofia Sans is unused)
   icon.svg          Application icon
   mewFM.desktop     Desktop entry
+ANDROID.md          Android port status, feature set, known issues
 ```
 
 Optional (only for regenerating `compile_commands.json` for the LSP):
