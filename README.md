@@ -37,10 +37,20 @@ A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and ou
 ./scripts/build.sh --debug
 ```
 
-`scripts/build.sh` wraps itself with `bear` when available (to produce
-`compile_commands.json`), compiles the C and C++ translation units, links
+`scripts/build.sh` compiles only the translation units that changed,
+compiles them in parallel, links only when an object file is newer than
 the binary, and installs `/usr/bin/mewFM` along with the desktop entry and
-icon.
+icon only when the binary or assets changed. Debug builds use `-O0 -g` for
+fast iteration and proper debug symbols.
+
+To regenerate `compile_commands.json` (for the LSP), run:
+
+```sh
+MEWFM_BEAR=1 ./scripts/build.sh --debug
+```
+
+Bear is skipped on normal builds to keep iteration fast. It runs
+automatically the first time (when `compile_commands.json` is missing).
 
 ## Run
 
