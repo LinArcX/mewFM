@@ -159,6 +159,7 @@ namespace
     bool enabled;                       ///< Statically enabled flag (may be overridden at runtime).
     std::string exec;                   ///< Application command for OpenWith items.
     std::vector<MenuItem> submenu;      ///< Nested submenu items (empty when none).
+    std::string desktopId;              ///< Desktop file ID (e.g., "firefox.desktop").
   };
 
   /**
@@ -1689,6 +1690,37 @@ static std::string getMimeType(const std::string& path)
 }
 
 /**
+ * @brief Queries the default application for a MIME type using xdg-mime.
+ * @param mimeType The MIME type (e.g., "image/png").
+ * @return The desktop file ID (e.g., "imv.desktop"), or empty on failure.
+ */
+static std::string getDefaultAppId(const std::string& mimeType)
+{
+  if (mimeType.empty())
+  {
+    return std::string();
+  }
+  std::string cmd = "xdg-mime query default " + mimeType + " 2>/dev/null";
+  FILE* p = popen(cmd.c_str(), "r");
+  if (p == nullptr)
+  {
+    return std::string();
+  }
+  char buf[256];
+  std::string res;
+  if (std::fgets(buf, sizeof(buf), p) != nullptr)
+  {
+    res = buf;
+    while (!res.empty() && (res.back() == '\n' || res.back() == '\r'))
+    {
+      res.pop_back();
+    }
+  }
+  pclose(p);
+  return res;
+}
+
+/**
  * @brief Collects launchable GUI applications from the standard
  *        freedesktop .desktop directories.
  *
@@ -1696,11 +1728,12 @@ static std::string getMimeType(const std::string& path)
  * and each entry of $XDG_DATA_DIRS/applications. Duplicate desktop-file
  * ids keep the first occurrence. The result is sorted by display name.
  *
- * @param mimeType If non-empty, only applications that declare support
- *                 for this MIME type (or its superclass) are included.
+ * @param mimeType  If non-empty, only applications that declare support
+ *                  for this MIME type (or its superclass) are included.
+ * @param defaultId Desktop file ID of the default app (to be sorted first).
  * @return Vector of MenuItem, one per launchable application.
  */
-static std::vector<MenuItem> collectOpenWithApps(const std::string& mimeType)
+static std::vector<MenuItem> collectOpenWithApps(const std::string& mimeType, const std::string& defaultId)
 {
   std::vector<std::string> dirs;
   const char* xdgHome = std::getenv("XDG_DATA_HOME");
@@ -1847,13 +1880,19 @@ static std::vector<MenuItem> collectOpenWithApps(const std::string& mimeType)
       item.action = MenuAction::OpenWith;
       item.enabled = true;
       item.exec = appExec;
+      item.desktopId = id;
       apps.push_back(item);
     }
   }
 
   std::sort(apps.begin(), apps.end(),
-    [](const MenuItem& a, const MenuItem& b)
+    [defaultId](const MenuItem& a, const MenuItem& b)
     {
+      if (!defaultId.empty())
+      {
+        if (a.desktopId == defaultId) return true;
+        if (b.desktopId == defaultId) return false;
+      }
       std::string la = a.label;
       std::string lb = b.label;
       for (char& c : la) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
@@ -5481,10 +5520,11 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
         {
           std::string full = joinPath(app.fm.currentPath(), entries[rowIdx].name);
           std::string mime = getMimeType(full);
-          std::vector<MenuItem> apps = collectOpenWithApps(mime);
+          std::string defaultId = getDefaultAppId(mime);
+          std::vector<MenuItem> apps = collectOpenWithApps(mime, defaultId);
           if (apps.empty() && !mime.empty())
           {
-            apps = collectOpenWithApps("");
+            apps = collectOpenWithApps("", "");
           }
           std::vector<std::string> labels;
           std::vector<std::string> execs;
