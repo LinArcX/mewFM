@@ -289,6 +289,7 @@ namespace
     bool sidebarVisible = true;                        ///< True if the sidebar is enabled.
     float sidebarAnim = 1.0f;                          ///< Sidebar slide animation progress (0..1).
     float previewAnim = 1.0f;                          ///< Preview panel slide animation progress (0..1).
+    std::string savedFontPath = "Default (Embedded)";  ///< Path to the selected font, or default.
     float sidebarScrollY = 0.0f;                       ///< Vertical scroll offset of the sidebar.
     GLFWwindow* window = nullptr;                      ///< Owning GLFW window (set once at startup).
     std::string menuTargetPath;                        ///< Path of the target for the current context menu.
@@ -366,6 +367,17 @@ static void scanFonts(AppState& app)
     }
   }
   std::sort(app.modal.availFonts.begin() + 1, app.modal.availFonts.end());
+  if (!app.savedFontPath.empty() && app.savedFontPath != "Default (Embedded)")
+  {
+    for (size_t i = 0; i < app.modal.availFonts.size(); i++)
+    {
+      if (app.modal.availFonts[i] == app.savedFontPath)
+      {
+        app.modal.fontIdx = i;
+        break;
+      }
+    }
+  }
 }
 
 static BNDwidgetTheme makeWidgetTheme()
@@ -511,6 +523,10 @@ static void loadConfig(AppState& app)
         g_fontSize = s;
       }
     }
+    else if (key == "fontPath")
+    {
+      app.savedFontPath = val;
+    }
     else if (key == "theme.bg")
     {
       parseThemeColor(val, app.theme.bg);
@@ -649,6 +665,8 @@ static void saveConfig(const AppState& app)
   out << "theme.rowStripe=" << colorBuf << "\n";
   out << "path=" << app.fm.currentPath() << "\n";
   out << "hidden=" << (app.fm.showHidden() ? "1" : "0") << "\n";
+  out << "fontSize=" << g_fontSize << "\n";
+  out << "fontPath=" << app.savedFontPath << "\n";
   out << "sidebarVisible=" << (app.sidebarVisible ? "1" : "0") << "\n";
   out << "followSymlinks=" << (app.fm.followSymlinks() ? "1" : "0") << "\n";
   out << "previewVisible=" << (app.previewVisible ? "1" : "0") << "\n";
@@ -3086,6 +3104,7 @@ static void drawModal(
                 g_activeFontId = newFont;
                 bndSetFont(g_activeFontId);
               }
+              app.savedFontPath = "Default (Embedded)";
             }
             else
             {
@@ -3095,6 +3114,7 @@ static void drawModal(
                 g_activeFontId = newFont;
                 bndSetFont(g_activeFontId);
               }
+              app.savedFontPath = modal.availFonts[i];
             }
             saveConfig(app);
           }
@@ -6728,6 +6748,15 @@ int main(int argc, char** argv)
   app.sections = buildSections();
   app.lastPath = app.fm.currentPath();
   loadConfig(app);
+  if (!app.savedFontPath.empty() && app.savedFontPath != "Default (Embedded)")
+  {
+    int newFont = nvgCreateFont(vg, "sans", app.savedFontPath.c_str());
+    if (newFont >= 0)
+    {
+      g_activeFontId = newFont;
+      bndSetFont(g_activeFontId);
+    }
+  }
   app.tabs.push_back(TabSnapshot());
   saveActiveIntoTab(app);
 
