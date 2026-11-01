@@ -1,3 +1,12 @@
+/**
+ * @file FileManager.cpp
+ * @brief Implements the FileManager class.
+ *
+ * Covers directory listing, navigation, copy/move/trash/restore, archive
+ * extraction, filtering, sorting, and the chunked file-operation state
+ * machine.
+ */
+
 #include "FileManager.hpp"
 
 #include <algorithm>
@@ -36,6 +45,11 @@ std::string FileManager::trashRootDir()
 }
 
 
+/**
+ * @brief Returns the current local time as an ISO 8601 string.
+ * @return Timestamp in "YYYY-MM-DDTHH:MM:SS" format, or an empty string
+ *         if localtime_r() fails.
+ */
 static std::string currentIsoDateTime()
 {
   std::time_t now = std::time(nullptr);
@@ -50,6 +64,13 @@ static std::string currentIsoDateTime()
 }
 
 
+/**
+ * @brief Finds a name in @p dir that does not collide with an existing entry.
+ * @param dir  Directory to search.
+ * @param name Preferred file name.
+ * @return Unique name (possibly with " (N)" suffix), or an empty string
+ *         if no unique name could be produced.
+ */
 static std::string uniqueNameIn(const std::string& dir, const std::string& name)
 {
   std::error_code ec;
@@ -76,6 +97,11 @@ static std::string uniqueNameIn(const std::string& dir, const std::string& name)
   return std::string();
 }
 
+/**
+ * @brief Returns a lowercase copy of @p s.
+ * @param s Input string.
+ * @return Lowercase copy.
+ */
 static std::string lowercaseCopy(const std::string& s)
 {
   std::string out = s;
@@ -86,6 +112,12 @@ static std::string lowercaseCopy(const std::string& s)
   return out;
 }
 
+/**
+ * @brief Checks whether @p s ends with @p suffix.
+ * @param s      Input string.
+ * @param suffix Suffix to test (null-terminated).
+ * @return True if @p s ends with @p suffix.
+ */
 static bool endsWith(const std::string& s, const char* suffix)
 {
   size_t sl = std::strlen(suffix);
@@ -96,6 +128,11 @@ static bool endsWith(const std::string& s, const char* suffix)
   return s.compare(s.size() - sl, sl, suffix) == 0;
 }
 
+/**
+ * @brief Fork/exec @p args and wait for the child to exit.
+ * @param args argv-style vector (must be non-empty; args[0] is the program).
+ * @return True if the child exited with status 0, false otherwise.
+ */
 static bool runCommand(const std::vector<std::string>& args)
 {
   if (args.empty())
@@ -482,6 +519,12 @@ bool FileManager::extractArchive(const std::string& name)
   return loadPath(m_currentPath);
 }
 
+/**
+ * @brief Reads the "Path=" field from a .trashinfo file.
+ * @param trashName Name of the file inside the trash's files/ directory.
+ * @param outPath   Output parameter receiving the original path.
+ * @return True on success, false if the .trashinfo is missing or malformed.
+ */
 static bool readTrashOriginalPath(const std::string& trashName, std::string& outPath)
 {
   std::string root = FileManager::trashRootDir();
@@ -633,6 +676,10 @@ bool FileManager::cutEntries(const std::vector<std::string>& names)
   return true;
 }
 
+/**
+ * @brief Returns the current CLOCK_MONOTONIC time in seconds.
+ * @return Monotonic time, or 0.0 if clock_gettime() fails.
+ */
 static double monotonicSeconds()
 {
   struct timespec ts;
@@ -643,6 +690,12 @@ static double monotonicSeconds()
   return static_cast<double>(ts.tv_sec) + static_cast<double>(ts.tv_nsec) * 1e-9;
 }
 
+/**
+ * @brief Tests whether two paths live on the same filesystem.
+ * @param a First path.
+ * @param b Second path.
+ * @return True if both paths stat() successfully and share st_dev.
+ */
 static bool sameDevice(const std::string& a, const std::string& b)
 {
   struct stat sa;

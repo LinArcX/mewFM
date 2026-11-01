@@ -1,3 +1,8 @@
+/**
+ * @file Modal.hpp
+ * @brief Declares ModalType, ModalResult, and the Modal dialog state struct.
+ */
+
 #pragma once
 
 #include <string>

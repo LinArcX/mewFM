@@ -1,3 +1,11 @@
+/**
+ * @file main.cpp
+ * @brief Application entry point for mewFM.
+ *
+ * Declares the application state (AppState), all drawing routines, all
+ * input handlers, and the GLFW/NanoVG render loop.
+ */
+
 #include <GLFW/glfw3.h>
 #include <GL/gl.h>
 #include <GL/glext.h>

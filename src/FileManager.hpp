@@ -1,3 +1,11 @@
+/**
+ * @file FileManager.hpp
+ * @brief Public API for the FileManager class.
+ *
+ * Also declares Entry, ClipboardMode, SortField, FileOpStatus, and
+ * FileOpProgress.
+ */
+
 #pragma once
 
 #include <string>

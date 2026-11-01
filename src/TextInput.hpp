@@ -1,3 +1,8 @@
+/**
+ * @file TextInput.hpp
+ * @brief Declares TextInputResult and the TextInput dialog state struct.
+ */
+
 #pragma once
 
 #include <string>

@@ -27,6 +27,35 @@ A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and ou
 - Session persistence via `~/.config/mewFM/config`
 - Command-line argument: `mewFM <path>`
 - Embedded font and icons
+- Extract tar / zip archives (right-click → "Extract")
+- Properties dialog (right-click → "Properties")
+- Toast notifications for short status messages
+
+## Build
+
+```sh
+./scripts/build.sh --debug
+```
+
+`scripts/build.sh` wraps itself with `bear` when available (to produce
+`compile_commands.json`), compiles the C and C++ translation units, links
+the binary, and installs `/usr/bin/mewFM` along with the desktop entry and
+icon.
+
+## Run
+
+```sh
+mewFM              # open the current directory
+mewFM <path>       # open <path>
+```
+
+## Configuration
+
+Session state is persisted to `$XDG_CONFIG_HOME/mewFM/config` (falling back
+to `$HOME/.config/mewFM/config` when `XDG_CONFIG_HOME` is unset). The file
+stores column widths, theme colors, sort field and direction, the
+hidden-files toggle, sidebar and preview visibility, the last visited path,
+collapsed sidebar sections, and user bookmarks.
 
 ## Requirements
 
