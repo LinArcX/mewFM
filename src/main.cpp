@@ -1278,10 +1278,12 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
         if (key == GLFW_KEY_UP && app->modal.openWithSelected > 0)
         {
           app->modal.openWithSelected--;
+          app->modal.openWithScrollToSelected = true;
         }
         else if (key == GLFW_KEY_DOWN && app->modal.openWithSelected + 1 < count)
         {
           app->modal.openWithSelected++;
+          app->modal.openWithScrollToSelected = true;
         }
         else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER)
         {
@@ -1457,10 +1459,27 @@ static void scrollCallback(GLFWwindow* window, double x, double y)
   AppState* app = static_cast<AppState*>(glfwGetWindowUserPointer(window));
   if (app != nullptr && app->modal.active && app->modal.type == ModalType::OpenWith)
   {
-    app->modal.openWithScroll -= static_cast<int>(y);
-    if (app->modal.openWithScroll < 0)
+    int winW = 0;
+    int winH = 0;
+    glfwGetWindowSize(window, &winW, &winH);
+    const float w = static_cast<float>(winW);
+    const float h = static_cast<float>(winH);
+    const float owW = 480.0f;
+    const float owH = 420.0f;
+    const float owX = (w - owW) * 0.5f;
+    const float owY = (h - owH) * 0.5f;
+    const float listTop = owY + 48.0f;
+    const float listH = owH - 48.0f - 56.0f;
+
+    if (g_mouseX >= owX + 8.0f && g_mouseX <= owX + owW - 8.0f &&
+        g_mouseY >= listTop && g_mouseY <= listTop + listH)
     {
-      app->modal.openWithScroll = 0;
+      app->modal.openWithScroll -= static_cast<int>(y);
+      if (app->modal.openWithScroll < 0)
+      {
+        app->modal.openWithScroll = 0;
+      }
+      app->modal.openWithScrollToSelected = false;
     }
     return;
   }
@@ -2594,7 +2613,7 @@ static void drawModal(
     const int count = static_cast<int>(modal.openWithLabels.size());
     const int visibleItems = static_cast<int>(listH / listItemH);
     int scroll = modal.openWithScroll;
-    if (modal.openWithSelected >= 0)
+    if (modal.openWithScrollToSelected && modal.openWithSelected >= 0)
     {
       if (modal.openWithSelected < scroll)
       {
@@ -2649,6 +2668,7 @@ static void drawModal(
       if (hover)
       {
         modal.openWithSelected = i;
+        modal.openWithScrollToSelected = false;
       }
       std::string shownLabel = truncateToWidth(vg, modal.openWithLabels[static_cast<size_t>(i)], owW - 16.0f - 80.0f);
       nvgFillColor(vg, nvgRGBf(0.92f, 0.92f, 0.92f));

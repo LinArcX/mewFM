@@ -52,6 +52,7 @@ struct Modal
   std::vector<std::string> openWithExecs;  ///< Exec commands matching openWithLabels.
   int openWithSelected = -1;                   ///< Highlighted item (-1 = none).
   int openWithScroll = 0;                      ///< Index of the first visible item.
+  bool openWithScrollToSelected = true;        ///< Auto-scroll to keep selection visible.
   std::vector<std::string> openWithDesktopIds; ///< Desktop file IDs of candidate applications.
   std::string openWithMime;                    ///< MIME type of the file being opened.
   std::string openWithDefaultId;               ///< Desktop file ID of the default app.
@@ -113,6 +114,7 @@ struct Modal
     openWithDefaultId = defaultId;
     openWithSelected = labels.empty() ? -1 : 0;
     openWithScroll = 0;
+    openWithScrollToSelected = true;
   }
 
   /**
