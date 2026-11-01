@@ -331,6 +331,42 @@ namespace
  * @brief Builds the widget theme used by oui-blendish widgets.
  * @return A BNDwidgetTheme populated with the application's dark palette.
  */
+static void scanFonts(AppState& app)
+{
+  if (app.modal.availFonts.size() > 1)
+  {
+    return;
+  }
+  std::vector<std::string> dirs = {"/usr/share/fonts", "/usr/local/share/fonts"};
+  const char* home = std::getenv("HOME");
+  if (home != nullptr)
+  {
+    dirs.push_back(std::string(home) + "/.fonts");
+    dirs.push_back(std::string(home) + "/.local/share/fonts");
+  }
+  for (const auto& d : dirs)
+  {
+    std::error_code ec;
+    if (!std::filesystem::is_directory(d, ec))
+    {
+      continue;
+    }
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(d, ec))
+    {
+      if (entry.is_regular_file())
+      {
+        std::string ext = entry.path().extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return std::tolower(c); });
+        if (ext == ".ttf" || ext == ".otf")
+        {
+          app.modal.availFonts.push_back(entry.path().string());
+        }
+      }
+    }
+  }
+  std::sort(app.modal.availFonts.begin() + 1, app.modal.availFonts.end());
+}
+
 static BNDwidgetTheme makeWidgetTheme()
 {
   BNDwidgetTheme w{};
@@ -1519,6 +1555,30 @@ static void scrollCallback(GLFWwindow* window, double x, double y)
 {
   (void)x;
   AppState* app = static_cast<AppState*>(glfwGetWindowUserPointer(window));
+  if (app != nullptr && app->modal.active && app->modal.type == ModalType::Settings)
+  {
+    if (app->modal.settingsDropdown == 0)
+    {
+      app->modal.settingsScroll -= static_cast<float>(y) * 40.0f;
+      if (app->modal.settingsScroll < 0.0f)
+      {
+        app->modal.settingsScroll = 0.0f;
+      }
+      float itemH = 24.0f;
+      int maxItems = 8;
+      float listH = std::min(static_cast<float>(app->modal.availFonts.size()), static_cast<float>(maxItems)) * itemH;
+      float maxScroll = static_cast<float>(app->modal.availFonts.size()) * itemH - listH;
+      if (maxScroll < 0.0f)
+      {
+        maxScroll = 0.0f;
+      }
+      if (app->modal.settingsScroll > maxScroll)
+      {
+        app->modal.settingsScroll = maxScroll;
+      }
+    }
+    return;
+  }
   if (app != nullptr && app->modal.active && app->modal.type == ModalType::OpenWith)
   {
     int winW = 0;
@@ -2943,8 +3003,8 @@ static void drawModal(
   if (modal.type == ModalType::Settings)
   {
     const float labelX = px + 30.0f;
-    const float boxX = px + 130.0f;
-    const float bW = 240.0f;
+    const float boxX = px + 150.0f;
+    const float bW = 220.0f;
     const float bH = 26.0f;
 
     nvgFontSize(vg, g_fontSize);
@@ -2956,19 +3016,30 @@ static void drawModal(
     nvgBeginPath(vg); nvgRoundedRect(vg, boxX, fontY - bH * 0.5f, bW, bH, 3.0f);
     nvgFillColor(vg, nvgRGBf(0.15f, 0.15f, 0.15f)); nvgFill(vg);
     nvgStrokeColor(vg, nvgRGBf(0.35f, 0.35f, 0.35f)); nvgStroke(vg);
-    nvgText(vg, boxX + 8.0f, fontY, modal.availFonts[modal.fontIdx].c_str(), nullptr);
+    
+    std::string fontLabel = modal.availFonts[modal.fontIdx];
+    if (fontLabel != "Default (Embedded)")
+    {
+      fontLabel = std::filesystem::path(fontLabel).filename().string();
+    }
+    nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
+    nvgText(vg, boxX + 8.0f, fontY, truncateToWidth(vg, fontLabel, bW - 16.0f).c_str(), nullptr);
 
     if (inRect(g_mouseX, g_mouseY, boxX, fontY - bH * 0.5f, bW, bH) && g_mouseClicked)
     {
       modal.settingsDropdown = (modal.settingsDropdown == 0) ? -1 : 0;
+      modal.settingsScroll = 0.0f;
       g_mouseClicked = false;
     }
 
     float sizeY = py + 110.0f;
+    nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
     nvgText(vg, labelX, sizeY, "Font Size:", nullptr);
     nvgBeginPath(vg); nvgRoundedRect(vg, boxX, sizeY - bH * 0.5f, bW, bH, 3.0f);
     nvgFillColor(vg, nvgRGBf(0.15f, 0.15f, 0.15f)); nvgFill(vg);
     nvgStrokeColor(vg, nvgRGBf(0.35f, 0.35f, 0.35f)); nvgStroke(vg);
+    
+    nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
     nvgText(vg, boxX + 8.0f, sizeY, modal.availSizes[modal.sizeIdx].c_str(), nullptr);
 
     if (inRect(g_mouseX, g_mouseY, boxX, sizeY - bH * 0.5f, bW, bH) && g_mouseClicked)
@@ -2981,12 +3052,22 @@ static void drawModal(
     {
       float listY = fontY + bH * 0.5f;
       float itemH = 24.0f;
-      nvgBeginPath(vg); nvgRoundedRect(vg, boxX, listY, bW, modal.availFonts.size() * itemH, 3.0f);
+      int maxItems = 8;
+      float listH = std::min(static_cast<float>(modal.availFonts.size()), static_cast<float>(maxItems)) * itemH;
+      
+      nvgBeginPath(vg); nvgRoundedRect(vg, boxX, listY, bW, listH, 3.0f);
       nvgFillColor(vg, nvgRGBf(0.2f, 0.2f, 0.2f)); nvgFill(vg);
       nvgStrokeColor(vg, nvgRGBf(0.35f, 0.35f, 0.35f)); nvgStroke(vg);
-      for (size_t i = 0; i < modal.availFonts.size(); i++)
+
+      nvgSave(vg);
+      nvgScissor(vg, boxX + 1, listY + 1, bW - 2, listH - 2);
+
+      int startIdx = static_cast<int>(modal.settingsScroll / itemH);
+      int endIdx = std::min(static_cast<int>(modal.availFonts.size()), startIdx + maxItems + 1);
+
+      for (int i = startIdx; i < endIdx; i++)
       {
-        float iy = listY + i * itemH;
+        float iy = listY + i * itemH - modal.settingsScroll;
         if (inRect(g_mouseX, g_mouseY, boxX, iy, bW, itemH))
         {
           nvgBeginPath(vg); nvgRect(vg, boxX + 1, iy, bW - 2, itemH);
@@ -2996,10 +3077,28 @@ static void drawModal(
             modal.fontIdx = i;
             modal.settingsDropdown = -1;
             g_mouseClicked = false;
+            if (i == 0)
+            {
+              int font = nvgCreateFontMem(vg, "sans", fontData, fontData_len, 0);
+              if (font >= 0) bndSetFont(font);
+            }
+            else
+            {
+              int font = nvgCreateFont(vg, "sans", modal.availFonts[i].c_str());
+              if (font >= 0) bndSetFont(font);
+            }
+            saveConfig(app);
           }
         }
-        nvgText(vg, boxX + 8.0f, iy + itemH * 0.5f, modal.availFonts[i].c_str(), nullptr);
+        nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
+        std::string itemLabel = modal.availFonts[i];
+        if (itemLabel != "Default (Embedded)")
+        {
+          itemLabel = std::filesystem::path(itemLabel).filename().string();
+        }
+        nvgText(vg, boxX + 8.0f, iy + itemH * 0.5f, truncateToWidth(vg, itemLabel, bW - 16.0f).c_str(), nullptr);
       }
+      nvgRestore(vg);
     }
     else if (modal.settingsDropdown == 1)
     {
@@ -3020,11 +3119,12 @@ static void drawModal(
             modal.sizeIdx = i;
             modal.settingsDropdown = -1;
             g_mouseClicked = false;
-            g_fontSize = static_cast<float>(std::atoi(modal.availSizes[i].c_str()));
+            g_fontSize = static_cast<float>(std::atof(modal.availSizes[i].c_str()));
             g_rowHeight = g_fontSize + 10.0f;
             saveConfig(app);
           }
         }
+        nvgFillColor(vg, nvgRGBf(0.85f, 0.85f, 0.85f));
         nvgText(vg, boxX + 8.0f, iy + itemH * 0.5f, modal.availSizes[i].c_str(), nullptr);
       }
     }
@@ -3435,6 +3535,7 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
     }
     if (hover && g_mouseClicked)
     {
+      scanFonts(app);
       app.modal.openSettings();
     }
   }
