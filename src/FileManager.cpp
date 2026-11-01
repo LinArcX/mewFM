@@ -324,6 +324,20 @@ bool FileManager::showHidden() const
   return m_showHidden;
 }
 
+void FileManager::setFollowSymlinks(bool follow)
+{
+  if (m_followSymlinks == follow)
+  {
+    return;
+  }
+  m_followSymlinks = follow;
+}
+
+bool FileManager::followSymlinks() const
+{
+  return m_followSymlinks;
+}
+
 bool FileManager::setPath(const std::string& path)
 {
   if (path == m_currentPath)
@@ -1486,6 +1500,10 @@ bool FileManager::buildEntry(const std::string& fullPath, const std::string& nam
     out.sizeBytes = static_cast<unsigned long long>(st.st_size);
     out.sizeText = formatSize(out.sizeBytes);
     out.typeText = typeTextForName(name);
+  }
+  if (out.isSymlink)
+  {
+    out.typeText += " ->";
   }
   return true;
 }

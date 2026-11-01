@@ -14,6 +14,7 @@ A minimal, fast file manager for Linux, written in C++ with GLFW, NanoVG, and ou
 - Extension-aware icons (images, video, audio, documents, fonts, code)
 - Broken symlinks shown with a "Broken link" type (never hidden)
 - Copy / move preserve symlinks as links (never followed)
+- Symlinks marked with " ->" in the Type column; "Toggle Symlink Following" in the empty-space context menu
 - Preview panel for image thumbnails and text files (F3)
 - Integrated text editor: right-click a text file → "Edit Here"
 - Single-click select, double-click open

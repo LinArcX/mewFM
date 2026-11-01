@@ -144,6 +144,7 @@ namespace
     Properties,     ///< Show the Properties dialog.
     AddBookmark,    ///< Add the selected folder to Bookmarks.
     RemoveBookmark, ///< Remove the selected folder from Bookmarks.
+    ToggleFollowSymlinks, ///< Toggle whether navigating into a symlink follows it.
   };
 
   /**
@@ -493,6 +494,10 @@ static void loadConfig(AppState& app)
       app.sidebarVisible = (val != "0");
       app.sidebarAnim = app.sidebarVisible ? 1.0f : 0.0f;
     }
+    else if (key == "followSymlinks")
+    {
+      app.fm.setFollowSymlinks(val != "0");
+    }
     else if (key == "previewVisible")
     {
       app.previewVisible = (val != "0");
@@ -599,6 +604,7 @@ static void saveConfig(const AppState& app)
   out << "path=" << app.fm.currentPath() << "\n";
   out << "hidden=" << (app.fm.showHidden() ? "1" : "0") << "\n";
   out << "sidebarVisible=" << (app.sidebarVisible ? "1" : "0") << "\n";
+  out << "followSymlinks=" << (app.fm.followSymlinks() ? "1" : "0") << "\n";
   out << "previewVisible=" << (app.previewVisible ? "1" : "0") << "\n";
   out << "sortField=" << static_cast<int>(app.fm.sortField()) << "\n";
   out << "sortDir=" << (app.fm.sortAscending() ? "0" : "1") << "\n";
@@ -1845,6 +1851,11 @@ static void openEntry(AppState& app, int index)
   std::string full = joinPath(app.fm.currentPath(), e.name);
   if (e.isDirectory)
   {
+    if (e.isSymlink && !app.fm.followSymlinks())
+    {
+      app.toast.show("Symlink (following disabled)");
+      return;
+    }
     app.fm.setPath(full);
     app.selectedIndex = -1;
     app.scrollOffset = 0.0f;
@@ -4366,6 +4377,7 @@ static std::vector<MenuItem> buildEmptyMenuItems(const AppState& app)
   {
     items.push_back({"Empty Trash", MenuAction::EmptyTrash, true});
   }
+  items.push_back({"Toggle Symlink Following", MenuAction::ToggleFollowSymlinks, true});
   items.push_back({"Refresh", MenuAction::Refresh, true});
   return items;
 }
@@ -4736,6 +4748,11 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
           saveConfig(app);
         }
       }
+      break;
+    case MenuAction::ToggleFollowSymlinks:
+      app.fm.setFollowSymlinks(!app.fm.followSymlinks());
+      app.toast.show(app.fm.followSymlinks() ? "Symlink following: on" : "Symlink following: off");
+      saveConfig(app);
       break;
     default:
       break;

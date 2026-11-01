@@ -150,6 +150,15 @@ public:
   bool showHidden() const;
 
   /**
+   * @brief Controls whether navigating into a symlink-to-folder follows the link.
+   * @param follow True to follow symlinks on navigation (default), false to ignore them.
+   */
+  void setFollowSymlinks(bool follow);
+
+  /** @return True if navigation follows symlinks to folders. */
+  bool followSymlinks() const;
+
+  /**
    * @brief Sets the live filter applied to entry names.
    * @param filter Substring matched against entry names (case-sensitive).
    */
@@ -468,6 +477,7 @@ private:
   bool m_sortAscending = true;                ///< True for ascending, false for descending.
 
   bool m_showHidden = false;                  ///< True if hidden files are shown.
+  bool m_followSymlinks = true;               ///< True if symlink-to-folder navigation follows the link.
 
   FileOpKind m_opKind = FileOpKind::None;     ///< Current high-level operation kind.
   FileOpStage m_opStage = FileOpStage::None;  ///< Current stage of the operation.

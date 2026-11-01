@@ -23,7 +23,7 @@
 ☑ User bookmarks
 ☑ Preview panel (image / text)
 ☑ Integrated text editor
-☑ Symlink handling (broken-link marker; copy/move preserves links)
+☑ Symlink handling (broken-link marker, link-preserving copy/move, follow toggle)
 
 ## TODO
 □ Submenu for "Open With"
@@ -31,5 +31,4 @@
 □ Mount / unmount detection for removable devices
 □ List / grid view toggle
 □ Drag and drop (internal move, external in / out)
-□ Symlink follow toggle
 □ Permission editor in Properties
