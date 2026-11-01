@@ -56,6 +56,9 @@ menu () {
 
     # release
     "build(release)" "run(release)" "clean(release)"
+
+    # android
+    "build(android)" "install(android)" "run(android)" "clean(android)"
   
     "start xephyr" "stop xephyr"
  
@@ -129,6 +132,26 @@ menu () {
         echo -e "Removing patch $file .."
         rm -f "$file"
       fi
+      ;;
+    "build(android)")
+      ./scripts/build.sh --android
+      if [ $? -eq 1 ]; then
+        # error
+        mpg123 -f 3000 /home/linarcx/VoidConf/assets/error2.mp3 > /dev/null 2>&1 
+      else
+        # success
+        mpg123 -f 3000 /home/linarcx/VoidConf/assets/success.mp3 > /dev/null 2>&1 
+      fi
+      ;;
+    "install(android)")
+      adb install -r build/android/mewFM.apk
+      ;;
+    "run(android)")
+      adb shell am start -n com.mewfm/.MainActivity
+      ;;
+    "clean(android)")
+      rm -rf build/android
+      echo ">>> cleaned build/android"
       ;;
     "build(debug)")
       ./scripts/build.sh --debug

@@ -43,7 +43,7 @@ if [ "$ANDROID_BUILD" = "1" ]; then
   fi
   SDK_DIR=${ANDROID_HOME:-$ANDROID_SDK_ROOT}
   BUILD_TOOLS="$SDK_DIR/build-tools/34.0.0"
-  PLATFORM="$SDK_DIR/platforms/android-34/android.jar"
+  PLATFORM="$SDK_DIR/platforms/android-33/android.jar"
   
   if [ ! -f "$PLATFORM" ]; then
     echo "Error: android.jar not found at $PLATFORM" >&2
@@ -84,7 +84,7 @@ if [ "$ANDROID_BUILD" = "1" ]; then
     -I "$PLATFORM" \
     --manifest android/AndroidManifest.xml \
     --min-sdk-version 33 \
-    --target-sdk-version 34
+    --target-sdk-version 33
     
   if [ $? -ne 0 ]; then echo "aapt2 link failed." >&2; exit 1; fi
 
