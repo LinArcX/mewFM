@@ -63,6 +63,82 @@ static std::string currentIsoDateTime()
   return std::string(buf);
 }
 
+/**
+ * @brief Percent-encodes @p s for use in a .trashinfo Path= field.
+ *
+ * Follows the freedesktop.org trash specification: unreserved characters
+ * (A-Z, a-z, 0-9, and - _ . ~) are kept as-is; '/' is preserved as the
+ * path separator; every other byte is encoded as %XX with uppercase hex.
+ *
+ * @param s String to encode.
+ * @return Percent-encoded string.
+ */
+static std::string trashPercentEncode(const std::string& s)
+{
+  static const char* hex = "0123456789ABCDEF";
+  std::string out;
+  out.reserve(s.size());
+  for (size_t i = 0; i < s.size(); i++)
+  {
+    const unsigned char c = static_cast<unsigned char>(s[i]);
+    const bool unreserved =
+      (c >= 'A' && c <= 'Z') ||
+      (c >= 'a' && c <= 'z') ||
+      (c >= '0' && c <= '9') ||
+      c == '-' || c == '_' || c == '.' || c == '~' || c == '/';
+    if (unreserved)
+    {
+      out.push_back(static_cast<char>(c));
+    }
+    else
+    {
+      out.push_back('%');
+      out.push_back(hex[(c >> 4) & 0x0F]);
+      out.push_back(hex[c & 0x0F]);
+    }
+  }
+  return out;
+}
+
+/**
+ * @brief Decodes a percent-encoded .trashinfo Path= value.
+ *
+ * Malformed escapes (e.g. "%ZZ" or a truncated "%2") are passed through
+ * unchanged, so decoding a legacy non-encoded value is a no-op for any
+ * path that does not contain a literal "%XX" hex pair.
+ *
+ * @param s Percent-encoded string.
+ * @return Decoded string.
+ */
+static std::string trashPercentDecode(const std::string& s)
+{
+  std::string out;
+  out.reserve(s.size());
+  for (size_t i = 0; i < s.size(); i++)
+  {
+    if (s[i] == '%' && i + 2 < s.size())
+    {
+      int hi = -1;
+      int lo = -1;
+      const char h = s[i + 1];
+      const char l = s[i + 2];
+      if (h >= '0' && h <= '9') hi = h - '0';
+      else if (h >= 'a' && h <= 'f') hi = h - 'a' + 10;
+      else if (h >= 'A' && h <= 'F') hi = h - 'A' + 10;
+      if (l >= '0' && l <= '9') lo = l - '0';
+      else if (l >= 'a' && l <= 'f') lo = l - 'a' + 10;
+      else if (l >= 'A' && l <= 'F') lo = l - 'A' + 10;
+      if (hi >= 0 && lo >= 0)
+      {
+        out.push_back(static_cast<char>((hi << 4) | lo));
+        i += 2;
+        continue;
+      }
+    }
+    out.push_back(s[i]);
+  }
+  return out;
+}
 
 /**
  * @brief Finds a name in @p dir that does not collide with an existing entry.
@@ -462,7 +538,7 @@ bool FileManager::trashEntry(const std::string& name)
   if (out)
   {
     out << "[Trash Info]\n";
-    out << "Path=" << fs::absolute(src, ec).string() << "\n";
+    out << "Path=" << trashPercentEncode(fs::absolute(src, ec).string()) << "\n";
     out << "DeletionDate=" << currentIsoDateTime() << "\n";
   }
   return loadPath(m_currentPath);
@@ -543,7 +619,7 @@ static bool readTrashOriginalPath(const std::string& trashName, std::string& out
   {
     if (line.size() >= 5 && line.compare(0, 5, "Path=") == 0)
     {
-      outPath = line.substr(5);
+      outPath = trashPercentDecode(line.substr(5));
       return !outPath.empty();
     }
   }
