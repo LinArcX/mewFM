@@ -1357,19 +1357,6 @@ void FileManager::finalizeFileOp(bool success)
 
 FileOpStatus FileManager::pollFileOp()
 {
-      FILE* f = std::fopen("/tmp/mewFM.log", "a");
-    if (f != nullptr)
-    {
-      std::fprintf(f, "poll active=%d stage=%d kind=%d fileIdx=%zu done=%llu total=%llu\n",
-                   m_opProgress.active ? 1 : 0,
-                   static_cast<int>(m_opStage),
-                   static_cast<int>(m_opKind),
-                   m_opFileIndex,
-                   m_opDoneBytes,
-                   m_opTotalBytes);
-      std::fclose(f);
-    }
-
   if (!m_opProgress.active)
   {
     return FileOpStatus::Idle;
