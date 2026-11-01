@@ -1266,7 +1266,7 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
         }
       }
     }
-    else if (app->modal.type == ModalType::Info)
+    else if (app->modal.type == ModalType::Info || app->modal.type == ModalType::Settings)
     {
       if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER)
       {
@@ -3338,6 +3338,10 @@ static void drawTopBar(NVGcontext* vg, AppState& app, float w)
     if (hover)
     {
       g_tooltip = "Settings";
+    }
+    if (hover && g_mouseClicked)
+    {
+      app.modal.openSettings();
     }
   }
   x += kBtnSize + kBtnGap;

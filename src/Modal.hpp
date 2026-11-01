@@ -17,6 +17,7 @@ enum class ModalType
   Info,     ///< Informational modal with a single OK button.
   Confirm,  ///< Confirmation modal with Yes/No buttons.
   OpenWith, ///< Application chooser with a scrollable list.
+  Settings, ///< Application settings modal.
 };
 
 /**
@@ -85,6 +86,19 @@ struct Modal
     type = ModalType::Confirm;
     title = t;
     message = msg;
+    result = ModalResult::None;
+    focus = 0;
+  }
+
+  /**
+   * @brief Opens the settings modal.
+   */
+  void openSettings()
+  {
+    active = true;
+    type = ModalType::Settings;
+    title = "Settings";
+    message = "Settings will be implemented here.";
     result = ModalResult::None;
     focus = 0;
   }
