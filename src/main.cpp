@@ -1525,7 +1525,8 @@ static void windowCloseCallback(GLFWwindow* window)
  */
 static bool parseDesktopFile(const std::string& path,
                              std::string& pName,
-                             std::string& pExec)
+                             std::string& pExec,
+                             std::string& outMime)
 {
   std::ifstream in(path);
   if (!in)
@@ -1534,6 +1535,7 @@ static bool parseDesktopFile(const std::string& path,
   }
   pName.clear();
   pExec.clear();
+  outMime.clear();
   bool inGroup = false;
   bool noDisplay = false;
   bool hidden = false;
@@ -1567,6 +1569,10 @@ static bool parseDesktopFile(const std::string& path,
     else if (key == "Exec" && pExec.empty())
     {
       pExec = val;
+    }
+    else if (key == "MimeType")
+    {
+      outMime = val;
     }
     else if (key == "NoDisplay" && val == "true")
     {
@@ -1656,6 +1662,33 @@ static std::vector<std::string> splitCommand(const std::string& s)
 }
 
 /**
+ * @brief Determines the MIME type of a file using xdg-mime.
+ * @param path Absolute path to the file.
+ * @return MIME type string, or empty on failure.
+ */
+static std::string getMimeType(const std::string& path)
+{
+  std::string cmd = "xdg-mime query filetype \"" + path + "\" 2>/dev/null";
+  FILE* p = popen(cmd.c_str(), "r");
+  if (p == nullptr)
+  {
+    return std::string();
+  }
+  char buf[256];
+  std::string res;
+  if (std::fgets(buf, sizeof(buf), p) != nullptr)
+  {
+    res = buf;
+    while (!res.empty() && (res.back() == '\n' || res.back() == '\r'))
+    {
+      res.pop_back();
+    }
+  }
+  pclose(p);
+  return res;
+}
+
+/**
  * @brief Collects launchable GUI applications from the standard
  *        freedesktop .desktop directories.
  *
@@ -1663,9 +1696,11 @@ static std::vector<std::string> splitCommand(const std::string& s)
  * and each entry of $XDG_DATA_DIRS/applications. Duplicate desktop-file
  * ids keep the first occurrence. The result is sorted by display name.
  *
+ * @param mimeType If non-empty, only applications that declare support
+ *                 for this MIME type (or its superclass) are included.
  * @return Vector of MenuItem, one per launchable application.
  */
-static std::vector<MenuItem> collectOpenWithApps()
+static std::vector<MenuItem> collectOpenWithApps(const std::string& mimeType)
 {
   std::vector<std::string> dirs;
   const char* xdgHome = std::getenv("XDG_DATA_HOME");
@@ -1755,9 +1790,57 @@ static std::vector<MenuItem> collectOpenWithApps()
 
       std::string appName;
       std::string appExec;
-      if (!parseDesktopFile(files[fi].string(), appName, appExec))
+      std::string appMime;
+      if (!parseDesktopFile(files[fi].string(), appName, appExec, appMime))
       {
         continue;
+      }
+      if (!mimeType.empty())
+      {
+        bool match = false;
+        size_t start = 0;
+        while (start < appMime.size())
+        {
+          size_t semi = appMime.find(';', start);
+          if (semi == std::string::npos)
+          {
+            semi = appMime.size();
+          }
+          std::string m = appMime.substr(start, semi - start);
+          if (m == mimeType)
+          {
+            match = true;
+          }
+          else if (m == "image/*" && mimeType.rfind("image/", 0) == 0)
+          {
+            match = true;
+          }
+          else if (m == "text/*" && mimeType.rfind("text/", 0) == 0)
+          {
+            match = true;
+          }
+          else if (m == "audio/*" && mimeType.rfind("audio/", 0) == 0)
+          {
+            match = true;
+          }
+          else if (m == "video/*" && mimeType.rfind("video/", 0) == 0)
+          {
+            match = true;
+          }
+          else if (m == "application/*" && mimeType.rfind("application/", 0) == 0)
+          {
+            match = true;
+          }
+          start = semi + 1;
+          if (match)
+          {
+            break;
+          }
+        }
+        if (!match)
+        {
+          continue;
+        }
       }
       MenuItem item;
       item.label = appName;
@@ -2448,8 +2531,8 @@ static void drawModal(
     nvgRoundedRect(vg, owX, owY, owW, owH, 6.0f);
     nvgFillColor(vg, nvgRGBf(0.22f, 0.22f, 0.22f));
     nvgFill(vg);
-    nvgStrokeColor(vg, nvgRGBf(0.1f, 0.1f, 0.1f));
-    nvgStrokeWidth(vg, 1.0f);
+    nvgStrokeColor(vg, nvgRGBf(0.4f, 0.4f, 0.4f));
+    nvgStrokeWidth(vg, 2.0f);
     nvgStroke(vg);
 
     nvgFontFace(vg, "sans");
@@ -2499,11 +2582,18 @@ static void drawModal(
       }
       bool hover = inRect(g_mouseX, g_mouseY, owX + 8.0f, iy, owW - 16.0f, listItemH);
       bool selected = (i == modal.openWithSelected);
+      if ((i % 2) == 0)
+      {
+        nvgBeginPath(vg);
+        nvgRect(vg, owX + 8.0f, iy, owW - 16.0f, listItemH);
+        nvgFillColor(vg, nvgRGBAf(1.0f, 1.0f, 1.0f, 0.04f));
+        nvgFill(vg);
+      }
       if (selected || hover)
       {
         nvgBeginPath(vg);
         nvgRect(vg, owX + 8.0f, iy, owW - 16.0f, listItemH);
-        nvgFillColor(vg, selected ? nvgRGBf(0.35f, 0.45f, 0.6f) : nvgRGBf(0.28f, 0.28f, 0.28f));
+        nvgFillColor(vg, selected ? nvgRGBf(0.35f, 0.45f, 0.6f) : nvgRGBf(0.3f, 0.3f, 0.3f));
         nvgFill(vg);
       }
       if (hover)
@@ -5389,7 +5479,13 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
         const auto& entries = app.fm.entries();
         if (rowIdx < static_cast<int>(entries.size()))
         {
-          std::vector<MenuItem> apps = collectOpenWithApps();
+          std::string full = joinPath(app.fm.currentPath(), entries[rowIdx].name);
+          std::string mime = getMimeType(full);
+          std::vector<MenuItem> apps = collectOpenWithApps(mime);
+          if (apps.empty() && !mime.empty())
+          {
+            apps = collectOpenWithApps("");
+          }
           std::vector<std::string> labels;
           std::vector<std::string> execs;
           labels.reserve(apps.size());
@@ -5399,7 +5495,6 @@ static void executeMenuAction(AppState& app, MenuAction action, int rowIdx)
             labels.push_back(apps[i].label);
             execs.push_back(apps[i].exec);
           }
-          std::string full = joinPath(app.fm.currentPath(), entries[rowIdx].name);
           app.modal.openOpenWith(full, labels, execs);
           app.pendingConfirm = PendingConfirm::OpenWith;
         }
