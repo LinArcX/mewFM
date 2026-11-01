@@ -166,6 +166,7 @@ namespace
     RestoreEntry, ///< Confirming a restore over an existing file.
     EmptyTrash,   ///< Confirming an Empty Trash operation.
     EditorClose,  ///< Confirming that unsaved editor changes may be discarded.
+    WindowClose,  ///< Confirming that unsaved editor changes may be discarded when closing the window.
   };
 
   /**
@@ -280,6 +281,7 @@ namespace
     float sidebarAnim = 1.0f;                          ///< Sidebar slide animation progress (0..1).
     float previewAnim = 1.0f;                          ///< Preview panel slide animation progress (0..1).
     float sidebarScrollY = 0.0f;                       ///< Vertical scroll offset of the sidebar.
+    GLFWwindow* window = nullptr;                      ///< Owning GLFW window (set once at startup).
   };
 
   float g_mouseX = 0.0f;
@@ -1108,6 +1110,7 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
     if (modalActive)
     {
       app->modal.close();
+      app->pendingConfirm = PendingConfirm::None;
       return;
     }
     return;
@@ -1385,6 +1388,30 @@ static void scrollCallback(GLFWwindow* window, double x, double y)
     return;
   }
   g_scrollY += static_cast<float>(y);
+}
+
+/**
+ * @brief GLFW window-close callback; asks before discarding unsaved editor changes.
+ * @param window GLFW window handle.
+ */
+static void windowCloseCallback(GLFWwindow* window)
+{
+  AppState* app = static_cast<AppState*>(glfwGetWindowUserPointer(window));
+  if (app == nullptr)
+  {
+    return;
+  }
+  if (app->modal.active || app->textInput.active)
+  {
+    glfwSetWindowShouldClose(window, GLFW_FALSE);
+    return;
+  }
+  if (app->editor.active && app->editor.dirty)
+  {
+    glfwSetWindowShouldClose(window, GLFW_FALSE);
+    app->modal.openConfirm("Unsaved Changes", "Save before closing?");
+    app->pendingConfirm = PendingConfirm::WindowClose;
+  }
 }
 
 /**
@@ -3973,7 +4000,7 @@ static void handleModalResult(AppState& app)
   PendingConfirm pending = app.pendingConfirm;
   app.pendingConfirm = PendingConfirm::None;
 
-  if (pending == PendingConfirm::EditorClose)
+  if (pending == PendingConfirm::EditorClose || pending == PendingConfirm::WindowClose)
   {
     if (r == ModalResult::Yes)
     {
@@ -3987,10 +4014,18 @@ static void handleModalResult(AppState& app)
         return;
       }
     }
+    else if (r != ModalResult::No)
+    {
+      return;
+    }
     app.editor.active = false;
     app.editor.lines.clear();
     app.editor.path.clear();
     app.editor.dirty = false;
+    if (pending == PendingConfirm::WindowClose && app.window != nullptr)
+    {
+      glfwSetWindowShouldClose(app.window, GLFW_TRUE);
+    }
     return;
   }
 
@@ -4995,6 +5030,7 @@ int main(int argc, char** argv)
   glfwSetCursorPosCallback(window, cursorPosCallback);
   glfwSetMouseButtonCallback(window, mouseButtonCallback);
   glfwSetScrollCallback(window, scrollCallback);
+  glfwSetWindowCloseCallback(window, windowCloseCallback);
 
   NVGcontext* vg = nvgCreateGL2(NVG_ANTIALIAS | NVG_STENCIL_STROKES);
   if (!vg)
@@ -5021,6 +5057,7 @@ int main(int argc, char** argv)
 
   AppState app;
   glfwSetWindowUserPointer(window, &app);
+  app.window = window;
   app.sections = buildSections();
   app.lastPath = app.fm.currentPath();
   loadConfig(app);
