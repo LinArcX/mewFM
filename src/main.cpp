@@ -5528,6 +5528,27 @@ static std::vector<MenuItem> menuItemsFor(const AppState& app, MenuKind kind)
 }
 
 /**
+ * @brief Filters the menu items to only include those that are currently enabled.
+ * @param app  Application state.
+ * @param kind Which context menu is open.
+ * @return Vector of enabled MenuItem.
+ */
+static std::vector<MenuItem> getEnabledMenuItems(const AppState& app, MenuKind kind)
+{
+  std::vector<MenuItem> rawItems = menuItemsFor(app, kind);
+  std::vector<MenuItem> items;
+  items.reserve(rawItems.size());
+  for (size_t i = 0; i < rawItems.size(); i++)
+  {
+    if (menuItemEnabled(app, rawItems[i], app.menuRowIndex))
+    {
+      items.push_back(rawItems[i]);
+    }
+  }
+  return items;
+}
+
+/**
  * @brief Returns the action of the menu item currently under the mouse, if any.
  * @param app Application state.
  * @param w   Window width.
@@ -5540,7 +5561,7 @@ static MenuAction handleMenuClick(const AppState& app, float w, float h)
   {
     return MenuAction::None;
   }
-  std::vector<MenuItem> items = menuItemsFor(app, app.menuKind);
+  std::vector<MenuItem> items = getEnabledMenuItems(app, app.menuKind);
   const int count = static_cast<int>(items.size());
   float menuH = kMenuPadY * 2.0f + kMenuItemHeight * static_cast<float>(count);
 
@@ -5562,7 +5583,7 @@ static MenuAction handleMenuClick(const AppState& app, float w, float h)
     {
       if (items[i].submenu.empty())
       {
-        return menuItemEnabled(app, items[i], app.menuRowIndex) ? items[i].action : MenuAction::None;
+        return items[i].action;
       }
       float subX = mx + kMenuWidth;
       if (subX + kMenuWidth > w)
@@ -6001,7 +6022,7 @@ static void drawContextMenu(
   {
     return;
   }
-  std::vector<MenuItem> items = menuItemsFor(app, app.menuKind);
+  std::vector<MenuItem> items = getEnabledMenuItems(app, app.menuKind);
   const int count = static_cast<int>(items.size());
   float menuH = kMenuPadY * 2.0f + kMenuItemHeight * static_cast<float>(count);
 
@@ -6040,16 +6061,14 @@ static void drawContextMenu(
   {
     float iy = my + kMenuPadY + static_cast<float>(i) * kMenuItemHeight;
     bool hover = inRect(g_mouseX, g_mouseY, mx, iy, kMenuWidth, kMenuItemHeight);
-    bool enabled = menuItemEnabled(app, items[i], app.menuRowIndex);
-    if (hover && enabled)
+    if (hover)
     {
       nvgBeginPath(vg);
       nvgRect(vg, mx + 1.0f, iy, kMenuWidth - 2.0f, kMenuItemHeight);
       nvgFillColor(vg, nvgRGBf(0.3f, 0.3f, 0.3f));
       nvgFill(vg);
     }
-    nvgFillColor(vg, enabled ? nvgRGBf(0.9f, 0.9f, 0.9f)
-                             : nvgRGBf(0.5f, 0.5f, 0.5f));
+    nvgFillColor(vg, nvgRGBf(0.9f, 0.9f, 0.9f));
     std::string shownLabel = truncateToWidth(vg, items[i].label, kMenuWidth - (items[i].submenu.empty() ? 20.0f : 32.0f));
     nvgText(vg, mx + 10.0f, iy + kMenuItemHeight * 0.5f, shownLabel.c_str(), nullptr);
     if (!items[i].submenu.empty())
