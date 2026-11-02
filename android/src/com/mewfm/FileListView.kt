@@ -59,6 +59,8 @@ class FileListView(context: Context) : View(context) {
     private var lastY = 0f
 
     private var selIdx = -1
+    private var selectionMode = false
+    private val selectedIndices = mutableSetOf<Int>()
     private var pressIdx = -1
     private var lastTapT = 0L
     private var lastTapIdx = -1
@@ -97,6 +99,7 @@ class FileListView(context: Context) : View(context) {
     fun showToast(msg: String) { toastMsg = msg; toastT = SystemClock.uptimeMillis(); invalidate() }
 
     fun navigateTo(path: String) {
+        exitSelectionMode()
         fm.setPathAsync(path) { success ->
             if (success) {
                 selIdx = -1; scrollY = 0f; dirFadeT = SystemClock.uptimeMillis(); invalidate()
@@ -178,7 +181,13 @@ class FileListView(context: Context) : View(context) {
             pressIdx = -1
             rippleIdx = -1
             invalidate()
-            showContextMenu(x, y, idx)
+            if (idx in fm.entries.indices) {
+                if (selectionMode) toggleSelection(idx)
+                else enterSelectionMode(idx)
+            } else {
+                if (selectionMode) exitSelectionMode()
+                else showEmptyContextMenu()
+            }
         }
         longPressRunnable = r
         longPressHandler.postDelayed(r, 500L)
@@ -189,35 +198,19 @@ class FileListView(context: Context) : View(context) {
         longPressRunnable = null
     }
 
-    private fun showContextMenu(x: Float, y: Float, idx: Int) {
-        val builder = AlertDialog.Builder(context)
-        if (idx >= 0) {
-            val e = fm.entries[idx]
-            selIdx = idx
-            invalidate()
-            val options: List<Pair<String, () -> Unit>> = listOf(
-                "Open" to { openEntry(idx) },
-                "Rename" to { promptRename(idx) },
-                "Delete" to { confirmDelete(idx) },
-                "Copy" to { fm.copyEntries(listOf(e.name)); showToast("Copied") },
-                "Cut" to { fm.cutEntries(listOf(e.name)); showToast("Cut") }
-            )
-            builder.setTitle(e.name).setItems(options.map { it.first }.toTypedArray()) { _, which ->
-                options[which].second()
-            }
-        } else {
-            val options = mutableListOf<Pair<String, () -> Unit>>()
-            if (fm.clipboardMode != ClipboardMode.None) {
-                options.add("Paste" to { doPaste() })
-            }
-            options.add("New Folder" to { promptForName("New Folder") { fm.createDirectory(it); invalidate() } })
-            options.add("New File" to { promptForName("New File") { fm.createFile(it); invalidate() } })
-            options.add("Refresh" to { fm.refresh(); invalidate() })
-            builder.setItems(options.map { it.first }.toTypedArray()) { _, which ->
-                options[which].second()
-            }
+    private fun showEmptyContextMenu() {
+        val options = mutableListOf<Pair<String, () -> Unit>>()
+        if (fm.clipboardMode != ClipboardMode.None) {
+            options.add("Paste" to { doPaste() })
         }
-        builder.show()
+        options.add("New Folder" to { promptForName("New Folder") { fm.createDirectory(it); invalidate() } })
+        options.add("New File" to { promptForName("New File") { fm.createFile(it); invalidate() } })
+        options.add("Refresh" to { fm.refresh(); invalidate() })
+        AlertDialog.Builder(context)
+            .setItems(options.map { it.first }.toTypedArray()) { _, which ->
+                options[which].second()
+            }
+            .show()
     }
 
     private fun doPaste() {
@@ -229,7 +222,7 @@ class FileListView(context: Context) : View(context) {
     }
 
     private fun promptRename(idx: Int) {
-        val e = fm.entries[idx]
+        val e = fm.entries.getOrNull(idx) ?: return
         val input = EditText(context)
         input.setText(e.name)
         input.setSelection(e.name.length)
@@ -239,6 +232,7 @@ class FileListView(context: Context) : View(context) {
             .setPositiveButton("OK") { _, _ ->
                 val newName = input.text.toString()
                 if (newName.isNotEmpty() && newName != e.name) {
+                    exitSelectionMode()
                     if (fm.renameEntry(e.name, newName)) showToast("Renamed")
                     else showToast("Rename failed")
                     invalidate()
@@ -260,6 +254,159 @@ class FileListView(context: Context) : View(context) {
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    private fun enterSelectionMode(idx: Int) {
+        selectionMode = true
+        selectedIndices.clear()
+        if (idx >= 0) selectedIndices.add(idx)
+        selIdx = -1
+        invalidate()
+    }
+
+    private fun exitSelectionMode() {
+        if (!selectionMode) return
+        selectionMode = false
+        selectedIndices.clear()
+        invalidate()
+    }
+
+    private fun toggleSelection(idx: Int) {
+        if (selectedIndices.contains(idx)) selectedIndices.remove(idx)
+        else selectedIndices.add(idx)
+        if (selectedIndices.isEmpty()) exitSelectionMode()
+        else invalidate()
+    }
+
+    private fun selectAll() {
+        selectedIndices.clear()
+        for (i in fm.entries.indices) selectedIndices.add(i)
+        invalidate()
+    }
+
+    fun handleBack(): Boolean {
+        if (selectionMode) {
+            exitSelectionMode()
+            return true
+        }
+        return false
+    }
+
+    private fun getSelectionBarButtonRects(): List<Pair<String, RectF>> {
+        val rects = mutableListOf<Pair<String, RectF>>()
+        val btnH = dp(34f)
+        val cy = topBarH / 2
+        val top = cy - btnH / 2
+        val bot = cy + btnH / 2
+        rects.add("close" to RectF(padX, top, padX + dp(36f), bot))
+        val showMore = selectedIndices.size == 1
+        val moreW = dp(58f)
+        val allW = dp(46f)
+        val delW = dp(46f)
+        val cutW = dp(46f)
+        val copyW = dp(54f)
+        var ax = width - padX
+        rects.add("All" to RectF(ax - allW, top, ax, bot)); ax -= allW + dp(4f)
+        rects.add("Del" to RectF(ax - delW, top, ax, bot)); ax -= delW + dp(4f)
+        rects.add("Cut" to RectF(ax - cutW, top, ax, bot)); ax -= cutW + dp(4f)
+        rects.add("Copy" to RectF(ax - copyW, top, ax, bot)); ax -= copyW + dp(4f)
+        if (showMore) {
+            rects.add("More" to RectF(ax - moreW, top, ax, bot))
+        }
+        return rects
+    }
+
+    private fun handleSelectionBarTap(x: Float) {
+        for ((name, rect) in getSelectionBarButtonRects()) {
+            if (x >= rect.left && x <= rect.right) {
+                when (name) {
+                    "close" -> exitSelectionMode()
+                    "Copy" -> {
+                        val names = selectedIndices.mapNotNull { fm.entries.getOrNull(it)?.name }
+                        if (fm.copyEntries(names)) showToast("Copied ${names.size} item${if (names.size != 1) "s" else ""}")
+                        exitSelectionMode()
+                    }
+                    "Cut" -> {
+                        val names = selectedIndices.mapNotNull { fm.entries.getOrNull(it)?.name }
+                        if (fm.cutEntries(names)) showToast("Cut ${names.size} item${if (names.size != 1) "s" else ""}")
+                        exitSelectionMode()
+                    }
+                    "Del" -> performBatchDelete()
+                    "All" -> selectAll()
+                    "More" -> showMoreMenu()
+                }
+                return
+            }
+        }
+    }
+
+    private fun performBatchDelete() {
+        val count = selectedIndices.size
+        if (count == 0) return
+        AlertDialog.Builder(context)
+            .setTitle("Delete")
+            .setMessage("Permanently delete $count item${if (count != 1) "s" else ""}?")
+            .setPositiveButton("Delete") { _, _ ->
+                val names = selectedIndices.mapNotNull { fm.entries.getOrNull(it)?.name }
+                var ok = true
+                for (n in names) if (!fm.deleteEntry(n)) ok = false
+                if (ok) showToast("Deleted") else showToast("Some items failed to delete")
+                exitSelectionMode()
+                invalidate()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showMoreMenu() {
+        if (selectedIndices.size != 1) return
+        val idx = selectedIndices.first()
+        val e = fm.entries.getOrNull(idx) ?: return
+        val options: List<Pair<String, () -> Unit>> = listOf(
+            "Open" to { exitSelectionMode(); openEntry(idx) },
+            "Rename" to { promptRename(idx) },
+            "Copy" to { fm.copyEntries(listOf(e.name)); showToast("Copied"); exitSelectionMode() },
+            "Cut" to { fm.cutEntries(listOf(e.name)); showToast("Cut"); exitSelectionMode() }
+        )
+        AlertDialog.Builder(context)
+            .setTitle(e.name)
+            .setItems(options.map { it.first }.toTypedArray()) { _, which ->
+                options[which].second()
+            }
+            .show()
+    }
+
+    private fun drawSelectionBar(c: Canvas) {
+        val rects = getSelectionBarButtonRects()
+        val cy = topBarH / 2
+        text.color = cText
+        text.textSize = dp(15f)
+        val title = "${selectedIndices.size} selected"
+        val titleX = padX + dp(48f)
+        val copyRect = rects.firstOrNull { it.first == "Copy" }
+        val titleMaxW = (copyRect?.second?.left ?: width.toFloat()) - titleX - dp(8f)
+        if (titleMaxW > 0) {
+            c.save()
+            c.clipRect(titleX, 0f, titleX + titleMaxW, topBarH)
+            c.drawText(title, titleX, cy + dp(5f), text)
+            c.restore()
+        }
+        text.textSize = dp(13f)
+        for ((name, rect) in rects) {
+            if (name == "close") {
+                stroke.color = cText; stroke.strokeWidth = dp(2f)
+                val ccx = rect.centerX()
+                c.drawLine(ccx - dp(7f), cy - dp(7f), ccx + dp(7f), cy + dp(7f), stroke)
+                c.drawLine(ccx - dp(7f), cy + dp(7f), ccx + dp(7f), cy - dp(7f), stroke)
+            } else {
+                fill.color = Color.rgb(55, 55, 55)
+                c.drawRoundRect(rect, dp(4f), dp(4f), fill)
+                text.color = cText
+                val tw = text.measureText(name)
+                c.drawText(name, rect.centerX() - tw / 2, cy + dp(5f), text)
+            }
+        }
+        text.textSize = dp(14f)
     }
 
     private fun startFling(vel: Float) {
@@ -297,23 +444,33 @@ class FileListView(context: Context) : View(context) {
             return
         }
         if (y < topBarH) {
+            if (selectionMode) { handleSelectionBarTap(x); return }
             if (x < padX + btnSize) { sidebarOpen = !sidebarOpen; postInvalidateOnAnimation(); return }
             if (x < padX + 2 * btnSize + dp(4f)) { goBack(); return }
             if (x < padX + 3 * btnSize + dp(8f)) { goUp(); return }
             return
         }
-        
-        val fabCx = width - dp(36f)
-        val fabCy = height - statusBarH - dp(36f)
-        val dx = x - fabCx
-        val dy = y - fabCy
-        if (dx * dx + dy * dy <= dp(30f) * dp(30f)) {
-            showFabMenu()
+
+        if (!selectionMode) {
+            val fabCx = width - dp(36f)
+            val fabCy = height - statusBarH - dp(36f)
+            val dx = x - fabCx
+            val dy = y - fabCy
+            if (dx * dx + dy * dy <= dp(30f) * dp(30f)) {
+                showFabMenu()
+                return
+            }
+        }
+
+        val idx = rowAt(y)
+        if (idx < 0) {
+            if (selectionMode) exitSelectionMode()
             return
         }
-        
-        val idx = rowAt(y)
-        if (idx < 0) return
+        if (selectionMode) {
+            toggleSelection(idx)
+            return
+        }
         val now = SystemClock.uptimeMillis()
         if (idx == lastTapIdx && now - lastTapT < 350) { openEntry(idx); lastTapIdx = -1 }
         else { selIdx = idx; lastTapIdx = idx; lastTapT = now }
@@ -381,13 +538,14 @@ class FileListView(context: Context) : View(context) {
 
         if (dirFadeT > 0 && now - dirFadeT < 220) postInvalidateOnAnimation()
         if (sidebarP > 0.01f) drawSidebar(c)
-        if (!sidebarOpen) drawFab(c)
+        if (!sidebarOpen && !selectionMode) drawFab(c)
         if (toastMsg.isNotEmpty()) drawToast(c, now)
     }
 
     private fun drawTopBar(c: Canvas) {
         fill.color = cTop; c.drawRect(0f, 0f, width.toFloat(), topBarH, fill)
         fill.color = cSep; c.drawRect(0f, topBarH - 1f, width.toFloat(), topBarH, fill)
+        if (selectionMode) { drawSelectionBar(c); return }
         val hy = topBarH / 2
         stroke.color = cText; stroke.strokeWidth = dp(2f)
         val hx = padX + btnSize / 2
@@ -428,7 +586,8 @@ class FileListView(context: Context) : View(context) {
             if (y > listTop + listH) break
             val e = fm.entries[i]
             if (i % 2 == 0) { fill.color = cStripe; c.drawRect(0f, y, width.toFloat(), y + rowH, fill) }
-            if (i == selIdx) { fill.color = cSel; c.drawRect(0f, y, width.toFloat(), y + rowH, fill) }
+            val isSel = if (selectionMode) selectedIndices.contains(i) else (i == selIdx)
+            if (isSel) { fill.color = cSel; c.drawRect(0f, y, width.toFloat(), y + rowH, fill) }
             else if (i == pressIdx) { fill.color = cPress; c.drawRect(0f, y, width.toFloat(), y + rowH, fill) }
             val ix = padX + dp(6f); val iy = y + rowH / 2
             fill.alpha = (255 * fade).toInt()

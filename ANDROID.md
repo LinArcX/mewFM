@@ -40,7 +40,11 @@ Currently implemented:
   minimal `FileContentProvider` (`android/src/com/mewfm/FileContentProvider.kt`)
 - Toast notifications
 - Ripple feedback, fling scrolling
-- Long-press context menu (row and empty space)
+- Multi-selection (long-press a row to enter; tap toggles; back exits)
+  with an action bar offering Copy, Cut, Delete, Select All, and More
+  (single-selection More exposes Open, Rename, Copy, Cut)
+- Long-press on empty list space opens a context menu (Paste, New Folder,
+  New File, Refresh)
 - Rename, permanent delete, copy, cut, paste
   (paste runs on a background executor and refreshes the listing on completion)
 
@@ -58,7 +62,6 @@ Everything below is missing compared with the desktop build:
 
 ### UI
 
-- Multi-selection (single selection only)
 - Tabs
 - Preview panel
 - Integrated text editor

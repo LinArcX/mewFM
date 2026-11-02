@@ -52,6 +52,6 @@ class MainActivity : Activity() {
     }
 
     override fun onBackPressed() {
-        view.goUp()
+        if (!view.handleBack()) view.goUp()
     }
 }
