@@ -40,6 +40,9 @@ Currently implemented:
   minimal `FileContentProvider` (`android/src/com/mewfm/FileContentProvider.kt`)
 - Toast notifications
 - Ripple feedback, fling scrolling
+- Long-press context menu (row and empty space)
+- Rename, permanent delete, copy, cut, paste
+  (paste runs on a background executor and refreshes the listing on completion)
 
 ## Known gaps
 
@@ -47,9 +50,7 @@ Everything below is missing compared with the desktop build:
 
 ### File operations
 
-- Copy, cut, paste, move (no clipboard state)
-- Rename
-- Permanent delete
+- Paste progress UI (paste runs asynchronously but only shows a start/finish toast)
 - Trash (no Android equivalent path implemented)
 - Archive extraction
 - Properties dialog
@@ -57,7 +58,6 @@ Everything below is missing compared with the desktop build:
 
 ### UI
 
-- Context menu (no long-press handler)
 - Multi-selection (single selection only)
 - Tabs
 - Preview panel
@@ -83,21 +83,6 @@ Everything below is missing compared with the desktop build:
 - Storage-volume enumeration (only `/storage/emulated/0` is assumed)
 
 ## Known issues
-
-### Thread safety
-
-The `FileManager` class comment says "all calls must happen on the same
-thread", but `setPathAsync`, `goBackAsync`, and `goUpAsync` all call
-`loadPath()` on a background executor. `loadPath()` mutates `currentPath`,
-`unfiltered`, `entryList`, and runs `sortEntries()`. This races with UI
-reads of `entries`. Needs a proper synchronized snapshot or a main-thread
-copy step.
-
-### Package name mismatch
-
-`AndroidManifest.xml` uses `package="com.mewfm"`, but several commands in
-the `p` menu target `com.mewrm` (for example `am start -n com.mewrm/.MainActivity`,
-`uninstall com.mewrm`, `logcat | grep -i mewRM`). Those commands will fail.
 
 ### Deprecated API
 

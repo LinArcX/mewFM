@@ -6,6 +6,8 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.*
 import android.net.Uri
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.VelocityTracker
@@ -64,6 +66,10 @@ class FileListView(context: Context) : View(context) {
     private var downY = 0f
     private var downT = 0L
 
+    private val longPressHandler = Handler(Looper.getMainLooper())
+    private var longPressRunnable: Runnable? = null
+    private var longPressFired = false
+
     private var rippleX = 0f
     private var rippleY = 0f
     private var rippleT = 0L
@@ -110,6 +116,7 @@ class FileListView(context: Context) : View(context) {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = x; downY = y; downT = now; lastY = y
+                longPressFired = false
                 if (!scroller.isFinished) scroller.abortAnimation()
                 if (sidebarP > 0.5f && x > sidebarW * sidebarP) {
                     sidebarOpen = false; postInvalidateOnAnimation(); return true
@@ -119,17 +126,29 @@ class FileListView(context: Context) : View(context) {
                     pressIdx = idx; rippleIdx = idx
                     rippleX = x; rippleY = y; rippleT = now
                     invalidate()
+                    scheduleLongPress(x, y, idx)
+                } else if (y >= topBarH + headerH) {
+                    scheduleLongPress(x, y, -1)
                 }
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
                 val dy = y - lastY
+                val moved = abs(x - downX) > dp(8f) || abs(y - downY) > dp(8f)
+                if (moved) cancelPendingLongPress()
                 if (abs(y - downY) > dp(8f) && pressIdx >= 0) { pressIdx = -1; rippleIdx = -1 }
                 if (abs(y - downY) > dp(8f) && sidebarP < 0.01f) { scrollY -= dy; clampScroll(); invalidate() }
                 lastY = y
                 return true
             }
             MotionEvent.ACTION_UP -> {
+                cancelPendingLongPress()
+                if (longPressFired) {
+                    longPressFired = false
+                    if (pressIdx >= 0) { pressIdx = -1; invalidate() }
+                    vt?.recycle(); vt = null
+                    return true
+                }
                 val dx = abs(x - downX); val dy = abs(y - downY)
                 val wasScroll = dy > dp(8f) && sidebarP < 0.01f
                 if (!wasScroll && dx < dp(10f) && now - downT < 350) handleTap(x, y)
@@ -143,12 +162,104 @@ class FileListView(context: Context) : View(context) {
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
+                cancelPendingLongPress()
                 pressIdx = -1; rippleIdx = -1
                 vt?.recycle(); vt = null
                 invalidate(); return true
             }
         }
         return super.onTouchEvent(e)
+    }
+
+    private fun scheduleLongPress(x: Float, y: Float, idx: Int) {
+        cancelPendingLongPress()
+        val r = Runnable {
+            longPressFired = true
+            pressIdx = -1
+            rippleIdx = -1
+            invalidate()
+            showContextMenu(x, y, idx)
+        }
+        longPressRunnable = r
+        longPressHandler.postDelayed(r, 500L)
+    }
+
+    private fun cancelPendingLongPress() {
+        longPressRunnable?.let { longPressHandler.removeCallbacks(it) }
+        longPressRunnable = null
+    }
+
+    private fun showContextMenu(x: Float, y: Float, idx: Int) {
+        val builder = AlertDialog.Builder(context)
+        if (idx >= 0) {
+            val e = fm.entries[idx]
+            selIdx = idx
+            invalidate()
+            val options: List<Pair<String, () -> Unit>> = listOf(
+                "Open" to { openEntry(idx) },
+                "Rename" to { promptRename(idx) },
+                "Delete" to { confirmDelete(idx) },
+                "Copy" to { fm.copyEntries(listOf(e.name)); showToast("Copied") },
+                "Cut" to { fm.cutEntries(listOf(e.name)); showToast("Cut") }
+            )
+            builder.setTitle(e.name).setItems(options.map { it.first }.toTypedArray()) { _, which ->
+                options[which].second()
+            }
+        } else {
+            val options = mutableListOf<Pair<String, () -> Unit>>()
+            if (fm.clipboardMode != ClipboardMode.None) {
+                options.add("Paste" to { doPaste() })
+            }
+            options.add("New Folder" to { promptForName("New Folder") { fm.createDirectory(it); invalidate() } })
+            options.add("New File" to { promptForName("New File") { fm.createFile(it); invalidate() } })
+            options.add("Refresh" to { fm.refresh(); invalidate() })
+            builder.setItems(options.map { it.first }.toTypedArray()) { _, which ->
+                options[which].second()
+            }
+        }
+        builder.show()
+    }
+
+    private fun doPaste() {
+        showToast("Pasting...")
+        fm.pasteAsync { success ->
+            if (success) showToast("Pasted") else showToast("Paste failed")
+            invalidate()
+        }
+    }
+
+    private fun promptRename(idx: Int) {
+        val e = fm.entries[idx]
+        val input = EditText(context)
+        input.setText(e.name)
+        input.setSelection(e.name.length)
+        AlertDialog.Builder(context)
+            .setTitle("Rename")
+            .setView(input)
+            .setPositiveButton("OK") { _, _ ->
+                val newName = input.text.toString()
+                if (newName.isNotEmpty() && newName != e.name) {
+                    if (fm.renameEntry(e.name, newName)) showToast("Renamed")
+                    else showToast("Rename failed")
+                    invalidate()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun confirmDelete(idx: Int) {
+        val e = fm.entries[idx]
+        AlertDialog.Builder(context)
+            .setTitle("Delete")
+            .setMessage("Permanently delete \"${e.name}\"?")
+            .setPositiveButton("Delete") { _, _ ->
+                if (fm.deleteEntry(e.name)) showToast("Deleted")
+                else showToast("Delete failed")
+                invalidate()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun startFling(vel: Float) {

@@ -361,7 +361,7 @@ menu () {
       APK_LIST=$(
         find "$DEBUG_DIR" "$RELEASE_DIR" \
           -type f \
-          -name 'mewRM*.apk' \
+          -name 'mewFM*.apk' \
           2>/dev/null
       )
       
@@ -388,20 +388,20 @@ menu () {
       echo "  $APK"
       adb -s 127.0.0.1:5555 install -r "$APK"
 
-      echo "--> Running mewRM..."
-      adb -s 127.0.0.1:5555 shell am start -n com.mewrm/.MainActivity
+      echo "--> Running mewFM..."
+      adb -s 127.0.0.1:5555 shell am start -n com.mewfm/.MainActivity
       ;;
     "uninstall .apk from emulator")
-      adb -s 127.0.0.1:5555 uninstall com.mewrm
+      adb -s 127.0.0.1:5555 uninstall com.mewfm
       ;;
     "adb run")
-      adb -s 127.0.0.1:5555 shell am start -n com.mewrm/.MainActivity
+      adb -s 127.0.0.1:5555 shell am start -n com.mewfm/.MainActivity
       ;;
     "adb log")
-      adb -s 127.0.0.1:5555 logcat | grep -i mewRM
+      adb -s 127.0.0.1:5555 logcat | grep -i mewFM
       ;;
     "adb close apk")
-      adb -s 127.0.0.1:5555 shell am force-stop com.mewrm
+      adb -s 127.0.0.1:5555 shell am force-stop com.mewfm
       ;;
     "adb reboot android OS")
       adb -s 127.0.0.1:5555 reboot

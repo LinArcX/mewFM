@@ -5,6 +5,7 @@ import android.os.Looper
 import java.io.File
 import java.nio.file.Files
 import java.nio.file.LinkOption
+import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermission
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -16,6 +17,13 @@ import java.util.concurrent.Executors
  */
 enum class SortField {
     Name, Size, Type, Owner, Permissions, DateCreated, DateModified
+}
+
+/**
+ * Identifies the current mode of the internal clipboard.
+ */
+enum class ClipboardMode {
+    None, Copy, Cut
 }
 
 /**
@@ -44,10 +52,14 @@ data class Entry(
  * Browsing state for a single directory view.
  *
  * Loads the current directory into memory, applies the filter and sort,
- * exposes back/forward/up navigation, and (in later tasks) will drive
- * long-running copy/move operations.
+ * exposes back/forward/up navigation, and drives long-running copy/move
+ * operations.
  *
- * NOT thread-safe: all calls must happen on the same thread (the UI thread).
+ * Must be used from the main (UI) thread. The `Async` variants
+ * ([setPathAsync], [goBackAsync], [goUpAsync], [pasteAsync]) perform
+ * their filesystem work on a background executor but commit the
+ * resulting state back on the main thread, so [entries] and
+ * [currentPath] are never observed in a partially updated state.
  */
 class FileManager {
     private val executor = Executors.newSingleThreadExecutor()
@@ -67,6 +79,12 @@ class FileManager {
         private set
     var filter: String = ""
         private set
+
+    var clipboardMode: ClipboardMode = ClipboardMode.None
+        private set
+    private val clipboardNames = mutableListOf<String>()
+    private var clipboardSource: String = ""
+    private var pasteInProgress: Boolean = false
 
     private val entryList = mutableListOf<Entry>()
     private val unfiltered = mutableListOf<Entry>()
@@ -94,10 +112,12 @@ class FileManager {
             return
         }
         val old = currentPath
+        val hidden = showHidden
         executor.execute {
-            val success = loadPath(path)
+            val newEntries = buildEntries(path, hidden)
             handler.post {
-                if (success) {
+                if (newEntries != null) {
+                    commitPath(path, newEntries)
                     backStack.addLast(old)
                     forwardStack.clear()
                     onComplete(true)
@@ -112,10 +132,12 @@ class FileManager {
         if (backStack.isEmpty()) { onComplete(false); return }
         val target = backStack.removeLast()
         val old = currentPath
+        val hidden = showHidden
         executor.execute {
-            val success = loadPath(target)
+            val newEntries = buildEntries(target, hidden)
             handler.post {
-                if (success) {
+                if (newEntries != null) {
+                    commitPath(target, newEntries)
                     forwardStack.addLast(old)
                     onComplete(true)
                 } else {
@@ -229,23 +251,156 @@ class FileManager {
         }
     }
 
-    private fun loadPath(path: String): Boolean {
+    fun renameEntry(oldName: String, newName: String): Boolean {
+        if (oldName.isEmpty() || newName.isEmpty()) return false
+        if (oldName == newName) return true
+        if (oldName.contains('/') || newName.contains('/')) return false
+        val src = File(currentPath, oldName)
+        val dst = File(currentPath, newName)
+        if (!src.exists() || dst.exists()) return false
+        if (!src.renameTo(dst)) return false
+        loadPath(currentPath)
+        return true
+    }
+
+    fun deleteEntry(name: String): Boolean {
+        if (name.isEmpty() || name == "." || name == "..") return false
+        if (name.contains('/')) return false
+        val f = File(currentPath, name)
+        if (!f.exists()) return false
+        if (!f.deleteRecursively()) return false
+        loadPath(currentPath)
+        return true
+    }
+
+    fun copyEntries(names: List<String>): Boolean {
+        if (names.isEmpty()) return false
+        for (n in names) {
+            if (n.isEmpty() || n == "." || n == ".." || n.contains('/')) return false
+            if (!File(currentPath, n).exists()) return false
+        }
+        clipboardNames.clear()
+        clipboardNames.addAll(names)
+        clipboardSource = currentPath
+        clipboardMode = ClipboardMode.Copy
+        return true
+    }
+
+    fun cutEntries(names: List<String>): Boolean {
+        if (names.isEmpty()) return false
+        for (n in names) {
+            if (n.isEmpty() || n == "." || n == ".." || n.contains('/')) return false
+            if (!File(currentPath, n).exists()) return false
+        }
+        clipboardNames.clear()
+        clipboardNames.addAll(names)
+        clipboardSource = currentPath
+        clipboardMode = ClipboardMode.Cut
+        return true
+    }
+
+    fun pasteAsync(onComplete: (Boolean) -> Unit) {
+        if (pasteInProgress) { onComplete(false); return }
+        if (clipboardMode == ClipboardMode.None || clipboardNames.isEmpty()) { onComplete(false); return }
+        if (clipboardMode == ClipboardMode.Cut && clipboardSource == currentPath) { onComplete(false); return }
+        pasteInProgress = true
+        val mode = clipboardMode
+        val source = clipboardSource
+        val names = clipboardNames.toList()
+        val dest = currentPath
+        executor.execute {
+            var success = true
+            for (name in names) {
+                val src = File(source, name)
+                if (!src.exists()) { success = false; break }
+                val dstName = uniqueNameIn(dest, name)
+                if (dstName.isEmpty()) { success = false; break }
+                val dst = File(dest, dstName)
+                if (!copyRecursive(src, dst)) { success = false; break }
+                if (mode == ClipboardMode.Cut) {
+                    if (!src.deleteRecursively()) { success = false; break }
+                }
+            }
+            handler.post {
+                pasteInProgress = false
+                if (success) {
+                    clipboardNames.clear()
+                    clipboardSource = ""
+                    clipboardMode = ClipboardMode.None
+                    loadPath(currentPath)
+                }
+                onComplete(success)
+            }
+        }
+    }
+
+    private fun uniqueNameIn(dir: String, name: String): String {
+        if (!File(dir, name).exists()) return name
+        val dot = name.lastIndexOf('.')
+        val stem = if (dot > 0) name.substring(0, dot) else name
+        val ext = if (dot > 0) name.substring(dot) else ""
+        var i = 2
+        while (i < 1000) {
+            val candidate = "$stem ($i)$ext"
+            if (!File(dir, candidate).exists()) return candidate
+            i++
+        }
+        return ""
+    }
+
+    private fun copyRecursive(src: File, dst: File): Boolean {
+        return try {
+            if (Files.isSymbolicLink(src.toPath())) {
+                val target = Files.readSymbolicLink(src.toPath())
+                Files.createSymbolicLink(dst.toPath(), target)
+            } else if (src.isDirectory) {
+                if (!dst.exists() && !dst.mkdirs()) return false
+                val children = src.listFiles() ?: return false
+                for (child in children) {
+                    if (!copyRecursive(child, File(dst, child.name))) return false
+                }
+            } else {
+                Files.copy(src.toPath(), dst.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            }
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun buildEntries(path: String, showHiddenFiles: Boolean): List<Entry>? {
         val dir = File(path)
-        if (!dir.isDirectory) return false
-        val children = runCatching { dir.listFiles() }.getOrNull() ?: return false
+        if (!dir.isDirectory) return null
+        val children = runCatching { dir.listFiles() }.getOrNull() ?: return null
 
         // Build into a temporary list first so a partial failure leaves
         // the manager on its previous directory.
         val newEntries = ArrayList<Entry>(children.size)
         for (child in children) {
-            if (!showHidden && child.name.startsWith(".")) continue
+            if (!showHiddenFiles && child.name.startsWith(".")) continue
             buildEntry(child)?.let { newEntries.add(it) }
         }
+        return newEntries
+    }
 
+    /**
+     * Applies a previously built entry list as the new current directory.
+     *
+     * Must be called on the main (UI) thread. The filesystem walk is done
+     * by [buildEntries] on the executor; this method is the only place that
+     * mutates [currentPath], [unfiltered], and [entryList], so the UI never
+     * observes a partially committed directory.
+     */
+    private fun commitPath(path: String, newEntries: List<Entry>) {
         currentPath = path
         unfiltered.clear()
         unfiltered.addAll(newEntries)
         applyFilter()
+    }
+
+    private fun loadPath(path: String): Boolean {
+        val newEntries = buildEntries(path, showHidden) ?: return false
+        commitPath(path, newEntries)
         return true
     }
 
