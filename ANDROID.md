@@ -29,9 +29,16 @@ Currently implemented:
 
 - Directory listing with Name and Size columns
 - Sort by 7 fields (`SortField`), with directory-first ordering
-- Hidden-file toggle (`setShowHidden`, not exposed in the UI)
+  - Tap the NAME or SIZE header to sort by that column; tap again to
+    toggle ascending/descending. The other five fields (Type, Owner,
+    Permissions, DateCreated, DateModified) are supported by the backend
+    but have no column UI yet.
+- Hidden-file toggle (empty-space context menu entry "Show hidden files" /
+  "Hide hidden files")
 - Symlink-follow flag (`setFollowSymlinks`, not exposed in the UI)
-- Live filter (`setFilter`, not exposed in the UI)
+- Live filter (magnifier button at the right end of the top bar; the list
+  re-filters on every keystroke and the active filter is shown in the
+  status bar)
 - Back / forward / up navigation (async)
 - Create folder, create file, refresh (via the FAB)
 - Sidebar with hardcoded shortcuts (Root, Home, Pictures, Downloads, DCIM)
@@ -66,9 +73,8 @@ Everything below is missing compared with the desktop build:
 - Preview panel
 - Integrated text editor
 - Open With chooser
-- Sort UI (the header shows labels but has no click handling)
-- Filter UI
-- Hidden-files toggle button
+- Sort UI for the Type, Owner, Permissions, DateCreated, and DateModified
+  fields (only NAME and SIZE are exposed today)
 - Go-to-path input
 - Breadcrumb segments (path is clipped text only)
 - Bookmarks

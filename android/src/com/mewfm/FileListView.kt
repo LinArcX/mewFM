@@ -9,6 +9,8 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.text.Editable
+import android.text.TextWatcher
 import android.view.MotionEvent
 import android.view.VelocityTracker
 import android.view.View
@@ -205,6 +207,12 @@ class FileListView(context: Context) : View(context) {
         }
         options.add("New Folder" to { promptForName("New Folder") { fm.createDirectory(it); invalidate() } })
         options.add("New File" to { promptForName("New File") { fm.createFile(it); invalidate() } })
+        val hiddenLabel = if (fm.showHidden) "Hide hidden files" else "Show hidden files"
+        options.add(hiddenLabel to {
+            fm.setShowHidden(!fm.showHidden)
+            if (selectionMode) exitSelectionMode()
+            invalidate()
+        })
         options.add("Refresh" to { fm.refresh(); invalidate() })
         AlertDialog.Builder(context)
             .setItems(options.map { it.first }.toTypedArray()) { _, which ->
@@ -409,6 +417,51 @@ class FileListView(context: Context) : View(context) {
         text.textSize = dp(14f)
     }
 
+    /**
+     * Opens the live filter dialog.
+     *
+     * The EditText is wired to [FileManager.setFilter] through a
+     * TextWatcher, so the listing re-filters on every keystroke instead
+     * of waiting for the dialog to close. OK keeps the current value;
+     * Clear empties the filter; Cancel (button, back press, or tap
+     * outside) restores the filter that was active when the dialog
+     * opened. Exits selection mode on every change, since the entries
+     * list is rebuilt and old row indices become stale.
+     */
+    private fun showFilterDialog() {
+        val input = EditText(context)
+        input.setText(fm.filter)
+        input.setSelection(input.text.length)
+        input.hint = "Filter files..."
+        val original = fm.filter
+        input.addTextChangedListener(object : TextWatcher {
+            override fun afterTextChanged(s: Editable?) {
+                fm.setFilter(s?.toString() ?: "")
+                if (selectionMode) exitSelectionMode()
+                invalidate()
+            }
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+        })
+        AlertDialog.Builder(context)
+            .setTitle("Filter")
+            .setView(input)
+            .setPositiveButton("OK", null)
+            .setNeutralButton("Clear") { _, _ ->
+                fm.setFilter("")
+                invalidate()
+            }
+            .setNegativeButton("Cancel") { _, _ ->
+                fm.setFilter(original)
+                invalidate()
+            }
+            .setOnCancelListener {
+                fm.setFilter(original)
+                invalidate()
+            }
+            .show()
+    }
+
     private fun startFling(vel: Float) {
         val listH = (height - topBarH - headerH - statusBarH).toInt()
         val maxY = max(0, (fm.entries.size * rowH).toInt() - listH)
@@ -445,9 +498,20 @@ class FileListView(context: Context) : View(context) {
         }
         if (y < topBarH) {
             if (selectionMode) { handleSelectionBarTap(x); return }
+            val filterBtnX = width - padX - btnSize
+            if (x >= filterBtnX && x < filterBtnX + btnSize) { showFilterDialog(); return }
             if (x < padX + btnSize) { sidebarOpen = !sidebarOpen; postInvalidateOnAnimation(); return }
             if (x < padX + 2 * btnSize + dp(4f)) { goBack(); return }
             if (x < padX + 3 * btnSize + dp(8f)) { goUp(); return }
+            return
+        }
+        if (y < topBarH + headerH) {
+            if (selectionMode) return
+            val col = headerColumnAt(x)
+            if (col != null) {
+                fm.toggleSort(col)
+                invalidate()
+            }
             return
         }
 
@@ -542,6 +606,36 @@ class FileListView(context: Context) : View(context) {
         if (toastMsg.isNotEmpty()) drawToast(c, now)
     }
 
+    private fun drawSortArrow(c: Canvas, cx: Float, cy: Float, ascending: Boolean) {
+        fill.color = cText
+        val s = dp(3.5f)
+        val p = Path()
+        if (ascending) {
+            p.moveTo(cx - s, cy + s * 0.6f)
+            p.lineTo(cx + s, cy + s * 0.6f)
+            p.lineTo(cx, cy - s * 0.6f)
+        } else {
+            p.moveTo(cx - s, cy - s * 0.6f)
+            p.lineTo(cx + s, cy - s * 0.6f)
+            p.lineTo(cx, cy + s * 0.6f)
+        }
+        p.close()
+        c.drawPath(p, fill)
+    }
+
+    /**
+     * Maps an x-coordinate inside the header row to a sortable column.
+     * NAME occupies the left side of the header, SIZE the right side, so
+     * tapping anywhere in each region toggles the corresponding sort
+     * field. Returns null when the tap falls outside both regions.
+     */
+    private fun headerColumnAt(x: Float): SortField? {
+        val split = width - dp(90f)
+        if (x >= padX && x < split) return SortField.Name
+        if (x >= split) return SortField.Size
+        return null
+    }
+
     private fun drawTopBar(c: Canvas) {
         fill.color = cTop; c.drawRect(0f, 0f, width.toFloat(), topBarH, fill)
         fill.color = cSep; c.drawRect(0f, topBarH - 1f, width.toFloat(), topBarH, fill)
@@ -560,18 +654,46 @@ class FileListView(context: Context) : View(context) {
         val p2 = Path()
         p2.moveTo(ux, hy - dp(8f)); p2.lineTo(ux - dp(8f), hy + dp(2f)); p2.lineTo(ux + dp(8f), hy + dp(2f)); p2.close()
         fill.color = cText; c.drawPath(p2, fill)
+        val filterBtnX = width - padX - btnSize
         val pathX = padX + 3 * btnSize + dp(16f)
-        c.save(); c.clipRect(pathX, 0f, width - padX, topBarH)
+        val pathEndX = filterBtnX - dp(4f)
+        c.save(); c.clipRect(pathX, 0f, pathEndX, topBarH)
         c.drawText(fm.currentPath, pathX, hy + dp(5f), text)
         c.restore()
+
+        val fx = filterBtnX + btnSize / 2
+        val filterActive = fm.filter.isNotEmpty()
+        stroke.color = if (filterActive) cText else cTextDim
+        stroke.strokeWidth = dp(1.5f)
+        val glassR = dp(5f)
+        val glassCx = fx - dp(2f)
+        val glassCy = hy - dp(2f)
+        c.drawCircle(glassCx, glassCy, glassR, stroke)
+        val handleX1 = glassCx + glassR * 0.707f
+        val handleY1 = glassCy + glassR * 0.707f
+        c.drawLine(handleX1, handleY1, fx + dp(6f), hy + dp(6f), stroke)
     }
 
     private fun drawHeader(c: Canvas) {
         fill.color = cHeader; c.drawRect(0f, topBarH, width.toFloat(), topBarH + headerH, fill)
         small.color = cTextDim
-        c.drawText("NAME", padX, topBarH + headerH / 2 + dp(4f), small)
-        val szW = small.measureText("SIZE")
-        c.drawText("SIZE", width - padX - szW, topBarH + headerH / 2 + dp(4f), small)
+        val headerCy = topBarH + headerH / 2 + dp(4f)
+        val arrowCy = topBarH + headerH / 2 + dp(0.5f)
+
+        val nameText = "NAME"
+        c.drawText(nameText, padX, headerCy, small)
+        if (fm.sortField == SortField.Name) {
+            val nameW = small.measureText(nameText)
+            drawSortArrow(c, padX + nameW + dp(6f), arrowCy, fm.sortAscending)
+        }
+
+        val sizeText = "SIZE"
+        val sizeW = small.measureText(sizeText)
+        val sizeX = width - padX - sizeW
+        c.drawText(sizeText, sizeX, headerCy, small)
+        if (fm.sortField == SortField.Size) {
+            drawSortArrow(c, sizeX - dp(8f), arrowCy, fm.sortAscending)
+        }
     }
 
     private fun drawList(c: Canvas, now: Long) {
@@ -668,7 +790,12 @@ class FileListView(context: Context) : View(context) {
         c.drawRect(0f, height - statusBarH, width.toFloat(), height.toFloat(), fill)
         small.color = cTextDim
         val n = fm.entries.size
-        c.drawText(if (n == 1) "1 item" else "$n items", padX, height - statusBarH / 2 + dp(4f), small)
+        val itemText = if (n == 1) "1 item" else "$n items"
+        val label = if (fm.filter.isNotEmpty()) "Filter \"${fm.filter}\": $itemText" else itemText
+        c.save()
+        c.clipRect(padX, height - statusBarH, width - padX, height.toFloat())
+        c.drawText(label, padX, height - statusBarH / 2 + dp(4f), small)
+        c.restore()
     }
 
     private fun drawSidebar(c: Canvas) {
