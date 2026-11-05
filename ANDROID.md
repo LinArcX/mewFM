@@ -40,6 +40,10 @@ Currently implemented:
   re-filters on every keystroke and the active filter is shown in the
   status bar)
 - Back / forward / up navigation (async)
+- Breadcrumb path segments in the top bar; tap any ancestor to jump to
+  it. Segments truncate from the left (with a `…` prefix) when the path
+  does not fit, keeping the current folder visible.
+- Long-press on the path bar to open a Go to Path dialog
 - Create folder, create file, refresh (via the FAB)
 - Sidebar with hardcoded shortcuts (Root, Home, Pictures, Downloads, DCIM)
 - Single-tap selection, double-tap to navigate into a folder
@@ -75,8 +79,6 @@ Everything below is missing compared with the desktop build:
 - Open With chooser
 - Sort UI for the Type, Owner, Permissions, DateCreated, and DateModified
   fields (only NAME and SIZE are exposed today)
-- Go-to-path input
-- Breadcrumb segments (path is clipped text only)
 - Bookmarks
 - Collapsible sidebar sections
 - Device / mount detection

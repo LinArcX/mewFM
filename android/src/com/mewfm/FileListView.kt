@@ -20,6 +20,15 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
+/**
+ * One tappable breadcrumb segment inside the top bar's path region.
+ *
+ * @property label Text shown to the user (folder name, or "/" for the root).
+ * @property path  Absolute path this segment navigates to when tapped.
+ * @property rect  Horizontal bounds of the segment inside the top bar.
+ */
+private data class Breadcrumb(val label: String, val path: String, val rect: RectF)
+
 class FileListView(context: Context) : View(context) {
     val fm = FileManager()
 
@@ -48,6 +57,9 @@ class FileListView(context: Context) : View(context) {
     private val sidebarW = dp(240f)
     private val padX = dp(12f)
     private val btnSize = dp(44f)
+
+    private val pathRegionX: Float get() = padX + 3 * btnSize + dp(16f)
+    private val pathRegionEndX: Float get() = width - padX - btnSize - dp(4f)
 
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
     private val text = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -131,9 +143,15 @@ class FileListView(context: Context) : View(context) {
                     pressIdx = idx; rippleIdx = idx
                     rippleX = x; rippleY = y; rippleT = now
                     invalidate()
-                    scheduleLongPress(x, y, idx)
+                    scheduleLongPress {
+                        if (selectionMode) toggleSelection(idx) else enterSelectionMode(idx)
+                    }
                 } else if (y >= topBarH + headerH) {
-                    scheduleLongPress(x, y, -1)
+                    scheduleLongPress {
+                        if (selectionMode) exitSelectionMode() else showEmptyContextMenu()
+                    }
+                } else if (y < topBarH && x >= pathRegionX && x < pathRegionEndX) {
+                    scheduleLongPress { showGoToPathDialog() }
                 }
                 return true
             }
@@ -176,20 +194,14 @@ class FileListView(context: Context) : View(context) {
         return super.onTouchEvent(e)
     }
 
-    private fun scheduleLongPress(x: Float, y: Float, idx: Int) {
+    private fun scheduleLongPress(action: () -> Unit) {
         cancelPendingLongPress()
         val r = Runnable {
             longPressFired = true
             pressIdx = -1
             rippleIdx = -1
             invalidate()
-            if (idx in fm.entries.indices) {
-                if (selectionMode) toggleSelection(idx)
-                else enterSelectionMode(idx)
-            } else {
-                if (selectionMode) exitSelectionMode()
-                else showEmptyContextMenu()
-            }
+            action()
         }
         longPressRunnable = r
         longPressHandler.postDelayed(r, 500L)
@@ -462,6 +474,84 @@ class FileListView(context: Context) : View(context) {
             .show()
     }
 
+    /**
+     * Computes the breadcrumb segments for the current path, sized to fit
+     * inside the path region between the navigation buttons and the filter
+     * button.
+     *
+     * When the full path does not fit, the earliest ancestors are dropped
+     * and the rendered segments begin at x > pathRegionX, signalling to
+     * the drawing code that it should place a "…" prefix. The last segment
+     * (the current folder) is always kept when possible.
+     *
+     * @return Segments in left-to-right render order, empty when the path
+     *         region has no usable width.
+     */
+    private fun computeBreadcrumbs(): List<Breadcrumb> {
+        text.textSize = dp(14f)
+        val path = fm.currentPath
+        val all = mutableListOf<Pair<String, String>>()
+        all.add("/" to "/")
+        if (path.length > 1) {
+            var acc = ""
+            for (seg in path.trimEnd('/').split("/").filter { it.isNotEmpty() }) {
+                acc = "$acc/$seg"
+                all.add(seg to acc)
+            }
+        }
+        val startX = pathRegionX
+        val endX = pathRegionEndX
+        val availW = endX - startX
+        if (availW <= 0f) return emptyList()
+        val sepW = text.measureText(" / ")
+        val ellipsisW = text.measureText("…")
+        val measured = all.map { text.measureText(it.first) }
+        val kept = mutableListOf<Int>()
+        var usedW = 0f
+        for (i in all.indices.reversed()) {
+            val segW = measured[i]
+            val withSep = if (kept.isEmpty()) segW else segW + sepW
+            val projected = usedW + withSep
+            val withEllipsis = projected + (if (i > 0) ellipsisW + sepW else 0f)
+            if (withEllipsis > availW && kept.isNotEmpty()) break
+            usedW = projected
+            kept.add(0, i)
+        }
+        val truncated = kept.isEmpty() || kept.first() != 0
+        val result = mutableListOf<Breadcrumb>()
+        var cx = startX
+        if (truncated) cx += ellipsisW + sepW
+        for ((j, i) in kept.withIndex()) {
+            if (j > 0) cx += sepW
+            val w = measured[i]
+            result.add(Breadcrumb(all[i].first, all[i].second, RectF(cx, 0f, cx + w, topBarH)))
+            cx += w
+        }
+        return result
+    }
+
+    /**
+     * Opens a dialog that lets the user type an absolute path and navigate
+     * to it. The current path is pre-filled, so the user can edit it in
+     * place. Navigation and validation are delegated to [navigateTo], which
+     * already handles non-directory paths with an error toast.
+     */
+    private fun showGoToPathDialog() {
+        val input = EditText(context)
+        input.setText(fm.currentPath)
+        input.setSelection(input.text.length)
+        input.hint = "/path/to/folder"
+        AlertDialog.Builder(context)
+            .setTitle("Go to Path")
+            .setView(input)
+            .setPositiveButton("Go") { _, _ ->
+                val target = input.text.toString().trim()
+                if (target.isNotEmpty()) navigateTo(target)
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun startFling(vel: Float) {
         val listH = (height - topBarH - headerH - statusBarH).toInt()
         val maxY = max(0, (fm.entries.size * rowH).toInt() - listH)
@@ -503,6 +593,12 @@ class FileListView(context: Context) : View(context) {
             if (x < padX + btnSize) { sidebarOpen = !sidebarOpen; postInvalidateOnAnimation(); return }
             if (x < padX + 2 * btnSize + dp(4f)) { goBack(); return }
             if (x < padX + 3 * btnSize + dp(8f)) { goUp(); return }
+            for (crumb in computeBreadcrumbs()) {
+                if (x >= crumb.rect.left && x < crumb.rect.right) {
+                    navigateTo(crumb.path)
+                    return
+                }
+            }
             return
         }
         if (y < topBarH + headerH) {
@@ -655,10 +751,22 @@ class FileListView(context: Context) : View(context) {
         p2.moveTo(ux, hy - dp(8f)); p2.lineTo(ux - dp(8f), hy + dp(2f)); p2.lineTo(ux + dp(8f), hy + dp(2f)); p2.close()
         fill.color = cText; c.drawPath(p2, fill)
         val filterBtnX = width - padX - btnSize
-        val pathX = padX + 3 * btnSize + dp(16f)
-        val pathEndX = filterBtnX - dp(4f)
-        c.save(); c.clipRect(pathX, 0f, pathEndX, topBarH)
-        c.drawText(fm.currentPath, pathX, hy + dp(5f), text)
+        val pathStartX = pathRegionX
+        val pathEndX = pathRegionEndX
+        c.save(); c.clipRect(pathStartX, 0f, pathEndX, topBarH)
+        val crumbs = computeBreadcrumbs()
+        if (crumbs.isNotEmpty() && crumbs.first().rect.left > pathStartX + 1f) {
+            text.color = cTextDim
+            c.drawText("…", pathStartX, hy + dp(5f), text)
+        }
+        for ((j, crumb) in crumbs.withIndex()) {
+            if (j > 0) {
+                text.color = cTextDim
+                c.drawText(" / ", crumbs[j - 1].rect.right, hy + dp(5f), text)
+            }
+            text.color = if (j == crumbs.size - 1) cText else cTextDim
+            c.drawText(crumb.label, crumb.rect.left, hy + dp(5f), text)
+        }
         c.restore()
 
         val fx = filterBtnX + btnSize / 2
