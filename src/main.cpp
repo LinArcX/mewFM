@@ -1671,6 +1671,17 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
         glfwSetClipboardString(window, selected.c_str());
       }
     }
+    else if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_X)
+    {
+      const size_t start = std::min(app->textInput.cursor, app->textInput.anchor);
+      const size_t end = std::max(app->textInput.cursor, app->textInput.anchor);
+      if (start < end)
+      {
+        std::string selected = app->textInput.value.substr(start, end - start);
+        glfwSetClipboardString(window, selected.c_str());
+        textInputDeleteSelection(app->textInput);
+      }
+    }
     else if ((mods & GLFW_MOD_CONTROL) && (mods & GLFW_MOD_SHIFT) && key == GLFW_KEY_A)
     {
       const std::string& v = app->textInput.value;
@@ -4014,6 +4025,7 @@ static void drawTextInput(NVGcontext* vg, TextInput& t, float w, float h)
     nvgFill(vg);
   }
 
+  nvgFillColor(vg, nvgRGBf(0.95f, 0.95f, 0.95f));
   nvgText(vg, textX, textY, t.value.c_str(), nullptr);
 
   const float cursorX = textX + cursorOff;
