@@ -1083,25 +1083,53 @@ static void errorCallback(int error, const char* description)
 }
 
 /**
- * @brief Deletes the character before the cursor in @p t.
+ * @brief Removes the current selection (cursor..anchor) from @p t.
+ * @param t Text input to edit.
+ */
+static void textInputDeleteSelection(TextInput& t)
+{
+  if (t.cursor == t.anchor)
+  {
+    return;
+  }
+  const size_t start = std::min(t.cursor, t.anchor);
+  const size_t end = std::max(t.cursor, t.anchor);
+  t.value.erase(start, end - start);
+  t.cursor = start;
+  t.anchor = start;
+}
+
+/**
+ * @brief Deletes the character before the cursor in @p t (or the selection).
  * @param t Text input to edit.
  */
 static void textInputBackspace(TextInput& t)
 {
+  if (t.cursor != t.anchor)
+  {
+    textInputDeleteSelection(t);
+    return;
+  }
   if (t.cursor == 0 || t.value.empty())
   {
     return;
   }
   t.value.erase(t.cursor - 1, 1);
   t.cursor--;
+  t.anchor = t.cursor;
 }
 
 /**
- * @brief Deletes the character under the cursor in @p t.
+ * @brief Deletes the character under the cursor in @p t (or the selection).
  * @param t Text input to edit.
  */
 static void textInputDelete(TextInput& t)
 {
+  if (t.cursor != t.anchor)
+  {
+    textInputDeleteSelection(t);
+    return;
+  }
   if (t.cursor >= t.value.size())
   {
     return;
@@ -1120,12 +1148,93 @@ static void textInputInsert(TextInput& t, unsigned int codepoint)
   {
     return;
   }
+  if (t.cursor != t.anchor)
+  {
+    textInputDeleteSelection(t);
+  }
   if (t.value.size() >= 255)
   {
     return;
   }
   t.value.insert(t.cursor, 1, static_cast<char>(codepoint));
   t.cursor++;
+  t.anchor = t.cursor;
+}
+
+/**
+ * @brief Moves the cursor left by one word. If the cursor is on whitespace,
+ *        jumps to the first non-space character of the previous word. If the
+ *        cursor is inside a word, jumps to the first non-space character of
+ *        that word.
+ * @param t               Text input to modify.
+ * @param extendSelection True to keep the selection anchor fixed.
+ */
+static void textInputWordLeft(TextInput& t, bool extendSelection)
+{
+  if (!extendSelection && t.cursor != t.anchor)
+  {
+    t.cursor = std::min(t.cursor, t.anchor);
+    t.anchor = t.cursor;
+    return;
+  }
+  size_t c = t.cursor;
+  const std::string& v = t.value;
+  if (c == 0)
+  {
+    return;
+  }
+  if (v[c - 1] != ' ')
+  {
+    while (c > 0 && v[c - 1] != ' ') c--;
+  }
+  else
+  {
+    while (c > 0 && v[c - 1] == ' ') c--;
+    while (c > 0 && v[c - 1] != ' ') c--;
+  }
+  t.cursor = c;
+  if (!extendSelection)
+  {
+    t.anchor = c;
+  }
+}
+
+/**
+ * @brief Moves the cursor right by one word. If the cursor is on whitespace,
+ *        jumps past the last non-space character of the next word. If the
+ *        cursor is inside a word, jumps past the last non-space character of
+ *        that word.
+ * @param t               Text input to modify.
+ * @param extendSelection True to keep the selection anchor fixed.
+ */
+static void textInputWordRight(TextInput& t, bool extendSelection)
+{
+  if (!extendSelection && t.cursor != t.anchor)
+  {
+    t.cursor = std::max(t.cursor, t.anchor);
+    t.anchor = t.cursor;
+    return;
+  }
+  size_t c = t.cursor;
+  const std::string& v = t.value;
+  if (c >= v.size())
+  {
+    return;
+  }
+  if (v[c] != ' ')
+  {
+    while (c < v.size() && v[c] != ' ') c++;
+  }
+  else
+  {
+    while (c < v.size() && v[c] == ' ') c++;
+    while (c < v.size() && v[c] != ' ') c++;
+  }
+  t.cursor = c;
+  if (!extendSelection)
+  {
+    t.anchor = c;
+  }
 }
 
 /**
@@ -1552,6 +1661,29 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
         }
       }
     }
+    else if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_C)
+    {
+      const size_t start = std::min(app->textInput.cursor, app->textInput.anchor);
+      const size_t end = std::max(app->textInput.cursor, app->textInput.anchor);
+      if (start < end)
+      {
+        std::string selected = app->textInput.value.substr(start, end - start);
+        glfwSetClipboardString(window, selected.c_str());
+      }
+    }
+    else if ((mods & GLFW_MOD_CONTROL) && (mods & GLFW_MOD_SHIFT) && key == GLFW_KEY_A)
+    {
+      const std::string& v = app->textInput.value;
+      size_t dot = v.find_last_of('.');
+      size_t end = (dot == std::string::npos || dot == 0) ? v.size() : dot;
+      app->textInput.anchor = 0;
+      app->textInput.cursor = end;
+    }
+    else if ((mods & GLFW_MOD_CONTROL) && key == GLFW_KEY_A)
+    {
+      app->textInput.anchor = 0;
+      app->textInput.cursor = app->textInput.value.size();
+    }
     else if (key == GLFW_KEY_ENTER || key == GLFW_KEY_KP_ENTER)
     {
       app->textInput.result = TextInputResult::Ok;
@@ -1559,12 +1691,78 @@ static void keyCallback(GLFWwindow* window, int key, int scancode, int action, i
     }
     else if (key == GLFW_KEY_BACKSPACE) textInputBackspace(app->textInput);
     else if (key == GLFW_KEY_DELETE)    textInputDelete(app->textInput);
-    else if (key == GLFW_KEY_LEFT  && app->textInput.cursor > 0)
-      app->textInput.cursor--;
-    else if (key == GLFW_KEY_RIGHT && app->textInput.cursor < app->textInput.value.size())
-      app->textInput.cursor++;
-    else if (key == GLFW_KEY_HOME) app->textInput.cursor = 0;
-    else if (key == GLFW_KEY_END)  app->textInput.cursor = app->textInput.value.size();
+    else if (key == GLFW_KEY_LEFT)
+    {
+      if (mods & GLFW_MOD_CONTROL)
+      {
+        textInputWordLeft(app->textInput, (mods & GLFW_MOD_SHIFT) != 0);
+      }
+      else if (mods & GLFW_MOD_SHIFT)
+      {
+        if (app->textInput.cursor > 0)
+        {
+          app->textInput.cursor--;
+        }
+      }
+      else if (app->textInput.cursor != app->textInput.anchor)
+      {
+        app->textInput.cursor = std::min(app->textInput.cursor, app->textInput.anchor);
+        app->textInput.anchor = app->textInput.cursor;
+      }
+      else if (app->textInput.cursor > 0)
+      {
+        app->textInput.cursor--;
+        app->textInput.anchor = app->textInput.cursor;
+      }
+    }
+    else if (key == GLFW_KEY_RIGHT)
+    {
+      if (mods & GLFW_MOD_CONTROL)
+      {
+        textInputWordRight(app->textInput, (mods & GLFW_MOD_SHIFT) != 0);
+      }
+      else if (mods & GLFW_MOD_SHIFT)
+      {
+        if (app->textInput.cursor < app->textInput.value.size())
+        {
+          app->textInput.cursor++;
+        }
+      }
+      else if (app->textInput.cursor != app->textInput.anchor)
+      {
+        app->textInput.cursor = std::max(app->textInput.cursor, app->textInput.anchor);
+        app->textInput.anchor = app->textInput.cursor;
+      }
+      else if (app->textInput.cursor < app->textInput.value.size())
+      {
+        app->textInput.cursor++;
+        app->textInput.anchor = app->textInput.cursor;
+      }
+    }
+    else if (key == GLFW_KEY_HOME)
+    {
+      if (mods & GLFW_MOD_SHIFT)
+      {
+        app->textInput.cursor = 0;
+      }
+      else
+      {
+        app->textInput.cursor = 0;
+        app->textInput.anchor = 0;
+      }
+    }
+    else if (key == GLFW_KEY_END)
+    {
+      if (mods & GLFW_MOD_SHIFT)
+      {
+        app->textInput.cursor = app->textInput.value.size();
+      }
+      else
+      {
+        app->textInput.cursor = app->textInput.value.size();
+        app->textInput.anchor = app->textInput.cursor;
+      }
+    }
     if (app->pendingInput == PendingInput::Filter)
     {
       app->fm.setFilter(app->textInput.value);
@@ -3799,6 +3997,23 @@ static void drawTextInput(NVGcontext* vg, TextInput& t, float w, float h)
   nvgSave(vg);
   nvgScissor(vg, fx + 2.0f, fy + 2.0f, fw - 4.0f, fh - 4.0f);
   const float textX = textAreaX - scrollX;
+
+  const size_t selStart = std::min(t.cursor, t.anchor);
+  const size_t selEnd = std::max(t.cursor, t.anchor);
+  if (selStart < selEnd)
+  {
+    std::string beforeSel = t.value.substr(0, selStart);
+    nvgTextBounds(vg, 0.0f, 0.0f, beforeSel.c_str(), nullptr, bounds);
+    const float selStartX = textX + (bounds[2] - bounds[0]);
+    std::string upToSelEnd = t.value.substr(0, selEnd);
+    nvgTextBounds(vg, 0.0f, 0.0f, upToSelEnd.c_str(), nullptr, bounds);
+    const float selEndX = textX + (bounds[2] - bounds[0]);
+    nvgBeginPath(vg);
+    nvgRect(vg, selStartX, fy + 4.0f, selEndX - selStartX, fh - 8.0f);
+    nvgFillColor(vg, nvgRGBAf(0.35f, 0.55f, 0.85f, 0.6f));
+    nvgFill(vg);
+  }
+
   nvgText(vg, textX, textY, t.value.c_str(), nullptr);
 
   const float cursorX = textX + cursorOff;

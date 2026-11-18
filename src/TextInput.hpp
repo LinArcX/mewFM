@@ -30,6 +30,7 @@ struct TextInput
   std::string label;                              ///< Label shown above the input field.
   std::string value;                              ///< Current text content of the field.
   size_t cursor = 0;                              ///< Cursor position (index into value).
+  size_t anchor = 0;                              ///< Selection anchor (== cursor when no selection).
   TextInputResult result = TextInputResult::None; ///< Latest result chosen by the user.
 
   /**
@@ -43,6 +44,7 @@ struct TextInput
     label = lbl;
     value = initial;
     cursor = initial.size();
+    anchor = cursor;
     result = TextInputResult::None;
   }
 
