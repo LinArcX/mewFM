@@ -1044,12 +1044,33 @@ static std::vector<Section> buildSections()
   return all;
 }
 
+static std::string getMimeType(const std::string& path);
+static std::string getDefaultAppId(const std::string& mimeType);
+static bool launchById(const std::string& appId, const std::string& filePath);
+
 /**
- * @brief Opens @p path in the user's preferred application via xdg-open.
+ * @brief Opens @p path in the user's preferred application.
+ *
+ * First attempts to resolve the default application via xdg-mime and
+ * launch it directly. Falls back to xdg-open if that fails.
+ *
  * @param path Absolute path of the file to open.
  */
 static void openWithDefaultApp(const std::string& path)
 {
+  std::string mime = getMimeType(path);
+  if (!mime.empty())
+  {
+    std::string defaultId = getDefaultAppId(mime);
+    if (!defaultId.empty())
+    {
+      if (launchById(defaultId, path))
+      {
+        return;
+      }
+    }
+  }
+
   pid_t pid = fork();
   if (pid == 0)
   {
@@ -2765,6 +2786,75 @@ static bool launchWith(const std::string& execLine, const std::string& filePath)
 }
 
 /**
+ * @brief Launches a specific application (by desktop file ID) with @p filePath.
+ * @param appId    Desktop file ID (e.g., "mpv.desktop").
+ * @param filePath Absolute path of the file to open.
+ * @return True if the application was launched successfully.
+ */
+static bool launchById(const std::string& appId, const std::string& filePath)
+{
+  if (appId.empty())
+  {
+    return false;
+  }
+  std::vector<std::string> dirs;
+  const char* xdgHome = std::getenv("XDG_DATA_HOME");
+  if (xdgHome != nullptr && xdgHome[0] != '\0')
+  {
+    dirs.push_back(std::string(xdgHome) + "/applications");
+  }
+  else
+  {
+    const char* home = std::getenv("HOME");
+    if (home != nullptr)
+    {
+      dirs.push_back(std::string(home) + "/.local/share/applications");
+    }
+  }
+  const char* xdgDirs = std::getenv("XDG_DATA_DIRS");
+  std::string dirList = (xdgDirs != nullptr && xdgDirs[0] != '\0')
+    ? std::string(xdgDirs)
+    : std::string("/usr/local/share:/usr/share");
+  size_t start = 0;
+  while (start <= dirList.size())
+  {
+    size_t colon = dirList.find(':', start);
+    if (colon == std::string::npos)
+    {
+      colon = dirList.size();
+    }
+    std::string d = dirList.substr(start, colon - start);
+    if (!d.empty())
+    {
+      dirs.push_back(d + "/applications");
+    }
+    if (colon == dirList.size())
+    {
+      break;
+    }
+    start = colon + 1;
+  }
+
+  for (size_t i = 0; i < dirs.size(); i++)
+  {
+    std::string fullPath = dirs[i] + "/" + appId;
+    std::ifstream in(fullPath);
+    if (in)
+    {
+      in.close();
+      std::string appName;
+      std::string appExec;
+      std::string appMime;
+      if (parseDesktopFile(fullPath, appName, appExec, appMime))
+      {
+        return launchWith(appExec, filePath);
+      }
+    }
+  }
+  return false;
+}
+
+/**
  * @brief Tests whether the point (mx, my) lies inside the axis-aligned rectangle.
  * @param mx Point X.
  * @param my Point Y.
@@ -3217,6 +3307,40 @@ static int iconForEntry(const Entry& e)
  * @param app   Application state.
  * @param index Row index to open.
  */
+/**
+ * @brief Checks if a file is an actual executable (ELF binary or shebang script).
+ * @param path Absolute path of the file.
+ * @return True if the file is a valid executable.
+ */
+static bool isExecutableFile(const std::string& path)
+{
+  std::ifstream in(path, std::ios::binary);
+  if (!in)
+  {
+    return false;
+  }
+  char buf[4];
+  in.read(buf, 4);
+  if (in.gcount() < 4)
+  {
+    return false;
+  }
+  if (static_cast<unsigned char>(buf[0]) == 0x7F && buf[1] == 'E' && buf[2] == 'L' && buf[3] == 'F')
+  {
+    return true;
+  }
+  if (buf[0] == '#' && buf[1] == '!')
+  {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * @brief Opens the entry at @p index (navigate, execute, or open-with).
+ * @param app   Application state.
+ * @param index Row index to open.
+ */
 static void openEntry(AppState& app, int index)
 {
   const auto& entries = app.fm.entries();
@@ -3238,7 +3362,7 @@ static void openEntry(AppState& app, int index)
     app.scrollOffset = 0.0f;
     return;
   }
-  if (e.isExecutable)
+  if (e.isExecutable && isExecutableFile(full))
   {
     runExecutable(full);
     return;
