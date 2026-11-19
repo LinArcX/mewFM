@@ -49,7 +49,7 @@ namespace
   constexpr float kToolBarHeight = 40.0f;
   constexpr float kTopBarHeight = kTabBarHeight + kToolBarHeight;
   constexpr float kSidebarWidth = 220.0f;
-  constexpr float kPreviewWidth = 280.0f;
+  //constexpr float kPreviewWidth = 280.0f;
   constexpr float kHeaderHeight = 26.0f;
   constexpr float kStatusBarHeight = 22.0f;
   float g_fontSize  = 16.0f;
@@ -299,6 +299,7 @@ namespace
     std::string savedFontPath = "Default (Embedded)";  ///< Path to the selected font, or default.
     float sidebarScrollY = 0.0f;                       ///< Vertical scroll offset of the sidebar.
     GLFWwindow* window = nullptr;                      ///< Owning GLFW window (set once at startup).
+    GLFWcursor* hresizeCursor = nullptr;               ///< Cursor used for resizing the preview panel.
     std::string menuTargetPath;                        ///< Path of the target for the current context menu.
     bool isDragging = false;                           ///< True when an internal drag operation is active.
     int dragSourceIndex = -1;                          ///< Row index of the dragged item.
@@ -5490,6 +5491,23 @@ static void drawPreviewPanel(
 
   const float handleW = 6.0f;
   const bool hoverHandle = inRect(g_mouseX, g_mouseY, x - handleW * 0.5f, y, handleW, h);
+
+  if (app.window != nullptr)
+  {
+    if (hoverHandle || app.draggingPreview)
+    {
+      if (app.hresizeCursor == nullptr)
+      {
+        app.hresizeCursor = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR);
+      }
+      glfwSetCursor(app.window, app.hresizeCursor);
+    }
+    else
+    {
+      glfwSetCursor(app.window, nullptr);
+    }
+  }
+
   if (hoverHandle && g_mouseClicked)
   {
     app.draggingPreview = true;
@@ -7752,7 +7770,7 @@ int main(int argc, char** argv)
       app.previewAnim -= 0.15f;
       if (app.previewAnim < 0.0f) app.previewAnim = 0.0f;
     }
-    const float previewW = kPreviewWidth * app.previewAnim;
+    const float previewW = app.previewWidth * app.previewAnim;
 
     const float targetSidebar = app.sidebarVisible ? 1.0f : 0.0f;
     if (app.sidebarAnim < targetSidebar)
