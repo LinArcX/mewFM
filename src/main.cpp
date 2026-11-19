@@ -287,6 +287,8 @@ namespace
     Theme theme;                                       ///< Colors of the file list.
     Toast toast;                                       ///< Active toast notification.
     bool previewVisible = true;                        ///< True if the preview panel is enabled.
+    float previewWidth = 280.0f;                       ///< Width of the preview panel.
+    bool draggingPreview = false;                      ///< True when resizing the preview panel.
     int previewImage = -1;                             ///< NanoVG image handle of the previewed image (-1 = none).
     std::string previewPath;                           ///< Path currently being previewed.
     std::string previewText;                           ///< Cached text contents of the previewed file.
@@ -847,6 +849,14 @@ static void loadConfig(AppState& app)
       app.previewVisible = (val != "0");
       app.previewAnim = app.previewVisible ? 1.0f : 0.0f;
     }
+    else if (key == "previewWidth")
+    {
+      float v = static_cast<float>(std::atof(val.c_str()));
+      if (v >= 150.0f && v <= 2000.0f)
+      {
+        app.previewWidth = v;
+      }
+    }
     else if (key.compare(0, 10, "collapsed_") == 0)
     {
       std::string secKey = key.substr(10);
@@ -952,6 +962,7 @@ static void saveConfig(const AppState& app)
   out << "sidebarVisible=" << (app.sidebarVisible ? "1" : "0") << "\n";
   out << "followSymlinks=" << (app.fm.followSymlinks() ? "1" : "0") << "\n";
   out << "previewVisible=" << (app.previewVisible ? "1" : "0") << "\n";
+  out << "previewWidth=" << app.previewWidth << "\n";
   out << "sortField=" << static_cast<int>(app.fm.sortField()) << "\n";
   out << "sortDir=" << (app.fm.sortAscending() ? "0" : "1") << "\n";
   for (const auto& s : app.sections)
@@ -3199,7 +3210,7 @@ static void dropCallback(GLFWwindow* window, int count, const char** paths)
   const float w = static_cast<float>(winW);
   const float h = static_cast<float>(winH);
   const bool previewAllowed = app->previewVisible && !app->editor.active;
-  const float previewW = kPreviewWidth * (previewAllowed ? app->previewAnim : 0.0f);
+  const float previewW = app->previewWidth * (previewAllowed ? app->previewAnim : 0.0f);
   const float sidebarW = kSidebarWidth * app->sidebarAnim;
   const float mainX = sidebarW;
   const float mainY = kTopBarHeight;
@@ -5469,13 +5480,43 @@ static void updatePreview(AppState& app, NVGcontext* vg)
  */
 static void drawPreviewPanel(
   NVGcontext* vg,
-  const AppState& app,
+  AppState& app,
   float x,
   float y,
   float w,
   float h)
 {
   bndBackground(vg, x, y, w, h);
+
+  const float handleW = 6.0f;
+  const bool hoverHandle = inRect(g_mouseX, g_mouseY, x - handleW * 0.5f, y, handleW, h);
+  if (hoverHandle && g_mouseClicked)
+  {
+    app.draggingPreview = true;
+  }
+  if (app.draggingPreview)
+  {
+    if (!g_mouseDown)
+    {
+      app.draggingPreview = false;
+      saveConfig(app);
+    }
+    else
+    {
+      float newWidth = (x + w) - g_mouseX;
+      if (newWidth < 150.0f) newWidth = 150.0f;
+      if (newWidth > x + w - 200.0f) newWidth = x + w - 200.0f;
+      app.previewWidth = newWidth;
+    }
+  }
+
+  if (app.previewAnim > 0.01f)
+  {
+    nvgBeginPath(vg);
+    nvgRect(vg, x, y, 2.0f, h);
+    nvgFillColor(vg, (hoverHandle || app.draggingPreview) ? nvgRGBf(0.5f, 0.5f, 0.5f) : nvgRGBf(0.2f, 0.2f, 0.2f));
+    nvgFill(vg);
+  }
 
   const float pad = 8.0f;
   const float headerH = 24.0f;
@@ -5524,10 +5565,6 @@ static void drawPreviewPanel(
       float sx = contentW / static_cast<float>(iw);
       float sy = contentH / static_cast<float>(ih);
       float scale = sx < sy ? sx : sy;
-      if (scale > 1.0f)
-      {
-        scale = 1.0f;
-      }
       float dw = static_cast<float>(iw) * scale;
       float dh = static_cast<float>(ih) * scale;
       float dx = x + (w - dw) * 0.5f;
