@@ -5489,10 +5489,11 @@ static void drawPreviewPanel(
 {
   bndBackground(vg, x, y, w, h);
 
-  const float handleW = 6.0f;
+  const float handleW = 10.0f;
   const bool hoverHandle = inRect(g_mouseX, g_mouseY, x - handleW * 0.5f, y, handleW, h);
 
-  if (app.window != nullptr)
+  GLFWwindow* curWin = glfwGetCurrentContext();
+  if (curWin != nullptr)
   {
     if (hoverHandle || app.draggingPreview)
     {
@@ -5500,11 +5501,11 @@ static void drawPreviewPanel(
       {
         app.hresizeCursor = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR);
       }
-      glfwSetCursor(app.window, app.hresizeCursor);
+      glfwSetCursor(curWin, app.hresizeCursor);
     }
     else
     {
-      glfwSetCursor(app.window, nullptr);
+      glfwSetCursor(curWin, nullptr);
     }
   }
 
