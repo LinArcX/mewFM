@@ -7621,6 +7621,64 @@ static std::string expandTilde(const std::string& p)
   return p;
 }
 
+static int initGlfw(GLFWwindow** window)
+{
+  glfwSetErrorCallback(errorCallback);
+  if (!glfwInit())
+  {
+    return 1;
+  }
+
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
+  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
+  glfwWindowHint(GLFW_STENCIL_BITS, 8);
+  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_ANY_PROFILE);
+  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_FALSE);
+
+  *window = glfwCreateWindow(1024, 640, "mewFM", nullptr, nullptr);
+  if (!*window)
+  {
+    glfwTerminate();
+    return 1;
+  }
+
+  glfwMakeContextCurrent(*window);
+  glfwSwapInterval(1);
+  glfwSetKeyCallback(*window, keyCallback);
+  glfwSetCharCallback(*window, charCallback);
+  glfwSetCursorPosCallback(*window, cursorPosCallback);
+  glfwSetMouseButtonCallback(*window, mouseButtonCallback);
+  glfwSetScrollCallback(*window, scrollCallback);
+  glfwSetWindowCloseCallback(*window, windowCloseCallback);
+  glfwSetDropCallback(*window, dropCallback);
+  return 0;
+}
+
+int initNanoVG(NVGcontext** vg)
+{
+  *vg = nvgCreateGL2(NVG_ANTIALIAS | NVG_STENCIL_STROKES);
+  if (!*vg)
+  {
+    glfwTerminate();
+    return 1;
+  }
+
+  g_activeFontId = nvgCreateFontMem(*vg, "sans", fontData, fontData_len, 0);
+  if (g_activeFontId == -1)
+  {
+    std::cerr << "Could not load font." << std::endl;
+  }
+  bndSetFont(g_activeFontId);
+
+  int iconImage = nvgCreateImageMem(*vg, 0, iconData, iconData_len);
+  if (iconImage == -1)
+  {
+    std::cerr << "Could not load icon sheet." << std::endl;
+  }
+  bndSetIconImage(iconImage);
+  return 0;
+}
+
 /**
  * @brief Program entry point.
  *
@@ -7635,427 +7693,392 @@ int main(int argc, char** argv)
 {
   std::signal(SIGCHLD, SIG_IGN);
 
-  glfwSetErrorCallback(errorCallback);
-  if (!glfwInit())
-  {
+  GLFWwindow* window = nullptr;
+
+  if (1 == initGlfw(&window)) {
     return 1;
   }
 
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 2);
-  glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
-  glfwWindowHint(GLFW_STENCIL_BITS, 8);
-  glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_ANY_PROFILE);
-  glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_FALSE);
-
-  GLFWwindow* window = glfwCreateWindow(1024, 640, "mewFM", nullptr, nullptr);
-  if (!window)
-  {
-    glfwTerminate();
+  NVGcontext* vg = nullptr;
+  if (1 == initNanoVG(&vg)) {
     return 1;
   }
 
-  glfwMakeContextCurrent(window);
-  GLFWcursor* resizeCursor = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR);
-  glfwSwapInterval(1);
-  glfwSetKeyCallback(window, keyCallback);
-  glfwSetCharCallback(window, charCallback);
-  glfwSetCursorPosCallback(window, cursorPosCallback);
-  glfwSetMouseButtonCallback(window, mouseButtonCallback);
-  glfwSetScrollCallback(window, scrollCallback);
-  glfwSetWindowCloseCallback(window, windowCloseCallback);
-  glfwSetDropCallback(window, dropCallback);
+  if (window != nullptr && vg != nullptr) {
+    applyTheme();
+    initXdnd(window);
 
-  NVGcontext* vg = nvgCreateGL2(NVG_ANTIALIAS | NVG_STENCIL_STROKES);
-  if (!vg)
-  {
-    glfwTerminate();
-    return 1;
-  }
-
-  g_activeFontId = nvgCreateFontMem(vg, "sans", fontData, fontData_len, 0);
-  if (g_activeFontId == -1)
-  {
-    std::cerr << "Could not load font." << std::endl;
-  }
-  bndSetFont(g_activeFontId);
-
-  int iconImage = nvgCreateImageMem(vg, 0, iconData, iconData_len);
-  if (iconImage == -1)
-  {
-    std::cerr << "Could not load icon sheet." << std::endl;
-  }
-  bndSetIconImage(iconImage);
-
-  applyTheme();
-  initXdnd(window);
-
-  AppState app;
-  glfwSetWindowUserPointer(window, &app);
-  app.window = window;
-  app.sections = buildSections();
-  app.lastPath = app.fm.currentPath();
-  loadConfig(app);
-  if (!app.savedFontPath.empty() && app.savedFontPath != "Default (Embedded)")
-  {
-    int newFont = nvgCreateFont(vg, "sans", app.savedFontPath.c_str());
-    if (newFont >= 0)
+    AppState app;
+    glfwSetWindowUserPointer(window, &app);
+    app.window = window;
+    app.sections = buildSections();
+    app.lastPath = app.fm.currentPath();
+    loadConfig(app);
+    if (!app.savedFontPath.empty() && app.savedFontPath != "Default (Embedded)")
     {
-      g_activeFontId = newFont;
-      bndSetFont(g_activeFontId);
-    }
-  }
-  app.tabs.push_back(TabSnapshot());
-  saveActiveIntoTab(app);
-
-  if (argc >= 2)
-  {
-    std::string requested = expandTilde(argv[1]);
-    std::error_code ec;
-    if (std::filesystem::is_directory(requested, ec))
-    {
-      app.fm.resetTo(std::filesystem::canonical(requested, ec).string());
-      app.lastPath = app.fm.currentPath();
-    }
-    else if (std::filesystem::is_regular_file(requested, ec))
-    {
-      std::filesystem::path fp = std::filesystem::canonical(requested, ec);
-      app.fm.resetTo(fp.parent_path().string());
-      app.lastPath = app.fm.currentPath();
-    }
-    else
-    {
-      std::cerr << "mewFM: invalid path: " << argv[1] << std::endl;
-    }
-  }
-
-  while (!glfwWindowShouldClose(window))
-  {
-    glfwPollEvents();
-    processXdndEvents();
-    updateRemovableDevices(app);
-
-    const FileOpStatus opStatus = app.fm.pollFileOp();
-    if (opStatus == FileOpStatus::FinishedCopy)
-    {
-      app.toast.show("Copied");
-    }
-    else if (opStatus == FileOpStatus::FinishedMove)
-    {
-      app.toast.show("Moved");
-    }
-    else if (opStatus == FileOpStatus::Failed)
-    {
-      app.toast.show("File operation failed");
-    }
-
-    int winW = 0;
-    int winH = 0;
-    int fbW = 0;
-    int fbH = 0;
-    glfwGetWindowSize(window, &winW, &winH);
-    glfwGetFramebufferSize(window, &fbW, &fbH);
-    float pxRatio = (winW > 0) ? (static_cast<float>(fbW) / static_cast<float>(winW)) : 1.0f;
-
-    float w = static_cast<float>(winW);
-    float h = static_cast<float>(winH);
-
-    const bool previewAllowed = app.previewVisible && !app.editor.active;
-    const float targetPreview = previewAllowed ? 1.0f : 0.0f;
-    if (app.previewAnim < targetPreview)
-    {
-      app.previewAnim += 0.15f;
-      if (app.previewAnim > 1.0f) app.previewAnim = 1.0f;
-    }
-    else if (app.previewAnim > targetPreview)
-    {
-      app.previewAnim -= 0.15f;
-      if (app.previewAnim < 0.0f) app.previewAnim = 0.0f;
-    }
-    const float previewW = app.previewWidth * app.previewAnim;
-
-    const float targetSidebar = app.sidebarVisible ? 1.0f : 0.0f;
-    if (app.sidebarAnim < targetSidebar)
-    {
-      app.sidebarAnim += 0.15f;
-      if (app.sidebarAnim > 1.0f) app.sidebarAnim = 1.0f;
-    }
-    else if (app.sidebarAnim > targetSidebar)
-    {
-      app.sidebarAnim -= 0.15f;
-      if (app.sidebarAnim < 0.0f) app.sidebarAnim = 0.0f;
-    }
-    const float sidebarW = kSidebarWidth * app.sidebarAnim;
-
-    float mainX = sidebarW;
-    float mainY = kTopBarHeight;
-    float mainW = w - sidebarW - previewW;
-    float listTop = mainY + kHeaderHeight;
-    float listH = h - listTop - kStatusBarHeight;
-
-    glViewport(0, 0, fbW, fbH);
-    glClearColor(app.theme.bg.r, app.theme.bg.g, app.theme.bg.b, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
-
-    nvgBeginFrame(vg, w, h, pxRatio);
-
-    g_tooltip.clear();
-
-    resetOnPathChange(app);
-    applyScroll(app, listH);
-    bool popupActive = app.modal.active || app.textInput.active;
-    bool clickBefore = g_mouseClicked;
-    if (popupActive)
-    {
-      g_mouseClicked = false;
-    }
-    bool hadMenu = (app.menuKind != MenuKind::None);
-    if (!popupActive)
-    {
-      if (g_rightClicked)
+      int newFont = nvgCreateFont(vg, "sans", app.savedFontPath.c_str());
+      if (newFont >= 0)
       {
-        openContextMenu(app, mainX, listTop, mainW, listH, sidebarW);
-        g_rightClicked = false;
+        g_activeFontId = newFont;
+        bndSetFont(g_activeFontId);
       }
-      else if (hadMenu && g_mouseClicked)
+    }
+    app.tabs.push_back(TabSnapshot());
+    saveActiveIntoTab(app);
+
+    if (argc >= 2)
+    {
+      std::string requested = expandTilde(argv[1]);
+      std::error_code ec;
+      if (std::filesystem::is_directory(requested, ec))
       {
-        MenuAction menuAction = handleMenuClick(app, w, h);
-        if (menuAction != MenuAction::None)
-        {
-          executeMenuAction(app, menuAction, app.menuRowIndex);
-        }
-        app.menuKind = MenuKind::None;
+        app.fm.resetTo(std::filesystem::canonical(requested, ec).string());
+        app.lastPath = app.fm.currentPath();
+      }
+      else if (std::filesystem::is_regular_file(requested, ec))
+      {
+        std::filesystem::path fp = std::filesystem::canonical(requested, ec);
+        app.fm.resetTo(fp.parent_path().string());
+        app.lastPath = app.fm.currentPath();
+      }
+      else
+      {
+        std::cerr << "mewFM: invalid path: " << argv[1] << std::endl;
+      }
+    }
+
+    GLFWcursor* resizeCursor = glfwCreateStandardCursor(GLFW_HRESIZE_CURSOR);
+
+    while (!glfwWindowShouldClose(window))
+    {
+      glfwPollEvents();
+      processXdndEvents();
+      updateRemovableDevices(app);
+
+      const FileOpStatus opStatus = app.fm.pollFileOp();
+      if (opStatus == FileOpStatus::FinishedCopy)
+      {
+        app.toast.show("Copied");
+      }
+      else if (opStatus == FileOpStatus::FinishedMove)
+      {
+        app.toast.show("Moved");
+      }
+      else if (opStatus == FileOpStatus::Failed)
+      {
+        app.toast.show("File operation failed");
+      }
+
+      int winW = 0;
+      int winH = 0;
+      int fbW = 0;
+      int fbH = 0;
+      glfwGetWindowSize(window, &winW, &winH);
+      glfwGetFramebufferSize(window, &fbW, &fbH);
+      float pxRatio = (winW > 0) ? (static_cast<float>(fbW) / static_cast<float>(winW)) : 1.0f;
+
+      float w = static_cast<float>(winW);
+      float h = static_cast<float>(winH);
+
+      const bool previewAllowed = app.previewVisible && !app.editor.active;
+      const float targetPreview = previewAllowed ? 1.0f : 0.0f;
+      if (app.previewAnim < targetPreview)
+      {
+        app.previewAnim += 0.15f;
+        if (app.previewAnim > 1.0f) app.previewAnim = 1.0f;
+      }
+      else if (app.previewAnim > targetPreview)
+      {
+        app.previewAnim -= 0.15f;
+        if (app.previewAnim < 0.0f) app.previewAnim = 0.0f;
+      }
+      const float previewW = app.previewWidth * app.previewAnim;
+
+      const float targetSidebar = app.sidebarVisible ? 1.0f : 0.0f;
+      if (app.sidebarAnim < targetSidebar)
+      {
+        app.sidebarAnim += 0.15f;
+        if (app.sidebarAnim > 1.0f) app.sidebarAnim = 1.0f;
+      }
+      else if (app.sidebarAnim > targetSidebar)
+      {
+        app.sidebarAnim -= 0.15f;
+        if (app.sidebarAnim < 0.0f) app.sidebarAnim = 0.0f;
+      }
+      const float sidebarW = kSidebarWidth * app.sidebarAnim;
+
+      float mainX = sidebarW;
+      float mainY = kTopBarHeight;
+      float mainW = w - sidebarW - previewW;
+      float listTop = mainY + kHeaderHeight;
+      float listH = h - listTop - kStatusBarHeight;
+
+      glViewport(0, 0, fbW, fbH);
+      glClearColor(app.theme.bg.r, app.theme.bg.g, app.theme.bg.b, 1.0f);
+      glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+      nvgBeginFrame(vg, w, h, pxRatio);
+
+      g_tooltip.clear();
+
+      resetOnPathChange(app);
+      applyScroll(app, listH);
+      bool popupActive = app.modal.active || app.textInput.active;
+      bool clickBefore = g_mouseClicked;
+      if (popupActive)
+      {
         g_mouseClicked = false;
       }
-    }
-    if (!popupActive)
-    {
-      handleListClick(app, mainX, listTop, mainW, listH);
-    }
-    resetOnPathChange(app);
-    if (!popupActive)
-    {
-      handleKeyboardNav(app, listH);
-    }
-
-    if (g_mouseDown && app.dragSourceIndex >= 0 && !popupActive)
-    {
-      if (!app.isDragging)
+      bool hadMenu = (app.menuKind != MenuKind::None);
+      if (!popupActive)
       {
-        float dx = g_mouseX - app.dragRowStartX;
-        float dy = g_mouseY - app.dragRowStartY;
-        if (dx * dx + dy * dy > 16.0f)
+        if (g_rightClicked)
         {
-          app.isDragging = true;
+          openContextMenu(app, mainX, listTop, mainW, listH, sidebarW);
+          g_rightClicked = false;
+        }
+        else if (hadMenu && g_mouseClicked)
+        {
+          MenuAction menuAction = handleMenuClick(app, w, h);
+          if (menuAction != MenuAction::None)
+          {
+            executeMenuAction(app, menuAction, app.menuRowIndex);
+          }
+          app.menuKind = MenuKind::None;
+          g_mouseClicked = false;
         }
       }
-      if (app.isDragging && !glfwGetWindowAttrib(window, GLFW_HOVERED))
+      if (!popupActive)
       {
-        std::vector<std::string> paths;
-        const auto& entries = app.fm.entries();
-        if (!app.selectedIndices.empty())
+        handleListClick(app, mainX, listTop, mainW, listH);
+      }
+      resetOnPathChange(app);
+      if (!popupActive)
+      {
+        handleKeyboardNav(app, listH);
+      }
+
+      if (g_mouseDown && app.dragSourceIndex >= 0 && !popupActive)
+      {
+        if (!app.isDragging)
         {
-          for (int sel : app.selectedIndices)
+          float dx = g_mouseX - app.dragRowStartX;
+          float dy = g_mouseY - app.dragRowStartY;
+          if (dx * dx + dy * dy > 16.0f)
           {
-            if (sel >= 0 && sel < static_cast<int>(entries.size()))
-            {
-              paths.push_back(joinPath(app.fm.currentPath(), entries[sel].name));
-            }
+            app.isDragging = true;
           }
         }
-        else if (app.dragSourceIndex >= 0 && app.dragSourceIndex < static_cast<int>(entries.size()))
+        if (app.isDragging && !glfwGetWindowAttrib(window, GLFW_HOVERED))
         {
-          paths.push_back(joinPath(app.fm.currentPath(), entries[app.dragSourceIndex].name));
-        }
-        startXdndDrag(paths);
-        app.isDragging = false;
-        app.dragSourceIndex = -1;
-        app.dragTargetIndex = -1;
-      }
-
-      if (app.isDragging)
-      {
-        int targetIdx = -1;
-        if (inRect(g_mouseX, g_mouseY, mainX, listTop, mainW, listH))
-        {
-          targetIdx = static_cast<int>((g_mouseY - listTop + app.scrollOffset) / g_rowHeight);
-        }
-        if (targetIdx >= 0 && targetIdx < static_cast<int>(app.fm.entries().size()) && targetIdx != app.dragSourceIndex)
-        {
+          std::vector<std::string> paths;
           const auto& entries = app.fm.entries();
-          if (entries[targetIdx].isDirectory && !entries[targetIdx].isBrokenLink)
-          {
-            app.dragTargetIndex = targetIdx;
-          }
-          else
-          {
-            app.dragTargetIndex = -1;
-          }
-        }
-        else
-        {
-          app.dragTargetIndex = -1;
-        }
-      }
-    }
-
-    if (g_mouseReleased && !popupActive)
-    {
-      if (app.isDragging)
-      {
-        if (app.dragTargetIndex >= 0)
-        {
-          const auto& entries = app.fm.entries();
-          std::string dstDir = joinPath(app.fm.currentPath(), entries[app.dragTargetIndex].name);
-          std::vector<std::string> srcPaths;
-          
           if (!app.selectedIndices.empty())
           {
             for (int sel : app.selectedIndices)
             {
               if (sel >= 0 && sel < static_cast<int>(entries.size()))
               {
-                srcPaths.push_back(joinPath(app.fm.currentPath(), entries[sel].name));
+                paths.push_back(joinPath(app.fm.currentPath(), entries[sel].name));
               }
+            }
+          }
+          else if (app.dragSourceIndex >= 0 && app.dragSourceIndex < static_cast<int>(entries.size()))
+          {
+            paths.push_back(joinPath(app.fm.currentPath(), entries[app.dragSourceIndex].name));
+          }
+          startXdndDrag(paths);
+          app.isDragging = false;
+          app.dragSourceIndex = -1;
+          app.dragTargetIndex = -1;
+        }
+
+        if (app.isDragging)
+        {
+          int targetIdx = -1;
+          if (inRect(g_mouseX, g_mouseY, mainX, listTop, mainW, listH))
+          {
+            targetIdx = static_cast<int>((g_mouseY - listTop + app.scrollOffset) / g_rowHeight);
+          }
+          if (targetIdx >= 0 && targetIdx < static_cast<int>(app.fm.entries().size()) && targetIdx != app.dragSourceIndex)
+          {
+            const auto& entries = app.fm.entries();
+            if (entries[targetIdx].isDirectory && !entries[targetIdx].isBrokenLink)
+            {
+              app.dragTargetIndex = targetIdx;
+            }
+            else
+            {
+              app.dragTargetIndex = -1;
             }
           }
           else
           {
-            srcPaths.push_back(joinPath(app.fm.currentPath(), entries[app.dragSourceIndex].name));
+            app.dragTargetIndex = -1;
           }
+        }
+      }
 
-          bool invalid = false;
-          for (const auto& s : srcPaths)
+      if (g_mouseReleased && !popupActive)
+      {
+        if (app.isDragging)
+        {
+          if (app.dragTargetIndex >= 0)
           {
-            if (s == dstDir)
+            const auto& entries = app.fm.entries();
+            std::string dstDir = joinPath(app.fm.currentPath(), entries[app.dragTargetIndex].name);
+            std::vector<std::string> srcPaths;
+            
+            if (!app.selectedIndices.empty())
             {
-              invalid = true;
-              break;
-            }
-          }
-
-          if (!invalid)
-          {
-            if (!app.fm.startDropMove(srcPaths, dstDir))
-            {
-              app.modal.openInfo("Move failed", "Could not move the selected items.");
+              for (int sel : app.selectedIndices)
+              {
+                if (sel >= 0 && sel < static_cast<int>(entries.size()))
+                {
+                  srcPaths.push_back(joinPath(app.fm.currentPath(), entries[sel].name));
+                }
+              }
             }
             else
             {
-              app.toast.show("Moving...");
-              clearSelection(app);
-              app.scrollOffset = 0.0f;
+              srcPaths.push_back(joinPath(app.fm.currentPath(), entries[app.dragSourceIndex].name));
+            }
+
+            bool invalid = false;
+            for (const auto& s : srcPaths)
+            {
+              if (s == dstDir)
+              {
+                invalid = true;
+                break;
+              }
+            }
+
+            if (!invalid)
+            {
+              if (!app.fm.startDropMove(srcPaths, dstDir))
+              {
+                app.modal.openInfo("Move failed", "Could not move the selected items.");
+              }
+              else
+              {
+                app.toast.show("Moving...");
+                clearSelection(app);
+                app.scrollOffset = 0.0f;
+              }
             }
           }
+          app.isDragging = false;
+          app.dragSourceIndex = -1;
+          app.dragTargetIndex = -1;
         }
-        app.isDragging = false;
-        app.dragSourceIndex = -1;
-        app.dragTargetIndex = -1;
+        g_mouseReleased = false;
       }
+      handleTextInputResult(app);
+
+      updatePreview(app, vg);
+
+      float saveMouseX = g_mouseX;
+      float saveMouseY = g_mouseY;
+      if (popupActive)
+      {
+        g_mouseX = -1.0f;
+        g_mouseY = -1.0f;
+      }
+
+      drawTabBar(vg, app, w);
+      drawTopBar(vg, app, w);
+      resetOnPathChange(app);
+      drawSidebar(vg, app, h - kStatusBarHeight, sidebarW);
+      if (g_sidebarDirty)
+      {
+        saveConfig(app);
+        g_sidebarDirty = false;
+      }
+      resetOnPathChange(app);
+      if (app.editor.active)
+      {
+        drawEditor(vg, app, mainX, mainY, mainW, h - mainY - kStatusBarHeight);
+      }
+      else
+      {
+        drawMainHeader(vg, app, mainX, mainY, mainW);
+        drawRows(vg, app, mainX, listTop, mainW, listH);
+      }
+      if (previewW > 1.0f)
+      {
+        drawPreviewPanel(vg, app, mainX + mainW, mainY, previewW, h - mainY - kStatusBarHeight);
+      }
+      drawStatusBar(vg, app, 0.0f, h - kStatusBarHeight, w);
+      drawToast(vg, app, w, h);
+
+      if (popupActive)
+      {
+        g_mouseX = saveMouseX;
+        g_mouseY = saveMouseY;
+        g_mouseClicked = clickBefore;
+        drawModal(vg, app, w, h);
+        drawTextInput(vg, app.textInput, w, h);
+      }
+
+      handleModalResult(app);
+
+      drawContextMenu(
+        vg,
+        app,
+        w,
+        h);
+
+      drawTooltip(vg, w, h);
+
+      bool resizeHover = (app.hoveredSep >= 0) || (app.dragColumn >= 0);
+      if (app.modal.active || app.textInput.active)
+      {
+        resizeHover = false;
+      }
+      if (app.modal.active)
+      {
+        resizeHover = false;
+      }
+
+      glfwSetCursor(window, resizeHover ? resizeCursor : nullptr);
+      drawSeparator(vg, 0.0f, kTabBarHeight, w, kTabBarHeight);
+      drawSeparator(vg, 0.0f, kTopBarHeight, w, kTopBarHeight);
+      if (sidebarW > 1.0f)
+      {
+        drawSeparator(vg, sidebarW, kTopBarHeight, sidebarW, h - kStatusBarHeight);
+      }
+      if (previewW > 1.0f)
+      {
+        drawSeparator(vg, mainX + mainW, kTopBarHeight, mainX + mainW, h - kStatusBarHeight);
+      }
+      if (!app.editor.active)
+      {
+        drawSeparator(vg, mainX, mainY + kHeaderHeight, mainX + mainW, mainY + kHeaderHeight);
+      }
+      drawSeparator(vg, 0.0f, h - kStatusBarHeight, w, h - kStatusBarHeight);
+      nvgEndFrame(vg);
+
+      glfwSwapBuffers(window);
+
+      g_mouseClicked = false;
+      g_rightClicked = false;
       g_mouseReleased = false;
     }
-    handleTextInputResult(app);
 
-    updatePreview(app, vg);
-
-    float saveMouseX = g_mouseX;
-    float saveMouseY = g_mouseY;
-    if (popupActive)
+    saveConfig(app);
+    if (app.previewImage >= 0)
     {
-      g_mouseX = -1.0f;
-      g_mouseY = -1.0f;
+      nvgDeleteImage(vg, app.previewImage);
+      app.previewImage = -1;
     }
-
-    drawTabBar(vg, app, w);
-    drawTopBar(vg, app, w);
-    resetOnPathChange(app);
-    drawSidebar(vg, app, h - kStatusBarHeight, sidebarW);
-    if (g_sidebarDirty)
+    nvgDeleteGL2(vg);
+    if (resizeCursor != nullptr)
     {
-      saveConfig(app);
-      g_sidebarDirty = false;
+      glfwDestroyCursor(resizeCursor);
     }
-    resetOnPathChange(app);
-    if (app.editor.active)
-    {
-      drawEditor(vg, app, mainX, mainY, mainW, h - mainY - kStatusBarHeight);
-    }
-    else
-    {
-      drawMainHeader(vg, app, mainX, mainY, mainW);
-      drawRows(vg, app, mainX, listTop, mainW, listH);
-    }
-    if (previewW > 1.0f)
-    {
-      drawPreviewPanel(vg, app, mainX + mainW, mainY, previewW, h - mainY - kStatusBarHeight);
-    }
-    drawStatusBar(vg, app, 0.0f, h - kStatusBarHeight, w);
-    drawToast(vg, app, w, h);
-
-    if (popupActive)
-    {
-      g_mouseX = saveMouseX;
-      g_mouseY = saveMouseY;
-      g_mouseClicked = clickBefore;
-      drawModal(vg, app, w, h);
-      drawTextInput(vg, app.textInput, w, h);
-    }
-
-    handleModalResult(app);
-
-    drawContextMenu(
-      vg,
-      app,
-      w,
-      h);
-
-    drawTooltip(vg, w, h);
-
-    bool resizeHover = (app.hoveredSep >= 0) || (app.dragColumn >= 0);
-    if (app.modal.active || app.textInput.active)
-    {
-      resizeHover = false;
-    }
-    if (app.modal.active)
-    {
-      resizeHover = false;
-    }
-    glfwSetCursor(window, resizeHover ? resizeCursor : nullptr);
-    drawSeparator(vg, 0.0f, kTabBarHeight, w, kTabBarHeight);
-    drawSeparator(vg, 0.0f, kTopBarHeight, w, kTopBarHeight);
-    if (sidebarW > 1.0f)
-    {
-      drawSeparator(vg, sidebarW, kTopBarHeight, sidebarW, h - kStatusBarHeight);
-    }
-    if (previewW > 1.0f)
-    {
-      drawSeparator(vg, mainX + mainW, kTopBarHeight, mainX + mainW, h - kStatusBarHeight);
-    }
-    if (!app.editor.active)
-    {
-      drawSeparator(vg, mainX, mainY + kHeaderHeight, mainX + mainW, mainY + kHeaderHeight);
-    }
-    drawSeparator(vg, 0.0f, h - kStatusBarHeight, w, h - kStatusBarHeight);
-    nvgEndFrame(vg);
-
-    glfwSwapBuffers(window);
-
-    g_mouseClicked = false;
-    g_rightClicked = false;
-    g_mouseReleased = false;
+    glfwDestroyWindow(window);
+    glfwTerminate();
+    return 0;
   }
-
-  saveConfig(app);
-  if (app.previewImage >= 0)
-  {
-    nvgDeleteImage(vg, app.previewImage);
-    app.previewImage = -1;
-  }
-  nvgDeleteGL2(vg);
-  if (resizeCursor != nullptr)
-  {
-    glfwDestroyCursor(resizeCursor);
-  }
-  glfwDestroyWindow(window);
-  glfwTerminate();
-  return 0;
 }
